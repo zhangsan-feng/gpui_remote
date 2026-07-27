@@ -1,0 +1,30 @@
+[package]
+name = "gpui_remote"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gpui = {git = "https://github.com/zed-industries/zed", }
+gpui_platform = {git = "https://github.com/zed-industries/zed", }
+reqwest_client = {git = "https://github.com/zed-industries/zed",  package = "reqwest_client"}
+gpui-component = {git = "https://github.com/longbridge/gpui-component", }
+gpui-component-assets = {git = "https://github.com/longbridge/gpui-component", }
+
+log = {version = "0.4.29"}
+chrono = {version = "0.4.43", features = ["default"]}
+fern = "0.7.1"
+serde = { version = "1.0.228", features = ["derive"] }
+anyhow = "1.0.100"
+reqwest = { version = "0.13.1", features = ["gzip", "json", "multipart", "form", "stream"] }
+tokio = {version = "1.49.0", features = ["full"]}
+futures-util="0.3.31"
+serde_json = "1.0.149"
+rust-embed = "8.11.0"
+regex = "1.12.3"
+uuid = { version = "1.22.0", features = ["v4"] }
+md5 = {version = "0.8.0"}
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+russh = "0.62.3"
+tokio-socks = "0.5.2"
+alacritty_terminal = { git = "https://github.com/zed-industries/alacritty", rev = "4c129667ce56611becdc82de6e28218c80e2e88f" }
+unicode-width = "0.2.2"

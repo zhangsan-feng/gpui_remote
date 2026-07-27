@@ -1,7 +1,7 @@
 mod core;
 mod ui;
 
-use gpui::{Context, Entity, EventEmitter, Subscription};
+use gpui::{Context, Entity, EventEmitter};
 
 use crate::domain::session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection};
 use crate::global_state::{GlobalEvent, GlobalState};
@@ -29,21 +29,19 @@ pub(super) enum WorkspaceSessionEvent {
 pub(super) struct WorkspaceSession {
     sessions: Vec<OpenedWorkspaceSession>,
     active_session_id: Option<String>,
-    _global_subscription: Subscription,
 }
 
 impl WorkspaceSession {
     pub fn new(global_state: Entity<GlobalState>, cx: &mut Context<Self>) -> Self {
-        let global_subscription = cx.subscribe(&global_state, |this, _, event, cx| match event {
+        cx.subscribe(&global_state, |this, _, event, cx| match event {
             GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
             GlobalEvent::CreateActiveSession(profile) => this.open(profile.clone(), cx),
             GlobalEvent::SessionProfileDeleted(profile_id) => this.close_profile(profile_id, cx),
-        });
+        }).detach();
 
         Self {
             sessions: Vec::new(),
             active_session_id: None,
-            _global_subscription: global_subscription,
         }
     }
 }

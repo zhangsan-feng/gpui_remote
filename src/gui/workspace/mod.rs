@@ -36,7 +36,7 @@ impl Workspace {
         let tabs = cx.new(|_| {
             let mut tabs = DraggableList::new();
             tabs.set_axis(Axis::Horizontal)
-                .set_item_width(px(224.))
+                .set_item_width(px(240.))
                 .set_item_height(px(34.))
                 .set_item_bg(rgb_to_u32(246, 243, 249))
                 .set_item_hover_bg(rgb_to_u32(238, 232, 243));
@@ -97,14 +97,14 @@ impl Render for Workspace {
             .active_session_id()
             .map(str::to_owned);
         v_flex()
+            .p_2()
+            .gap_2()
             .size_full()
             .bg(rgb_to_u32(255, 255, 255))
             .child(
                 div()
                     .w_full()
-                    .h(px(44.))
-                    .flex_shrink_0()
-                    .border_b_1()
+                    .h(px(45.))
                     .border_color(rgb_to_u32(225, 219, 230))
                     .bg(rgb_to_u32(246, 243, 249))
                     .child(self.tabs.clone()),

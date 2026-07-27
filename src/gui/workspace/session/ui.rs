@@ -28,11 +28,8 @@ pub(in crate::gui::workspace) fn workspace_tab(
     };
     h_flex()
         .id(format!("workspace-tab-{session_id}"))
-        .w(px(220.))
-        .h(px(34.))
-        .ml_1()
-        .pl_3()
-        .pr_2()
+        .size_full()
+        .p_2()
         .gap_2()
         .cursor_pointer()
         .rounded_lg()

@@ -1,3 +1,9 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
+mod build_info;
 mod component;
 mod domain;
 mod global_state;
@@ -106,6 +112,7 @@ impl AssetSource for MergedAssets {
 #[tokio::main]
 async fn main() {
     logger_init("./logs", "%Y-%m-%d");
+    info!("build time: {}", build_info::BUILD_TIME);
 
     let http_client = ReqwestClient::user_agent("gpui").unwrap();
     let assets = MergedAssets {

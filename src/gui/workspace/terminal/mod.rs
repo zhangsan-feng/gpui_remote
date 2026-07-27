@@ -20,10 +20,10 @@ use scroll::TerminalScrollHandle;
 use selection::TerminalSelection;
 
 const TERMINAL_KEY_CONTEXT: &str = "Terminal";
-const TERMINAL_HORIZONTAL_CHROME: f32 =
-    268.0 + terminal_render::GUTTER_WIDTH + scroll::SCROLLBAR_WIDTH;
+const TERMINAL_FONT_FAMILY: &str = "Consolas";
+const TERMINAL_FONT_SIZE: f32 = 13.0;
 const TERMINAL_LINE_HEIGHT: f32 = 19.0;
-const TERMINAL_VERTICAL_CHROME: f32 = 88.0;
+const TERMINAL_TEXT_HORIZONTAL_PADDING: f32 = 20.0;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = terminal, no_json)]
@@ -58,6 +58,22 @@ pub(in crate::gui::workspace) fn init(cx: &mut App) {
         KeyBinding::new("tab", SendTab, Some(TERMINAL_KEY_CONTEXT)),
         KeyBinding::new("ctrl-v", PasteTerminal, Some(TERMINAL_KEY_CONTEXT)),
     ]);
+}
+
+fn terminal_cell_width(window: &Window) -> Pixels {
+    let run = TextRun {
+        len: 1,
+        font: Font {
+            family: TERMINAL_FONT_FAMILY.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let width = window
+        .text_system()
+        .layout_line("0", px(TERMINAL_FONT_SIZE), &[run], None)
+        .width;
+    if width > Pixels::ZERO { width } else { px(8.) }
 }
 
 impl TerminalView {

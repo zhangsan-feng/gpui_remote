@@ -1,4 +1,5 @@
 use gpui::*;
+use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 
 use crate::domain::terminal::{TerminalFrame, TerminalLine, TerminalStyle};
@@ -16,6 +17,7 @@ pub(super) struct TerminalSelection {
     pub(super) workspace_id: String,
     anchor: TerminalPoint,
     head: TerminalPoint,
+    frame: Arc<TerminalFrame>,
 }
 
 pub(super) struct SelectedFragment {
@@ -49,11 +51,7 @@ impl TerminalView {
         let Some(selection) = &self.selection else {
             return;
         };
-        let Some(model) = self.model(&selection.workspace_id) else {
-            return;
-        };
-        let frame = model.read().frame.clone();
-        let text = selected_text(&frame, selection);
+        let text = selected_text(&selection.frame, selection);
         if !text.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
@@ -79,10 +77,15 @@ impl TerminalView {
                 return;
             }
         }
+        let frame = self
+            .model(&workspace_id)
+            .map(|model| model.read().frame.clone())
+            .unwrap_or_default();
         self.selection = Some(TerminalSelection {
             workspace_id,
             anchor: point,
             head: point,
+            frame,
         });
         cx.notify();
     }
@@ -123,6 +126,22 @@ pub(super) fn selected_fragments(
     row: usize,
     selection: Option<&TerminalSelection>,
 ) -> Vec<SelectedFragment> {
+    let selection = selection.filter(|selection| {
+        let (start, end) = selection.range();
+        start.row <= row && row <= end.row
+    });
+    if selection.is_none() {
+        return line
+            .spans
+            .iter()
+            .map(|span| SelectedFragment {
+                text: span.text.clone(),
+                style: span.style.clone(),
+                selected: false,
+            })
+            .collect();
+    }
+
     let mut fragments = Vec::<SelectedFragment>::new();
     let mut column = 0;
     for span in &line.spans {
@@ -147,12 +166,16 @@ pub(super) fn selected_fragments(
     fragments
 }
 
-pub(super) fn line_width(line: &TerminalLine) -> usize {
-    line.spans
-        .iter()
-        .flat_map(|span| span.text.chars())
-        .map(terminal_character_width)
-        .sum()
+pub(super) fn nearest_character_column(line: &TerminalLine, target: usize) -> usize {
+    let mut column = 0;
+    for character in line.spans.iter().flat_map(|span| span.text.chars()) {
+        let width = terminal_character_width(character);
+        if width > 0 && target < column + width {
+            return column;
+        }
+        column += width;
+    }
+    column.saturating_sub(1)
 }
 
 fn selected_text(frame: &TerminalFrame, selection: &TerminalSelection) -> String {
@@ -163,25 +186,23 @@ fn selected_text(frame: &TerminalFrame, selection: &TerminalSelection) -> String
     else {
         return String::new();
     };
-    lines
-        .iter()
-        .enumerate()
-        .map(|(line_offset, line)| {
-            let row = start.row + line_offset;
-            let mut column = 0;
-            let mut selected = String::new();
-            for character in line.spans.iter().flat_map(|span| span.text.chars()) {
-                if selection.contains(TerminalPoint { row, column }) {
-                    selected.push(character);
-                }
-                column += terminal_character_width(character);
+    let mut text = String::new();
+    for (line_offset, line) in lines.iter().enumerate() {
+        let row = start.row + line_offset;
+        let mut column = 0;
+        for character in line.spans.iter().flat_map(|span| span.text.chars()) {
+            if selection.contains(TerminalPoint { row, column }) {
+                text.push(character);
             }
-            selected
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+            column += terminal_character_width(character);
+        }
+        if line_offset + 1 < lines.len() && !line.wrapped {
+            text.push('\n');
+        }
+    }
+    text
 }
 
 fn terminal_character_width(character: char) -> usize {
-    UnicodeWidthChar::width(character).unwrap_or(0).max(1)
+    UnicodeWidthChar::width(character).unwrap_or(0)
 }

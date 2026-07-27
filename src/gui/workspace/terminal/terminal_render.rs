@@ -10,12 +10,11 @@ use crate::{
 };
 
 use super::{
-    CopyTerminal, TerminalView,
-    selection::{TerminalPoint, line_width, selected_fragments},
+    CopyTerminal, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TerminalView,
+    selection::{TerminalPoint, nearest_character_column, selected_fragments},
 };
 
 pub(super) const GUTTER_WIDTH: f32 = 116.0;
-const CELL_WIDTH: f32 = 8.0;
 const TEXT_PADDING: f32 = 8.0;
 
 impl TerminalView {
@@ -23,10 +22,13 @@ impl TerminalView {
         &self,
         workspace_id: String,
         frame: Arc<TerminalFrame>,
+        cell_width: Pixels,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let selection = self.selection.clone();
         let terminal_view = cx.weak_entity();
+        let resize_view = terminal_view.clone();
+        let resize_workspace_id = workspace_id.clone();
         let menu_workspace_id = workspace_id.clone();
         let terminal_list = list(self.list_state.clone(), move |index, _, _| {
             let line = frame.lines.get(index).cloned().unwrap_or_default();
@@ -52,8 +54,8 @@ impl TerminalView {
             h_flex()
                 .h(px(19.))
                 .w_full()
-                .font_family("Consolas")
-                .text_size(px(13.))
+                .font_family(TERMINAL_FONT_FAMILY)
+                .text_size(px(TERMINAL_FONT_SIZE))
                 .line_height(px(19.))
                 .whitespace_nowrap()
                 .child(render_gutter(timestamp, line_number))
@@ -72,6 +74,7 @@ impl TerminalView {
                                 &select_line,
                                 event.position,
                                 select_bounds.get(),
+                                cell_width,
                             );
                             let _ = select_view.update(cx, |this, cx| {
                                 this.select_point(
@@ -89,30 +92,14 @@ impl TerminalView {
                                     &extend_line,
                                     event.position,
                                     extend_bounds.get(),
+                                    cell_width,
                                 );
                                 let _ = extend_view.update(cx, |this, cx| {
                                     this.extend_selection(&extend_workspace_id, point, cx);
                                 });
                             }
                         })
-                        .children(fragments.into_iter().map(|fragment| {
-                            let foreground = terminal_color(fragment.style.foreground);
-                            let background = if fragment.selected {
-                                rgb_to_u32(51, 65, 85)
-                            } else {
-                                terminal_color(fragment.style.background)
-                            };
-                            div()
-                                .h_full()
-                                .text_color(foreground)
-                                .bg(background)
-                                .when(fragment.style.bold, |this| {
-                                    this.font_weight(FontWeight::BOLD)
-                                })
-                                .when(fragment.style.italic, |this| this.italic())
-                                .when(fragment.style.underline, |this| this.underline())
-                                .child(fragment.text)
-                        })),
+                        .child(render_terminal_text(fragments)),
                 )
                 .into_any_element()
         })
@@ -130,6 +117,11 @@ impl TerminalView {
             .overflow_hidden()
             .child(terminal_list)
             .child(self.render_scrollbar(cx))
+            .on_prepaint(move |bounds, _, cx| {
+                let _ = resize_view.update(cx, |this, _| {
+                    this.sync_pty_size(&resize_workspace_id, bounds.size, cell_width);
+                });
+            })
             .context_menu(move |menu, _, _| {
                 if can_copy {
                     menu.menu("复制", Box::new(CopyTerminal))
@@ -172,15 +164,60 @@ fn terminal_point(
     line: &TerminalLine,
     position: Point<Pixels>,
     bounds: Bounds<Pixels>,
+    cell_width: Pixels,
 ) -> TerminalPoint {
     let local_x = (f32::from(position.x - bounds.origin.x) - TEXT_PADDING).max(0.0);
-    let clicked_column = (local_x / CELL_WIDTH).floor() as usize;
+    let clicked_column = (local_x / f32::from(cell_width)).floor() as usize;
     TerminalPoint {
         row,
-        column: clicked_column.min(line_width(line).saturating_sub(1)),
+        column: nearest_character_column(line, clicked_column),
     }
 }
 
 fn terminal_color(color: TerminalRgb) -> Rgba {
     rgb_to_u32(color.red, color.green, color.blue)
+}
+
+fn render_terminal_text(fragments: Vec<super::selection::SelectedFragment>) -> StyledText {
+    let mut text = String::new();
+    let mut runs = Vec::with_capacity(fragments.len());
+    for fragment in fragments {
+        if fragment.text.is_empty() {
+            continue;
+        }
+        let foreground = terminal_color(fragment.style.foreground);
+        let background = if fragment.selected {
+            rgb_to_u32(51, 65, 85)
+        } else {
+            terminal_color(fragment.style.background)
+        };
+        let len = fragment.text.len();
+        text.push_str(&fragment.text);
+        runs.push(TextRun {
+            len,
+            font: Font {
+                family: TERMINAL_FONT_FAMILY.into(),
+                weight: if fragment.style.bold {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::NORMAL
+                },
+                style: if fragment.style.italic {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
+                ..Default::default()
+            },
+            color: foreground.into(),
+            background_color: Some(background.into()),
+            underline: fragment.style.underline.then_some(UnderlineStyle {
+                thickness: px(1.),
+                color: Some(foreground.into()),
+                wavy: false,
+            }),
+            strikethrough: None,
+        });
+    }
+    StyledText::new(text).with_runs(runs)
 }

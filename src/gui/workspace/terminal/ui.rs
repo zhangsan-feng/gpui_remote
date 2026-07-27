@@ -37,14 +37,14 @@ impl TerminalView {
         self.scroll_handle
             .sync(&frame, self.command_sender(&workspace_id));
         self.sync_list(&workspace_id, frame.lines.len().max(1));
-        self.sync_pty_size(&workspace_id, window.viewport_size());
+        let cell_width = terminal_cell_width(window);
 
         let focus = self.focus.clone();
         let scroll_commands = self.command_sender(&workspace_id);
         let content = if status == TerminalStatus::Failed {
             render_connection_error(message).into_any_element()
         } else {
-            self.render_terminal_list(workspace_id, frame, cx)
+            self.render_terminal_list(workspace_id, frame, cell_width, cx)
                 .into_any_element()
         };
         v_flex()
@@ -98,10 +98,19 @@ impl TerminalView {
         }
     }
 
-    fn sync_pty_size(&mut self, workspace_id: &str, viewport: Size<Pixels>) {
-        let columns =
-            ((f32::from(viewport.width) - TERMINAL_HORIZONTAL_CHROME) / 8.0).max(20.0) as u32;
-        let rows = ((f32::from(viewport.height) - TERMINAL_VERTICAL_CHROME) / TERMINAL_LINE_HEIGHT)
+    pub(super) fn sync_pty_size(
+        &mut self,
+        workspace_id: &str,
+        viewport: Size<Pixels>,
+        cell_width: Pixels,
+    ) {
+        let text_width = f32::from(viewport.width)
+            - terminal_render::GUTTER_WIDTH
+            - scroll::SCROLLBAR_WIDTH
+            - TERMINAL_TEXT_HORIZONTAL_PADDING;
+        let columns = (text_width / f32::from(cell_width)).floor().max(20.0) as u32;
+        let rows = (f32::from(viewport.height) / TERMINAL_LINE_HEIGHT)
+            .floor()
             .max(6.0) as u32;
         let pty_size = (workspace_id.to_owned(), columns, rows);
         if self.last_pty_size.as_ref() != Some(&pty_size) {

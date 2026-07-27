@@ -46,7 +46,7 @@ pub(super) async fn run_connected_terminal_session(
             _ = refresh.tick() => {
                 if dirty {
                     publish_model(
-                        &buffer,
+                        &mut buffer,
                         &model,
                         &mut last_frame,
                         &status,
@@ -73,7 +73,7 @@ pub(super) async fn run_connected_terminal_session(
     }
 
     if dirty {
-        publish_model(&buffer, &model, &mut last_frame, &status, &message);
+        publish_model(&mut buffer, &model, &mut last_frame, &status, &message);
     }
     Ok(exit_message)
 }
@@ -112,16 +112,32 @@ async fn apply_command(
 }
 
 fn publish_model(
-    buffer: &TerminalBuffer,
+    buffer: &mut TerminalBuffer,
     model: &TerminalModel,
     last_frame: &mut Arc<TerminalFrame>,
     status: &TerminalStatus,
     message: &Option<String>,
 ) {
-    *last_frame = Arc::new(buffer.frame_reusing(Some(last_frame.as_ref())));
+    let next_frame = Arc::new(buffer.frame_reusing(Some(last_frame.as_ref())));
+    if same_frame(last_frame, &next_frame) {
+        return;
+    }
+    *last_frame = next_frame;
     model.replace(TerminalData {
         frame: last_frame.clone(),
         status: status.clone(),
         message: message.clone(),
     });
+}
+
+fn same_frame(left: &TerminalFrame, right: &TerminalFrame) -> bool {
+    left.application_cursor == right.application_cursor
+        && left.history_size == right.history_size
+        && left.display_offset == right.display_offset
+        && left.lines.len() == right.lines.len()
+        && left
+            .lines
+            .iter()
+            .zip(right.lines.iter())
+            .all(|(left, right)| Arc::ptr_eq(left, right))
 }

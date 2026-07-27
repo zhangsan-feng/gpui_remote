@@ -27,6 +27,7 @@ pub struct TerminalLine {
     pub number: Option<u64>,
     pub timestamp: Option<Arc<str>>,
     pub spans: Vec<TerminalSpan>,
+    pub wrapped: bool,
 }
 
 #[derive(Clone, Debug, Default)]

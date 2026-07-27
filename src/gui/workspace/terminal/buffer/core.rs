@@ -3,7 +3,7 @@ use std::sync::Arc;
 use alacritty_terminal::{
     grid::{Dimensions, Scroll},
     index::{Column, Line},
-    term::{Config, Osc52, TermMode, cell::Flags},
+    term::{Config, Osc52, TermDamage, TermMode, cell::Flags},
     vte::ansi,
 };
 
@@ -97,25 +97,58 @@ impl TerminalBuffer {
     }
 
     pub(in crate::gui::workspace::terminal) fn frame_reusing(
-        &self,
+        &mut self,
         previous: Option<&TerminalFrame>,
     ) -> TerminalFrame {
-        let grid = self.terminal.grid();
-        let lines = (0..self.terminal.screen_lines())
-            .filter_map(|index| {
-                let line = self.line(index)?;
-                previous
-                    .and_then(|frame| frame.lines.get(index))
-                    .filter(|previous_line| previous_line.as_ref() == &line)
-                    .cloned()
-                    .or_else(|| Some(Arc::new(line)))
-            })
-            .collect();
+        let screen_lines = self.terminal.screen_lines();
+        let history_size = self
+            .terminal
+            .grid()
+            .total_lines()
+            .saturating_sub(screen_lines);
+        let display_offset = self.terminal.grid().display_offset();
+        let damaged_lines = match self.terminal.damage() {
+            TermDamage::Full => None,
+            TermDamage::Partial(lines) => Some(lines.map(|line| line.line).collect::<Vec<_>>()),
+        };
+        let rebuild_all = previous.is_none_or(|frame| {
+            frame.lines.len() != screen_lines
+                || frame.history_size != history_size
+                || frame.display_offset != display_offset
+        }) || damaged_lines.is_none();
+        let mut lines = if rebuild_all {
+            vec![Arc::new(TerminalLine::default()); screen_lines]
+        } else {
+            previous
+                .map(|frame| frame.lines.as_ref().clone())
+                .unwrap_or_default()
+        };
+        let changed_lines = damaged_lines
+            .as_deref()
+            .filter(|_| !rebuild_all)
+            .map_or_else(|| (0..screen_lines).collect::<Vec<_>>(), <[_]>::to_vec);
+
+        for index in changed_lines {
+            let Some(line) = self.line(index) else {
+                continue;
+            };
+            if lines
+                .get(index)
+                .is_some_and(|previous_line| previous_line.as_ref() == &line)
+            {
+                continue;
+            }
+            if let Some(target) = lines.get_mut(index) {
+                *target = Arc::new(line);
+            }
+        }
+        self.terminal.reset_damage();
+
         TerminalFrame {
             lines: Arc::new(lines),
             application_cursor: self.terminal.mode().contains(TermMode::APP_CURSOR),
-            history_size: grid.total_lines().saturating_sub(grid.screen_lines()),
-            display_offset: grid.display_offset(),
+            history_size,
+            display_offset,
         }
     }
 
@@ -129,6 +162,10 @@ impl TerminalBuffer {
         let show_cursor =
             grid.display_offset() == 0 && self.terminal.mode().contains(TermMode::SHOW_CURSOR);
         let row = index as i32 - grid.display_offset() as i32;
+        let wrapped = grid.columns() > 0
+            && grid[Line(row)][Column(grid.columns() - 1)]
+                .flags
+                .contains(Flags::WRAPLINE);
         let logical_line_number =
             self.current_line_number as i64 + i64::from(row) - i64::from(cursor.line.0);
         let timestamp = if self.terminal.mode().contains(TermMode::ALT_SCREEN) {
@@ -162,17 +199,18 @@ impl TerminalBuffer {
                 italic: cell.flags.contains(Flags::ITALIC),
                 underline: cell.flags.intersects(Flags::ALL_UNDERLINES),
             };
-            let mut character = String::from(cell.c);
-            if let Some(zerowidth) = cell.zerowidth() {
-                character.extend(zerowidth);
-            }
             if let Some(span) = spans.last_mut().filter(|span| span.style == style) {
-                span.text.push_str(&character);
+                span.text.push(cell.c);
+                if let Some(zerowidth) = cell.zerowidth() {
+                    span.text.extend(zerowidth);
+                }
             } else {
-                spans.push(TerminalSpan {
-                    text: character,
-                    style,
-                });
+                let mut text = String::with_capacity(4);
+                text.push(cell.c);
+                if let Some(zerowidth) = cell.zerowidth() {
+                    text.extend(zerowidth);
+                }
+                spans.push(TerminalSpan { text, style });
             }
         }
         trim_default_trailing_spaces(&mut spans);
@@ -180,6 +218,7 @@ impl TerminalBuffer {
             number,
             timestamp,
             spans,
+            wrapped,
         })
     }
 

@@ -28,17 +28,22 @@ pub(super) struct WorkspaceSession {
 impl WorkspaceSession {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let global_state = read_global_state(cx);
-        cx.subscribe(&global_state, |this, _, event, cx| {
-            let GlobalEvent::CreateActiveSession(profile) = event else {
-                return;
-            };
-            this.open(profile.clone(), cx);
+        cx.subscribe(&global_state, |this, _, event, cx| match event {
+            GlobalEvent::CreateActiveSession(profile) => {
+                this.open(profile.clone(), cx);
+            }
+            GlobalEvent::ThemeChanged => {
+                this.reset_tab_style(cx);
+                this.rebuild_tabs(cx);
+                cx.notify();
+            }
+            _ => {}
         })
         .detach();
 
         Self {
             sessions: Vec::new(),
-            tabs: cx.new(|_| ui::new_workspace_tabs()),
+            tabs: cx.new(|cx| ui::new_workspace_tabs(cx)),
             selected_id: None,
             statuses: HashMap::new(),
         }

@@ -1,17 +1,16 @@
 mod core;
 pub mod session_operation_window;
-mod ui;
 mod settings_operation_window;
+mod ui;
 
+use crate::component::theme;
 use gpui::*;
 use gpui_component::{
-    IconName, Sizable,
+    ActiveTheme, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::DropdownMenu as _,
 };
-
-use crate::component::color::rgb_to_u32;
 
 actions!(title_bar, [CreateSession, OpenSettings]);
 
@@ -26,6 +25,7 @@ impl AppTitleBar {
 impl Render for AppTitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let maximize_label = if window.is_maximized() { "❐" } else { "□" };
+        let colors = cx.theme();
         h_flex()
             .id("app-title-bar")
             .on_action(cx.listener(Self::open_session_window))
@@ -34,8 +34,12 @@ impl Render for AppTitleBar {
             .h(px(42.))
             .flex_shrink_0()
             .border_b_1()
-            .border_color(rgb_to_u32(230, 224, 235))
-            .bg(rgb_to_u32(250, 247, 252))
+            .border_color(colors.title_bar_border)
+            .bg(if theme::wallpaper(cx).is_some() {
+                colors.title_bar.opacity(0.92)
+            } else {
+                colors.title_bar
+            })
             .child(
                 h_flex()
                     .h_full()
@@ -78,26 +82,26 @@ impl Render for AppTitleBar {
                 h_flex()
                     .h_full()
                     .border_l_1()
-                    .border_color(rgb_to_u32(230, 224, 235))
+                    .border_color(colors.title_bar_border)
                     .child(self.window_button(
                         "window-min",
                         "−",
                         WindowControlArea::Min,
-                        rgb_to_u32(232, 225, 239),
+                        colors.accent,
                         cx,
                     ))
                     .child(self.window_button(
                         "window-max",
                         maximize_label,
                         WindowControlArea::Max,
-                        rgb_to_u32(232, 225, 239),
+                        colors.accent,
                         cx,
                     ))
                     .child(self.window_button(
                         "window-close",
                         "×",
                         WindowControlArea::Close,
-                        rgb_to_u32(254, 202, 202),
+                        colors.danger,
                         cx,
                     )),
             )

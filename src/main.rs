@@ -141,6 +141,7 @@ async fn main() {
 
             cx.open_window(window_options, |window, app| {
                 gpui_component::init(app);
+                component::theme::init(app);
 
                 app.new(|cx| {
                     let global_state = cx.new(|_| GlobalState {});

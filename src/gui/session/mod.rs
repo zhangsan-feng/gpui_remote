@@ -9,7 +9,7 @@ use gpui_component::*;
 use serde::Deserialize;
 
 use crate::{
-    component::{color::rgb_to_u32, draggable_list::DraggableList},
+    component::{color::rgb_to_u32, draggable_list::DraggableList, theme},
     domain::session::SessionProfile,
     global_state::{GlobalEvent, read_global_state},
 };
@@ -54,7 +54,9 @@ impl SessionComponent {
         let global_events = read_global_state(cx);
         cx.subscribe(&global_events, |this, _, event, cx| {
             match event {
-                GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
+                GlobalEvent::CreateSession
+                | GlobalEvent::UpdateSession
+                | GlobalEvent::ThemeChanged => {}
                 _ => return,
             }
             if let Err(error) = this.reload_session(cx) {
@@ -68,6 +70,7 @@ impl SessionComponent {
 
 impl Render for SessionComponent {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = cx.theme();
         v_flex()
             .on_action(cx.listener(Self::create_active_session))
             .on_action(cx.listener(Self::edit_session))
@@ -76,15 +79,16 @@ impl Render for SessionComponent {
             .w_full()
             .flex_shrink_0()
             .border_r_1()
-            .border_color(rgb_to_u32(230, 224, 235))
-            .bg(rgb_to_u32(249, 247, 251))
+            .border_color(colors.sidebar_border)
+            .bg(theme::sidebar_color(cx))
+            .text_color(contrast_text(theme::sidebar_base_color(cx)))
             .child(
                 h_flex()
                     .h(px(48.))
                     .px_4()
                     .justify_between()
                     .border_b_1()
-                    .border_color(rgb_to_u32(235, 230, 239))
+                    .border_color(colors.sidebar_border)
                     .child(
                         div()
                             .text_sm()
@@ -98,9 +102,9 @@ impl Render for SessionComponent {
                         .m_2()
                         .p_2()
                         .rounded_md()
-                        .bg(rgb_to_u32(254, 242, 242))
+                        .bg(colors.danger)
                         .text_xs()
-                        .text_color(rgb_to_u32(185, 28, 28))
+                        .text_color(colors.danger_foreground)
                         .child(error.to_string()),
                 )
             })
@@ -110,5 +114,13 @@ impl Render for SessionComponent {
                     .overflow_hidden()
                     .child(self.draggable_list.clone()),
             )
+    }
+}
+
+fn contrast_text(background: Hsla) -> Hsla {
+    if background.l < 0.48 {
+        rgb_to_u32(248, 250, 252).into()
+    } else {
+        rgb_to_u32(30, 41, 59).into()
     }
 }

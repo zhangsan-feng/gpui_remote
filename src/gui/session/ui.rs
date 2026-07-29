@@ -1,5 +1,4 @@
-use crate::component::color::rgb_to_u32;
-use crate::component::draggable_list::DraggableList;
+use crate::component::{draggable_list::DraggableList, theme};
 use crate::gui::session::{ConnectSession, DeleteSession, EditSession, SessionComponent};
 use gpui::*;
 use gpui_component::menu::PopupMenu;
@@ -7,13 +6,14 @@ use gpui_component::*;
 
 impl SessionComponent {
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
+        let colors = cx.theme();
         let mut list = DraggableList::new();
         let session = cx.weak_entity();
 
         list.set_item_height(px(58.))
-            .set_item_bg(rgb_to_u32(249, 247, 251))
-            .set_item_selected_bg(rgb_to_u32(238, 229, 246))
-            .set_item_hover_bg(rgb_to_u32(242, 237, 247))
+            .set_item_bg(Hsla::transparent_black().into())
+            .set_item_selected_bg(colors.sidebar_accent.into())
+            .set_item_hover_bg(colors.list_hover.into())
             .set_context_menu(
                 |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();
@@ -47,6 +47,10 @@ impl SessionComponent {
 
     pub(super) fn refer_item(&mut self, cx: &mut Context<Self>) {
         let sessions = self.sessions.clone();
+        let sidebar_accent = cx.theme().sidebar_accent;
+        let sidebar_accent_foreground = cx.theme().sidebar_accent_foreground;
+        let sidebar_foreground = super::contrast_text(theme::sidebar_base_color(cx));
+        let muted_foreground = cx.theme().muted_foreground;
 
         self.draggable_list.update(cx, move |this, _cx| {
             for session in sessions {
@@ -66,8 +70,8 @@ impl SessionComponent {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .bg(rgb_to_u32(235, 230, 239))
-                                .text_color(rgb_to_u32(93, 61, 116))
+                                .bg(sidebar_accent)
+                                .text_color(sidebar_accent_foreground)
                                 .child(IconName::SquareTerminal),
                         )
                         .child(
@@ -79,14 +83,14 @@ impl SessionComponent {
                                     div()
                                         .text_sm()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb_to_u32(55, 47, 67))
+                                        .text_color(sidebar_foreground)
                                         .whitespace_nowrap()
                                         .child(session.name.clone()),
                                 )
                                 .child(
                                     div()
                                         .text_xs()
-                                        .text_color(rgb_to_u32(132, 123, 143))
+                                        .text_color(muted_foreground)
                                         .whitespace_nowrap()
                                         .child(format!(
                                             "{}@{}:{}",

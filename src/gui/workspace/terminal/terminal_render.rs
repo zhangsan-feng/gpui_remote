@@ -5,7 +5,7 @@ use gpui::*;
 use gpui_component::{ElementExt, h_flex, menu::ContextMenuExt};
 
 use crate::{
-    component::color::rgb_to_u32,
+    component::{color::rgb_to_u32, theme},
     domain::terminal::{TerminalFrame, TerminalLine, TerminalRgb},
 };
 
@@ -24,6 +24,7 @@ impl TerminalView {
         cell_width: Pixels,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let terminal_background = theme::terminal_color(cx);
         let selection = self.selection.clone();
         let terminal_view = cx.weak_entity();
         let resize_view = terminal_view.clone();
@@ -57,7 +58,7 @@ impl TerminalView {
                 .text_size(px(TERMINAL_FONT_SIZE))
                 .line_height(px(19.))
                 .whitespace_nowrap()
-                .child(render_gutter(timestamp, line_number))
+                .child(render_gutter(timestamp, line_number, terminal_background))
                 .child(
                     h_flex()
                         .h_full()
@@ -99,7 +100,7 @@ impl TerminalView {
                                 });
                             }
                         })
-                        .child(render_terminal_text(fragments)),
+                        .child(render_terminal_text(fragments, terminal_background)),
                 )
                 .into_any_element()
         })
@@ -132,7 +133,11 @@ impl TerminalView {
     }
 }
 
-fn render_gutter(timestamp: Option<SharedString>, line_number: Option<SharedString>) -> Div {
+fn render_gutter(
+    timestamp: Option<SharedString>,
+    line_number: Option<SharedString>,
+    terminal_background: Hsla,
+) -> Div {
     h_flex()
         .h_full()
         .w(px(GUTTER_WIDTH))
@@ -141,8 +146,8 @@ fn render_gutter(timestamp: Option<SharedString>, line_number: Option<SharedStri
         .gap_1()
         .justify_between()
         .border_r_1()
-        .border_color(rgb_to_u32(48, 43, 55))
-        .bg(rgb_to_u32(17, 16, 20))
+        .border_color(terminal_background)
+        .bg(terminal_background)
         .text_size(px(11.))
         .child(
             div()
@@ -178,7 +183,10 @@ fn terminal_color(color: TerminalRgb) -> Rgba {
     rgb_to_u32(color.red, color.green, color.blue)
 }
 
-fn render_terminal_text(fragments: Vec<super::selection::SelectedFragment>) -> StyledText {
+fn render_terminal_text(
+    fragments: Vec<super::selection::SelectedFragment>,
+    terminal_background: Hsla,
+) -> StyledText {
     let mut text = String::new();
     let mut runs = Vec::with_capacity(fragments.len());
     for fragment in fragments {
@@ -186,10 +194,12 @@ fn render_terminal_text(fragments: Vec<super::selection::SelectedFragment>) -> S
             continue;
         }
         let foreground = terminal_color(fragment.style.foreground);
-        let background = if fragment.selected {
-            rgb_to_u32(51, 65, 85)
+        let background: Hsla = if fragment.selected {
+            rgb_to_u32(51, 65, 85).into()
+        } else if fragment.style.background == super::buffer::default_background() {
+            terminal_background
         } else {
-            terminal_color(fragment.style.background)
+            terminal_color(fragment.style.background).into()
         };
         let len = fragment.text.len();
         text.push_str(&fragment.text);
@@ -210,7 +220,7 @@ fn render_terminal_text(fragments: Vec<super::selection::SelectedFragment>) -> S
                 ..Default::default()
             },
             color: foreground.into(),
-            background_color: Some(background.into()),
+            background_color: Some(background),
             underline: fragment.style.underline.then_some(UnderlineStyle {
                 thickness: px(1.),
                 color: Some(foreground.into()),

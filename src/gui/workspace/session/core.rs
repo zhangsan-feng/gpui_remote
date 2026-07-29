@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
 use gpui::{Context, ElementId};
+use gpui_component::ActiveTheme;
 
 use super::{OpenedWorkspaceSession, WorkspaceSession, ui::workspace_tab};
-use crate::global_state::read_global_state;
 use crate::{
+    component::theme,
     domain::{
         session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection},
         terminal::TerminalStatus,
     },
-    global_state::GlobalEvent,
+    global_state::{GlobalEvent, read_global_state},
 };
 
 impl WorkspaceSession {
@@ -89,11 +90,12 @@ impl WorkspaceSession {
         }
     }
 
-    fn rebuild_tabs(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn rebuild_tabs(&mut self, cx: &mut Context<Self>) {
         let sessions = self.sessions.clone();
         let statuses = self.statuses.clone();
         let selected_id = self.selected_id.clone();
         let workspace = cx.entity();
+        let colors = cx.theme().colors;
         self.tabs.update(cx, move |tabs, tabs_cx| {
             tabs.clear(tabs_cx);
             for opened_session in sessions {
@@ -108,6 +110,7 @@ impl WorkspaceSession {
                         opened_session.profile.clone(),
                         status.clone(),
                         workspace.clone(),
+                        colors,
                     )
                 });
             }
@@ -115,6 +118,27 @@ impl WorkspaceSession {
                 let selected_id = ElementId::from(selected_id);
                 tabs.set_selected_id(&selected_id, tabs_cx);
             }
+        });
+    }
+
+    pub(super) fn reset_tab_style(&mut self, cx: &mut Context<Self>) {
+        let has_wallpaper = theme::wallpaper(cx).is_some();
+        let tab_bar = if has_wallpaper {
+            gpui::Hsla::transparent_black().into()
+        } else {
+            cx.theme().tab_bar.into()
+        };
+        let background = if has_wallpaper {
+            gpui::Hsla::transparent_black().into()
+        } else {
+            cx.theme().background.into()
+        };
+        let list_hover = cx.theme().list_hover.into();
+        self.tabs.update(cx, move |tabs, tabs_cx| {
+            tabs.set_item_bg(tab_bar);
+            tabs.set_item_selected_bg(background);
+            tabs.set_item_hover_bg(list_hover);
+            tabs_cx.notify();
         });
     }
 

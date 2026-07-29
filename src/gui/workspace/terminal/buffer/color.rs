@@ -49,7 +49,7 @@ fn default_foreground() -> TerminalRgb {
     }
 }
 
-pub(super) fn default_background() -> TerminalRgb {
+pub(in crate::gui::workspace::terminal) fn default_background() -> TerminalRgb {
     TerminalRgb {
         red: 20,
         green: 18,

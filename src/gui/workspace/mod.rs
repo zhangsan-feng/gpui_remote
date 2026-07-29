@@ -5,10 +5,9 @@ mod terminal;
 mod ui;
 
 use gpui::*;
-use gpui_component::v_flex;
+use gpui_component::{ActiveTheme, v_flex};
 
-use crate::component::color::rgb_to_u32;
-use crate::global_state::read_global_state;
+use crate::component::theme;
 use session::{WorkspaceSession, terminal_statuses};
 use terminal::TerminalView;
 use ui::render_empty_workspace;
@@ -80,17 +79,27 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected_id = self.workspace.read(cx).selected_id().map(str::to_owned);
+        let colors = cx.theme();
+        let has_wallpaper = theme::wallpaper(cx).is_some();
         v_flex()
             .p_2()
             .gap_2()
             .size_full()
-            .bg(rgb_to_u32(255, 255, 255))
+            .bg(if has_wallpaper {
+                colors.background.opacity(0.15)
+            } else {
+                colors.background
+            })
             .child(
                 div()
                     .w_full()
                     .h(px(45.))
-                    .border_color(rgb_to_u32(225, 219, 230))
-                    .bg(rgb_to_u32(246, 243, 249))
+                    .border_color(colors.border)
+                    .bg(if has_wallpaper {
+                        Hsla::transparent_black()
+                    } else {
+                        colors.tab_bar
+                    })
                     .child(self.workspace.clone()),
             )
             .child(match selected_id {

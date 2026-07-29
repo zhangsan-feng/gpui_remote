@@ -8,7 +8,7 @@ use gpui_component::ElementExt;
 use tokio::sync::mpsc;
 
 use crate::{
-    component::color::rgb_to_u32,
+    component::{color::rgb_to_u32, theme},
     domain::terminal::{TerminalFrame, TerminalSessionCommand},
 };
 
@@ -83,6 +83,7 @@ impl TerminalScrollHandle {
 impl TerminalView {
     pub(super) fn render_scrollbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (thumb_top, thumb_size) = self.scroll_handle.thumb();
+        let terminal_background = theme::terminal_color(cx);
         let bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
         let bounds_writer = bounds.clone();
         let down_bounds = bounds.clone();
@@ -97,8 +98,8 @@ impl TerminalView {
             .w(px(SCROLLBAR_WIDTH))
             .cursor_pointer()
             .border_l_1()
-            .border_color(rgb_to_u32(55, 52, 62))
-            .bg(rgb_to_u32(31, 29, 36))
+            .border_color(terminal_background)
+            .bg(terminal_background)
             .on_prepaint(move |scrollbar_bounds, _, _| bounds_writer.set(scrollbar_bounds))
             .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                 let progress = scrollbar_progress(event.position, down_bounds.get(), thumb_size);

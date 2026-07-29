@@ -1,6 +1,8 @@
 mod color;
 mod core;
 
+pub(super) use color::default_background;
+
 use std::{collections::VecDeque, sync::Arc};
 
 use alacritty_terminal::{

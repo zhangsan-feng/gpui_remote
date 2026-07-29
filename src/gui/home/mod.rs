@@ -1,8 +1,9 @@
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{Root, v_flex};
 
 use crate::{
-    component::resizable_panel::ResizablePanel,
+    component::{resizable_panel::ResizablePanel, theme},
     gui::{session::SessionComponent, title_bar::AppTitleBar, workspace::Workspace},
 };
 
@@ -31,10 +32,26 @@ impl HomeView {
 
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        div()
+            .relative()
             .size_full()
-            .child(self.title_bar.clone())
-            .child(div().flex_1().overflow_hidden().child(self.content.clone()))
+            .when_some(theme::wallpaper(cx), |this, (path, opacity)| {
+                this.child(
+                    img(path)
+                        .absolute()
+                        .inset_0()
+                        .size_full()
+                        .object_fit(ObjectFit::Cover)
+                        .opacity(opacity),
+                )
+            })
+            .child(
+                v_flex()
+                    .relative()
+                    .size_full()
+                    .child(self.title_bar.clone())
+                    .child(div().flex_1().overflow_hidden().child(self.content.clone())),
+            )
             .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
             .children(Root::render_sheet_layer(window, cx))

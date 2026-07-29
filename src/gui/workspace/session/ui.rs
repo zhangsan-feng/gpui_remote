@@ -1,8 +1,8 @@
 use gpui::*;
-use gpui_component::h_flex;
+use gpui_component::{ActiveTheme, ThemeColor, h_flex};
 
 use crate::{
-    component::{color::rgb_to_u32, draggable_list::DraggableList},
+    component::{color::rgb_to_u32, draggable_list::DraggableList, theme},
     domain::{
         session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection},
         terminal::TerminalStatus,
@@ -11,14 +11,26 @@ use crate::{
 
 use super::WorkspaceSession;
 
-pub(super) fn new_workspace_tabs() -> DraggableList {
+pub(super) fn new_workspace_tabs(cx: &App) -> DraggableList {
+    let colors = cx.theme();
+    let has_wallpaper = theme::wallpaper(cx).is_some();
+    let item_bg = if has_wallpaper {
+        Hsla::transparent_black().into()
+    } else {
+        colors.tab_bar.into()
+    };
+    let selected_bg = if has_wallpaper {
+        Hsla::transparent_black().into()
+    } else {
+        colors.background.into()
+    };
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)
         .set_item_width(px(240.))
         .set_item_height(px(34.))
-        .set_item_bg(rgb_to_u32(246, 243, 249))
-        .set_item_selected_bg(rgb_to_u32(255, 255, 255))
-        .set_item_hover_bg(rgb_to_u32(238, 232, 243));
+        .set_item_bg(item_bg)
+        .set_item_selected_bg(selected_bg)
+        .set_item_hover_bg(colors.list_hover.into());
     tabs
 }
 
@@ -27,6 +39,7 @@ pub(in crate::gui::workspace) fn workspace_tab(
     profile: SessionProfile,
     status: TerminalStatus,
     workspace: Entity<WorkspaceSession>,
+    colors: ThemeColor,
 ) -> impl IntoElement {
     let session_id = workspace_session.id.clone();
     let close_id = workspace_session.id;
@@ -44,8 +57,8 @@ pub(in crate::gui::workspace) fn workspace_tab(
         .cursor_pointer()
         .rounded_lg()
         .border_1()
-        .border_color(rgb_to_u32(226, 219, 232))
-        .text_color(rgb_to_u32(72, 48, 91))
+        .border_color(colors.border)
+        .text_color(colors.foreground)
         .child(
             div()
                 .size(px(7.))
@@ -78,12 +91,8 @@ pub(in crate::gui::workspace) fn workspace_tab(
                 .justify_center()
                 .text_base()
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb_to_u32(126, 117, 138))
-                .hover(|style| {
-                    style
-                        .bg(rgb_to_u32(235, 226, 241))
-                        .text_color(rgb_to_u32(81, 55, 101))
-                })
+                .text_color(colors.muted_foreground)
+                .hover(|style| style.bg(colors.accent).text_color(colors.accent_foreground))
                 .child("×")
                 .on_click({
                     let workspace = workspace.clone();

@@ -2,7 +2,7 @@ use gpui::*;
 use gpui_component::v_flex;
 
 use crate::{
-    component::color::rgb_to_u32,
+    component::{color::rgb_to_u32, theme},
     domain::terminal::{TerminalSessionCommand, TerminalStatus},
 };
 
@@ -68,8 +68,8 @@ impl TerminalView {
                     cx.stop_propagation();
                 }
             })
-            .bg(rgb_to_u32(20, 18, 24))
-            .text_color(rgb_to_u32(226, 232, 240))
+            .bg(theme::terminal_color(cx))
+            .text_color(contrast_text(theme::terminal_base_color(cx)))
             .child(content)
             .into_any_element()
     }
@@ -112,6 +112,14 @@ impl TerminalView {
             self.resize(workspace_id, columns, rows);
             self.last_pty_size = Some(pty_size);
         }
+    }
+}
+
+fn contrast_text(background: Hsla) -> Hsla {
+    if background.l < 0.48 {
+        rgb_to_u32(226, 232, 240).into()
+    } else {
+        rgb_to_u32(30, 41, 59).into()
     }
 }
 

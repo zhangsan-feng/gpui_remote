@@ -1,8 +1,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::ActiveTheme;
 
 use super::AppTitleBar;
-use crate::component::color::rgb_to_u32;
 
 impl AppTitleBar {
     pub(super) fn window_button(
@@ -10,7 +10,7 @@ impl AppTitleBar {
         id: &'static str,
         label: &'static str,
         control: WindowControlArea,
-        hover_color: Rgba,
+        hover_color: Hsla,
         cx: &Context<Self>,
     ) -> AnyElement {
         div()
@@ -19,7 +19,7 @@ impl AppTitleBar {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(rgb_to_u32(73, 66, 92))
+            .text_color(cx.theme().foreground)
             .hover(move |style| style.bg(hover_color))
             .window_control_area(control)
             .when(cfg!(target_os = "linux"), move |this| {

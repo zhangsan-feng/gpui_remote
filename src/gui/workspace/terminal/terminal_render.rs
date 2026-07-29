@@ -15,7 +15,6 @@ use super::{
 };
 
 pub(super) const GUTTER_WIDTH: f32 = 116.0;
-const TEXT_PADDING: f32 = 8.0;
 
 impl TerminalView {
     pub(super) fn render_terminal_list(
@@ -66,6 +65,7 @@ impl TerminalView {
                         .min_w_0()
                         .pl_2()
                         .pr_3()
+                        .cursor_text()
                         .overflow_hidden()
                         .on_prepaint(move |bounds, _, _| text_bounds_writer.set(bounds))
                         .on_mouse_down(MouseButton::Left, move |event, _, cx| {
@@ -166,7 +166,7 @@ fn terminal_point(
     bounds: Bounds<Pixels>,
     cell_width: Pixels,
 ) -> TerminalPoint {
-    let local_x = (f32::from(position.x - bounds.origin.x) - TEXT_PADDING).max(0.0);
+    let local_x = f32::from(position.x - bounds.origin.x).max(0.0);
     let clicked_column = (local_x / f32::from(cell_width)).floor() as usize;
     TerminalPoint {
         row,

@@ -9,12 +9,7 @@ impl TerminalView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(workspace_id) = self
-            .workspace
-            .read(cx)
-            .active_session_id()
-            .map(str::to_owned)
-        else {
+        let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
         let terminal_model = self.model(&workspace_id);
@@ -45,7 +40,7 @@ impl TerminalView {
     }
 
     fn send_action_input(&self, bytes: &[u8], cx: &App) {
-        let Some(workspace_id) = self.workspace.read(cx).active_session_id() else {
+        let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
             return;
         };
         self.send_input(workspace_id, bytes.to_vec());

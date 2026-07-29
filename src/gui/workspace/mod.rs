@@ -1,62 +1,35 @@
-mod core;
 mod session;
+mod sftp;
 mod terminal;
 mod ui;
-mod sftp;
-
-use std::collections::HashMap;
 
 use gpui::*;
 use gpui_component::v_flex;
 
-use crate::{
-    component::{color::rgb_to_u32, draggable_list::DraggableList},
-    domain::terminal::TerminalStatus,
-};
-
+use crate::component::color::rgb_to_u32;
 use crate::global_state::read_global_state;
-use core::{tab_statuses, workspace_state_data};
-use session::WorkspaceSession;
+use session::{WorkspaceSession, terminal_statuses};
 use terminal::TerminalView;
 use ui::render_empty_workspace;
 
 pub struct Workspace {
-    tabs: Entity<DraggableList>,
     workspace: Entity<WorkspaceSession>,
     terminal: Entity<TerminalView>,
-    tab_statuses: HashMap<String, TerminalStatus>,
 }
 
 impl Workspace {
     pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         terminal::init(cx);
-        let global_state = read_global_state(cx);
-        let workspace = cx.new(|cx| WorkspaceSession::new(global_state, cx));
-        let terminal = cx.new(|cx| TerminalView::new(workspace.clone(), cx));
-        let tabs = cx.new(|_| {
-            let mut tabs = DraggableList::new();
-            tabs.set_axis(Axis::Horizontal)
-                .set_item_width(px(240.))
-                .set_item_height(px(34.))
-                .set_item_bg(rgb_to_u32(246, 243, 249))
-                .set_item_hover_bg(rgb_to_u32(238, 232, 243));
-            tabs
-        });
+
+        let workspace = cx.new(|cx| WorkspaceSession::new(cx));
+        let terminal = cx.new(TerminalView::new);
 
         let terminal_updates = terminal.read(cx).status_updates();
         cx.spawn(async move |this, cx| {
             loop {
                 terminal_updates.notified().await;
                 if this
-                    .update(cx, |this, cx| {
-                        let (session_data, active_id) =
-                            workspace_state_data(this.workspace.read(cx), this.terminal.read(cx));
-                        let statuses = tab_statuses(&session_data);
-                        if statuses != this.tab_statuses {
-                            this.populate_tabs(session_data, active_id, cx);
-                            cx.notify();
-                        }
-                    })
+                    .update(cx, |this, cx| this.refresh_session_statuses(cx))
                     .is_err()
                 {
                     break;
@@ -65,37 +38,42 @@ impl Workspace {
         })
         .detach();
 
-        let mut this = Self {
-            tabs,
+        let this = Self {
             workspace,
             terminal,
-            tab_statuses: HashMap::new(),
         };
-        this.start_subscription(cx);
-        let (session_data, active_id) =
-            workspace_state_data(this.workspace.read(cx), this.terminal.read(cx));
-        this.populate_tabs(session_data, active_id, cx);
-        this
-    }
-
-    pub(super) fn start_subscription(&self, cx: &mut Context<Self>) {
-        cx.subscribe(&self.workspace, |this, _, _event, cx| {
-            let (session_data, active_id) =
-                workspace_state_data(this.workspace.read(cx), this.terminal.read(cx));
-            this.populate_tabs(session_data, active_id, cx);
+        cx.observe(&this.workspace, |this, _, cx| {
+            this.sync_selected_terminal(cx);
             cx.notify();
         })
         .detach();
+        this.sync_selected_terminal(cx);
+        this.refresh_session_statuses(cx);
+        this
+    }
+
+    fn sync_selected_terminal(&self, cx: &mut Context<Self>) {
+        let selected_id = self.workspace.read(cx).selected_id().map(str::to_owned);
+        self.terminal.update(cx, |terminal, cx| {
+            terminal.set_selected_workspace(selected_id, cx);
+        });
+    }
+
+    fn refresh_session_statuses(&self, cx: &mut Context<Self>) {
+        let statuses = terminal_statuses(self.workspace.read(cx).sessions(), |id| {
+            self.terminal
+                .read(cx)
+                .model(id)
+                .map(|model| model.read().status.clone())
+        });
+        self.workspace
+            .update(cx, |workspace, cx| workspace.update_statuses(statuses, cx));
     }
 }
 
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_id = self
-            .workspace
-            .read(cx)
-            .active_session_id()
-            .map(str::to_owned);
+        let selected_id = self.workspace.read(cx).selected_id().map(str::to_owned);
         v_flex()
             .p_2()
             .gap_2()
@@ -107,9 +85,9 @@ impl Render for Workspace {
                     .h(px(45.))
                     .border_color(rgb_to_u32(225, 219, 230))
                     .bg(rgb_to_u32(246, 243, 249))
-                    .child(self.tabs.clone()),
+                    .child(self.workspace.clone()),
             )
-            .child(match active_id {
+            .child(match selected_id {
                 Some(_) => self.terminal.clone().into_any_element(),
                 None => render_empty_workspace().into_any_element(),
             })

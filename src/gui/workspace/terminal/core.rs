@@ -3,6 +3,19 @@ use gpui::*;
 use super::*;
 
 impl TerminalView {
+    pub(in crate::gui::workspace) fn set_selected_workspace(
+        &mut self,
+        workspace_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_workspace_id == workspace_id {
+            return;
+        }
+        self.selected_workspace_id = workspace_id;
+        self.reset_active_view();
+        cx.notify();
+    }
+
     pub(super) fn reset_active_view(&mut self) {
         self.listed_workspace_id = None;
         self.last_pty_size = None;
@@ -12,13 +25,13 @@ impl TerminalView {
     }
 
     pub(super) fn notify_if_model_changed(&mut self, cx: &mut Context<Self>) {
-        let current_revision = {
-            let workspace = self.workspace.read(cx);
-            workspace.active_session_id().and_then(|workspace_id| {
+        let current_revision = self
+            .selected_workspace_id
+            .as_deref()
+            .and_then(|workspace_id| {
                 self.model(workspace_id)
                     .map(|model| (workspace_id.to_owned(), model.revision()))
-            })
-        };
+            });
         if current_revision != self.observed_revision {
             self.observed_revision = current_revision;
             cx.notify();

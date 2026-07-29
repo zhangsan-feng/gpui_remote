@@ -7,7 +7,11 @@ pub enum GlobalEvent {
     CreateSession,
     UpdateSession,
     CreateActiveSession(SessionProfile),
-    SessionProfileDeleted(String),
+    CreateActiveSessionTerminal {
+        workspace_id: String,
+        profile: SessionProfile,
+    },
+    CloseActiveSession(String),
 }
 
 pub struct GlobalState {}

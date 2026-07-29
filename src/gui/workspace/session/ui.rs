@@ -2,7 +2,7 @@ use gpui::*;
 use gpui_component::h_flex;
 
 use crate::{
-    component::color::rgb_to_u32,
+    component::{color::rgb_to_u32, draggable_list::DraggableList},
     domain::{
         session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection},
         terminal::TerminalStatus,
@@ -11,11 +11,21 @@ use crate::{
 
 use super::WorkspaceSession;
 
+pub(super) fn new_workspace_tabs() -> DraggableList {
+    let mut tabs = DraggableList::new();
+    tabs.set_axis(Axis::Horizontal)
+        .set_item_width(px(240.))
+        .set_item_height(px(34.))
+        .set_item_bg(rgb_to_u32(246, 243, 249))
+        .set_item_selected_bg(rgb_to_u32(255, 255, 255))
+        .set_item_hover_bg(rgb_to_u32(238, 232, 243));
+    tabs
+}
+
 pub(in crate::gui::workspace) fn workspace_tab(
     workspace_session: WorkspaceSessionConnection,
     profile: SessionProfile,
     status: TerminalStatus,
-    active: bool,
     workspace: Entity<WorkspaceSession>,
 ) -> impl IntoElement {
     let session_id = workspace_session.id.clone();
@@ -35,16 +45,7 @@ pub(in crate::gui::workspace) fn workspace_tab(
         .rounded_lg()
         .border_1()
         .border_color(rgb_to_u32(226, 219, 232))
-        .bg(if active {
-            rgb_to_u32(255, 255, 255)
-        } else {
-            rgb_to_u32(246, 243, 249)
-        })
-        .text_color(if active {
-            rgb_to_u32(72, 48, 91)
-        } else {
-            rgb_to_u32(119, 110, 132)
-        })
+        .text_color(rgb_to_u32(72, 48, 91))
         .child(
             div()
                 .size(px(7.))

@@ -53,14 +53,13 @@ impl SessionComponent {
     pub(super) fn start_subscribe(&self, cx: &mut Context<Self>) {
         let global_events = read_global_state(cx);
         cx.subscribe(&global_events, |this, _, event, cx| {
-            if matches!(
-                event,
-                GlobalEvent::CreateSession | GlobalEvent::UpdateSession
-            ) {
-                if let Err(error) = this.reload_session(cx) {
-                    this.core_err = Some(error);
-                    cx.notify();
-                }
+            match event {
+                GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
+                _ => return,
+            }
+            if let Err(error) = this.reload_session(cx) {
+                this.core_err = Some(error);
+                cx.notify();
             }
         })
         .detach();

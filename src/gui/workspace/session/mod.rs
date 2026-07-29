@@ -1,12 +1,16 @@
 mod core;
 mod ui;
 
-use gpui::{Context, Entity, EventEmitter};
+use std::collections::HashMap;
 
+use gpui::*;
+
+use crate::component::draggable_list::DraggableList;
 use crate::domain::session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection};
-use crate::global_state::{GlobalEvent, GlobalState};
+use crate::domain::terminal::TerminalStatus;
+use crate::global_state::{read_global_state, GlobalEvent, GlobalState};
 
-pub(super) use ui::workspace_tab;
+pub(super) use core::terminal_statuses;
 
 #[derive(Clone, Debug)]
 pub(super) struct OpenedWorkspaceSession {
@@ -14,36 +18,36 @@ pub(super) struct OpenedWorkspaceSession {
     pub(super) profile: SessionProfile,
 }
 
-#[derive(Clone, Debug)]
-pub(super) enum WorkspaceSessionEvent {
-    Changed,
-    Opened {
-        workspace_id: String,
-        profile: SessionProfile,
-    },
-    Closed {
-        workspace_ids: Vec<String>,
-    },
-}
-
 pub(super) struct WorkspaceSession {
     sessions: Vec<OpenedWorkspaceSession>,
-    active_session_id: Option<String>,
+    tabs: Entity<DraggableList>,
+    selected_id: Option<String>,
+    statuses: HashMap<String, TerminalStatus>,
+
 }
 
 impl WorkspaceSession {
-    pub fn new(global_state: Entity<GlobalState>, cx: &mut Context<Self>) -> Self {
-        cx.subscribe(&global_state, |this, _, event, cx| match event {
-            GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
-            GlobalEvent::CreateActiveSession(profile) => this.open(profile.clone(), cx),
-            GlobalEvent::SessionProfileDeleted(profile_id) => this.close_profile(profile_id, cx),
-        }).detach();
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        let global_state = read_global_state(cx);
+        cx.subscribe(&global_state, |this, _, event, cx| {
+            let GlobalEvent::CreateActiveSession(profile) = event else {
+                return;
+            };
+            this.open(profile.clone(), cx);
+        })
+        .detach();
 
         Self {
             sessions: Vec::new(),
-            active_session_id: None,
+            tabs: cx.new(|_| ui::new_workspace_tabs()),
+            selected_id: None,
+            statuses: HashMap::new(),
         }
     }
 }
 
-impl EventEmitter<WorkspaceSessionEvent> for WorkspaceSession {}
+impl Render for WorkspaceSession {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(self.tabs.clone())
+    }
+}

@@ -14,7 +14,8 @@ use gpui::*;
 use serde::Deserialize;
 use tokio::sync::Notify;
 
-use super::session::{WorkspaceSession, WorkspaceSessionEvent};
+use crate::global_state::{GlobalEvent, read_global_state};
+
 use pty::TerminalRuntime;
 use scroll::TerminalScrollHandle;
 use selection::TerminalSelection;
@@ -38,8 +39,8 @@ struct CopyTerminal;
 struct PasteTerminal;
 
 pub(super) struct TerminalView {
-    workspace: Entity<WorkspaceSession>,
     terminals: HashMap<String, TerminalRuntime>,
+    selected_workspace_id: Option<String>,
     updates: Arc<Notify>,
     status_updates: Arc<Notify>,
     focus: FocusHandle,
@@ -50,7 +51,6 @@ pub(super) struct TerminalView {
     selection: Option<TerminalSelection>,
     selecting_text: bool,
     scroll_handle: TerminalScrollHandle,
-    _state_subscription: Subscription,
 }
 
 pub(in crate::gui::workspace) fn init(cx: &mut App) {
@@ -77,32 +77,12 @@ fn terminal_cell_width(window: &Window) -> Pixels {
 }
 
 impl TerminalView {
-    pub(in crate::gui::workspace) fn new(
-        workspace: Entity<WorkspaceSession>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
         let updates = Arc::new(Notify::new());
         let status_updates = Arc::new(Notify::new());
         let list_state = ListState::new(0, ListAlignment::Top, px(256.))
             .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
         list_state.set_follow_mode(FollowMode::Tail);
-
-        let state_subscription = cx.subscribe(&workspace, |this, _, event, cx| {
-            match event {
-                WorkspaceSessionEvent::Changed => {}
-                WorkspaceSessionEvent::Opened {
-                    workspace_id,
-                    profile,
-                } => this.connect(workspace_id.clone(), profile.clone()),
-                WorkspaceSessionEvent::Closed { workspace_ids } => {
-                    for workspace_id in workspace_ids {
-                        this.close(workspace_id);
-                    }
-                }
-            }
-            this.reset_active_view();
-            cx.notify();
-        });
 
         let terminal_updates = updates.clone();
         cx.spawn(async move |this, cx| {
@@ -118,9 +98,9 @@ impl TerminalView {
         })
         .detach();
 
-        Self {
-            workspace,
+        let this = Self {
             terminals: HashMap::new(),
+            selected_workspace_id: None,
             updates,
             status_updates,
             focus: cx.focus_handle(),
@@ -131,8 +111,27 @@ impl TerminalView {
             selection: None,
             selecting_text: false,
             scroll_handle: TerminalScrollHandle::default(),
-            _state_subscription: state_subscription,
-        }
+        };
+        this.start_subscribe(cx);
+        this
+    }
+
+    fn start_subscribe(&self, cx: &mut Context<Self>) {
+        let global_state = read_global_state(cx);
+
+        cx.subscribe(&global_state, |this, _, event, cx| {
+            match event {
+                GlobalEvent::CreateActiveSessionTerminal {
+                    workspace_id,
+                    profile,
+                } => this.connect(workspace_id.clone(), profile.clone()),
+                GlobalEvent::CloseActiveSession(workspace_id) => this.close(workspace_id),
+                _ => return,
+            }
+            this.reset_active_view();
+            cx.notify();
+        })
+        .detach();
     }
 }
 

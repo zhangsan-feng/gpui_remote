@@ -77,10 +77,6 @@ impl SessionComponent {
         let result = cx.global::<Storage>().session.delete(&action.0);
         match result {
             Ok(()) => {
-                let profile_id = action.0.clone();
-                read_global_state(cx).update(cx, |_, cx| {
-                    cx.emit(GlobalEvent::SessionProfileDeleted(profile_id));
-                });
                 if let Err(error) = self.reload_session(cx) {
                     self.core_err = Some(error);
                     cx.notify();

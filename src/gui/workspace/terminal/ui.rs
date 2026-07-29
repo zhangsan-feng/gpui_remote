@@ -14,12 +14,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(workspace_id) = self
-            .workspace
-            .read(cx)
-            .active_session_id()
-            .map(str::to_owned)
-        else {
+        let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return div().size_full().into_any_element();
         };
         let Some(terminal_model) = self.model(&workspace_id) else {

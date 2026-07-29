@@ -104,6 +104,13 @@ async fn apply_command(
             buffer.scroll_to(offset);
             *dirty = true;
         }
+        Some(TerminalSessionCommand::Read {
+            offset,
+            limit,
+            reply,
+        }) => {
+            let _ = reply.send(buffer.read_text(offset, limit));
+        }
         Some(TerminalSessionCommand::Disconnect) | None => {
             return Ok(false);
         }

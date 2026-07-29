@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use gpui::{Context, ElementId};
 
+use super::{OpenedWorkspaceSession, WorkspaceSession, ui::workspace_tab};
+use crate::global_state::read_global_state;
 use crate::{
     domain::{
         session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection},
@@ -9,8 +11,6 @@ use crate::{
     },
     global_state::GlobalEvent,
 };
-use crate::global_state::read_global_state;
-use super::{OpenedWorkspaceSession, WorkspaceSession, ui::workspace_tab};
 
 impl WorkspaceSession {
     pub fn sessions(&self) -> &[OpenedWorkspaceSession] {
@@ -51,9 +51,14 @@ impl WorkspaceSession {
         cx.notify();
     }
 
-    pub(super) fn open(&mut self, profile: SessionProfile, cx: &mut Context<Self>) {
+    pub(in crate::gui::workspace) fn open(
+        &mut self,
+        profile: SessionProfile,
+        cx: &mut Context<Self>,
+    ) -> String {
         let session = WorkspaceSessionConnection::new(profile.id.clone());
         let workspace_id = session.id.clone();
+        let opened_workspace_id = workspace_id.clone();
         let terminal_profile = profile.clone();
         self.sessions
             .push(OpenedWorkspaceSession { session, profile });
@@ -70,6 +75,7 @@ impl WorkspaceSession {
             });
         });
         cx.notify();
+        opened_workspace_id
     }
 
     pub(in crate::gui::workspace) fn update_statuses(

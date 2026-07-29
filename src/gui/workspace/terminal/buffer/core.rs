@@ -8,7 +8,8 @@ use alacritty_terminal::{
 };
 
 use crate::domain::terminal::{
-    TerminalFrame, TerminalLine, TerminalSessionCommand, TerminalSpan, TerminalStyle,
+    TerminalFrame, TerminalHistoryPage, TerminalLine, TerminalSessionCommand, TerminalSpan,
+    TerminalStyle,
 };
 
 use super::{
@@ -152,16 +153,60 @@ impl TerminalBuffer {
         }
     }
 
+    pub(in crate::gui::workspace::terminal) fn read_text(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> TerminalHistoryPage {
+        let grid = self.terminal.grid();
+        let total_lines = grid.total_lines();
+        let offset = offset.min(total_lines);
+        let end = total_lines.saturating_sub(offset);
+        let start = end.saturating_sub(limit);
+        let history_size = total_lines.saturating_sub(grid.screen_lines());
+        let mut text = String::new();
+
+        for index in start..end {
+            let row = index as i32 - history_size as i32;
+            let Some(line) = self.line_at_row(row) else {
+                continue;
+            };
+            for span in line.spans {
+                text.push_str(&span.text);
+            }
+            if !line.wrapped {
+                text.push('\n');
+            }
+        }
+
+        TerminalHistoryPage {
+            text,
+            total_lines,
+            offset,
+            limit: end.saturating_sub(start),
+            has_more: start > 0,
+        }
+    }
+
     fn line(&self, index: usize) -> Option<TerminalLine> {
         let grid = self.terminal.grid();
         if index >= grid.screen_lines() {
+            return None;
+        }
+        let row = index as i32 - grid.display_offset() as i32;
+        self.line_at_row(row)
+    }
+
+    fn line_at_row(&self, row: i32) -> Option<TerminalLine> {
+        let grid = self.terminal.grid();
+        let history_size = grid.total_lines().saturating_sub(grid.screen_lines());
+        if row < -(history_size as i32) || row >= grid.screen_lines() as i32 {
             return None;
         }
         let colors = *self.terminal.renderable_content().colors;
         let cursor = grid.cursor.point;
         let show_cursor =
             grid.display_offset() == 0 && self.terminal.mode().contains(TermMode::SHOW_CURSOR);
-        let row = index as i32 - grid.display_offset() as i32;
         let wrapped = grid.columns() > 0
             && grid[Line(row)][Column(grid.columns() - 1)]
                 .flags

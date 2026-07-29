@@ -1,6 +1,6 @@
 mod buffer;
 mod core;
-mod keyboard;
+pub(crate) mod keyboard;
 mod pty;
 mod scroll;
 mod selection;

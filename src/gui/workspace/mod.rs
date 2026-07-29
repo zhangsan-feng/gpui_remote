@@ -1,3 +1,4 @@
+mod agent_mcp;
 mod session;
 mod sftp;
 mod terminal;
@@ -21,6 +22,10 @@ impl Workspace {
     pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         terminal::init(cx);
 
+        let (agent_mcp_client, agent_mcp_receiver) =
+            crate::application::agent_mcp::agent_mcp_channel();
+        crate::infrastructure::agent_mcp::start(agent_mcp_client);
+
         let workspace = cx.new(|cx| WorkspaceSession::new(cx));
         let terminal = cx.new(TerminalView::new);
 
@@ -42,6 +47,7 @@ impl Workspace {
             workspace,
             terminal,
         };
+        this.start_agent_mcp(agent_mcp_receiver, cx);
         cx.observe(&this.workspace, |this, _, cx| {
             this.sync_selected_terminal(cx);
             cx.notify();

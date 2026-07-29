@@ -47,8 +47,80 @@ impl TerminalView {
     }
 }
 
+pub(in crate::gui::workspace) fn encode_agent_key(
+    key: &str,
+    control: bool,
+    alt: bool,
+    shift: bool,
+    application_cursor: bool,
+) -> Option<Vec<u8>> {
+    let normalized_key = key.to_ascii_lowercase();
+    if let Some(sequence) = encode_special_key(&normalized_key, application_cursor) {
+        let mut bytes = Vec::with_capacity(sequence.len() + usize::from(alt));
+        if alt {
+            bytes.push(0x1b);
+        }
+        bytes.extend_from_slice(sequence.as_bytes());
+        return Some(bytes);
+    }
+
+    if control {
+        let byte = match key.as_bytes() {
+            [letter] if letter.is_ascii_alphabetic() => letter.to_ascii_lowercase() & 0x1f,
+            [b' '] | [b'@'] => 0,
+            [b'['] => 0x1b,
+            [b'\\'] => 0x1c,
+            [b']'] => 0x1d,
+            [b'^'] => 0x1e,
+            [b'_'] => 0x1f,
+            _ => return None,
+        };
+        return Some(vec![byte]);
+    }
+
+    let text = if shift && key.chars().count() == 1 {
+        key.to_uppercase()
+    } else {
+        key.to_owned()
+    };
+    let mut bytes = Vec::with_capacity(text.len() + usize::from(alt));
+    if alt {
+        bytes.push(0x1b);
+    }
+    bytes.extend_from_slice(text.as_bytes());
+    Some(bytes)
+}
+
 fn encode_keystroke(keystroke: &Keystroke, application_cursor: bool) -> Option<Vec<u8>> {
-    let special = match keystroke.key.as_str() {
+    if let Some(sequence) = encode_special_key(&keystroke.key, application_cursor) {
+        return Some(sequence.as_bytes().to_vec());
+    }
+
+    if keystroke.modifiers.control {
+        let byte = match keystroke.key.as_bytes() {
+            [letter] if letter.is_ascii_alphabetic() => letter.to_ascii_lowercase() & 0x1f,
+            [b' '] | [b'@'] => 0,
+            [b'['] => 0x1b,
+            [b'\\'] => 0x1c,
+            [b']'] => 0x1d,
+            [b'^'] => 0x1e,
+            [b'_'] => 0x1f,
+            _ => return None,
+        };
+        return Some(vec![byte]);
+    }
+
+    let text = keystroke.key_char.as_ref()?;
+    let mut bytes = Vec::with_capacity(text.len() + usize::from(keystroke.modifiers.alt));
+    if keystroke.modifiers.alt {
+        bytes.push(0x1b);
+    }
+    bytes.extend_from_slice(text.as_bytes());
+    Some(bytes)
+}
+
+fn encode_special_key(key: &str, application_cursor: bool) -> Option<&'static str> {
+    match key {
         "enter" => Some("\r"),
         "backspace" => Some("\x7f"),
         "tab" => Some("\t"),
@@ -100,30 +172,5 @@ fn encode_keystroke(keystroke: &Keystroke, application_cursor: bool) -> Option<V
         "f11" => Some("\x1b[23~"),
         "f12" => Some("\x1b[24~"),
         _ => None,
-    };
-    if let Some(sequence) = special {
-        return Some(sequence.as_bytes().to_vec());
     }
-
-    if keystroke.modifiers.control {
-        let byte = match keystroke.key.as_bytes() {
-            [letter] if letter.is_ascii_alphabetic() => letter.to_ascii_lowercase() & 0x1f,
-            [b' '] | [b'@'] => 0,
-            [b'['] => 0x1b,
-            [b'\\'] => 0x1c,
-            [b']'] => 0x1d,
-            [b'^'] => 0x1e,
-            [b'_'] => 0x1f,
-            _ => return None,
-        };
-        return Some(vec![byte]);
-    }
-
-    let text = keystroke.key_char.as_ref()?;
-    let mut bytes = Vec::with_capacity(text.len() + usize::from(keystroke.modifiers.alt));
-    if keystroke.modifiers.alt {
-        bytes.push(0x1b);
-    }
-    bytes.extend_from_slice(text.as_bytes());
-    Some(bytes)
 }

@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+mod application;
 mod build_info;
 mod component;
 mod domain;

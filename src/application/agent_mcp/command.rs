@@ -1,0 +1,41 @@
+use tokio::sync::oneshot;
+
+use super::{ProfileSummary, TerminalReadPage, TerminalSummary};
+
+pub type AgentMcpResult<T> = Result<T, String>;
+
+pub enum AgentMcpCommand {
+    ListProfiles {
+        reply: oneshot::Sender<AgentMcpResult<Vec<ProfileSummary>>>,
+    },
+    OpenSession {
+        profile_id: String,
+        reply: oneshot::Sender<AgentMcpResult<String>>,
+    },
+    ListTerminals {
+        reply: oneshot::Sender<AgentMcpResult<Vec<TerminalSummary>>>,
+    },
+    SelectTerminal {
+        workspace_id: String,
+        reply: oneshot::Sender<AgentMcpResult<()>>,
+    },
+    ReadTerminal {
+        workspace_id: Option<String>,
+        offset: usize,
+        limit: usize,
+        reply: oneshot::Sender<AgentMcpResult<TerminalReadPage>>,
+    },
+    SendText {
+        workspace_id: Option<String>,
+        text: String,
+        reply: oneshot::Sender<AgentMcpResult<()>>,
+    },
+    SendKey {
+        workspace_id: Option<String>,
+        key: String,
+        control: bool,
+        alt: bool,
+        shift: bool,
+        reply: oneshot::Sender<AgentMcpResult<()>>,
+    },
+}

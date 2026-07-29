@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tokio::sync::oneshot;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TerminalRgb {
@@ -53,10 +54,31 @@ pub struct TerminalData {
     pub message: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct TerminalHistoryPage {
+    pub text: String,
+    pub total_lines: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub has_more: bool,
+}
+
 pub enum TerminalSessionCommand {
     Input(Vec<u8>),
-    Resize { columns: u32, rows: u32 },
-    Scroll { lines: i32 },
-    ScrollTo { offset: usize },
+    Resize {
+        columns: u32,
+        rows: u32,
+    },
+    Scroll {
+        lines: i32,
+    },
+    ScrollTo {
+        offset: usize,
+    },
+    Read {
+        offset: usize,
+        limit: usize,
+        reply: oneshot::Sender<TerminalHistoryPage>,
+    },
     Disconnect,
 }

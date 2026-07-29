@@ -1,2 +1,2 @@
-mod agent_mcp;
+pub(crate) mod agent_mcp;
 pub mod storage;

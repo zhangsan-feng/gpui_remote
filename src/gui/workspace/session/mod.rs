@@ -8,7 +8,7 @@ use gpui::*;
 use crate::component::draggable_list::DraggableList;
 use crate::domain::session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection};
 use crate::domain::terminal::TerminalStatus;
-use crate::global_state::{read_global_state, GlobalEvent, GlobalState};
+use crate::global_state::{GlobalEvent, read_global_state};
 
 pub(super) use core::terminal_statuses;
 
@@ -23,7 +23,6 @@ pub(super) struct WorkspaceSession {
     tabs: Entity<DraggableList>,
     selected_id: Option<String>,
     statuses: HashMap<String, TerminalStatus>,
-
 }
 
 impl WorkspaceSession {

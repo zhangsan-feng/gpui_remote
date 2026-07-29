@@ -136,14 +136,14 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn command_sender(
+    pub(in crate::gui::workspace) fn command_sender(
         &self,
         workspace_id: &str,
     ) -> Option<mpsc::UnboundedSender<TerminalSessionCommand>> {
         Some(self.terminals.get(workspace_id)?.commands.clone())
     }
 
-    pub(super) fn send_input(&self, workspace_id: &str, input: Vec<u8>) {
+    pub(in crate::gui::workspace) fn send_input(&self, workspace_id: &str, input: Vec<u8>) {
         if let Some(terminal) = self.terminals.get(workspace_id) {
             let _ = terminal.commands.send(TerminalSessionCommand::Input(input));
         }

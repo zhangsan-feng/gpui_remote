@@ -1,4 +1,6 @@
 mod core;
+mod external;
+mod internal;
 mod ui;
 
 use std::collections::HashMap;
@@ -6,15 +8,14 @@ use std::collections::HashMap;
 use gpui::*;
 
 use crate::component::draggable_list::DraggableList;
-use crate::domain::session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection};
+use crate::domain::session::SessionProfile;
 use crate::domain::terminal::TerminalStatus;
-use crate::global_state::{GlobalEvent, read_global_state};
 
-pub(super) use core::terminal_statuses;
+pub(super) use external::terminal_statuses;
 
 #[derive(Clone, Debug)]
 pub(super) struct OpenedWorkspaceSession {
-    pub(super) session: WorkspaceSessionConnection,
+    pub(super) id: String,
     pub(super) profile: SessionProfile,
 }
 
@@ -27,26 +28,14 @@ pub(super) struct WorkspaceSession {
 
 impl WorkspaceSession {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let global_state = read_global_state(cx);
-        cx.subscribe(&global_state, |this, _, event, cx| match event {
-            GlobalEvent::CreateActiveSession(profile) => {
-                this.open(profile.clone(), cx);
-            }
-            GlobalEvent::ThemeChanged => {
-                this.reset_tab_style(cx);
-                this.rebuild_tabs(cx);
-                cx.notify();
-            }
-            _ => {}
-        })
-        .detach();
-
-        Self {
+        let this = Self {
             sessions: Vec::new(),
             tabs: cx.new(|cx| ui::new_workspace_tabs(cx)),
             selected_id: None,
             statuses: HashMap::new(),
-        }
+        };
+        this.start_subscribe(cx);
+        this
     }
 }
 

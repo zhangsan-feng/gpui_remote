@@ -8,7 +8,12 @@ pub enum AgentMcpCommand {
     ListProfiles {
         reply: oneshot::Sender<AgentMcpResult<Vec<ProfileSummary>>>,
     },
-    OpenSession {
+    Ssh(AgentSshCommand),
+    Sftp(AgentSftpCommand),
+}
+
+pub enum AgentSshCommand {
+    Open {
         profile_id: String,
         reply: oneshot::Sender<AgentMcpResult<String>>,
     },
@@ -37,5 +42,12 @@ pub enum AgentMcpCommand {
         alt: bool,
         shift: bool,
         reply: oneshot::Sender<AgentMcpResult<()>>,
+    },
+}
+
+pub enum AgentSftpCommand {
+    Open {
+        profile_id: String,
+        reply: oneshot::Sender<AgentMcpResult<String>>,
     },
 }

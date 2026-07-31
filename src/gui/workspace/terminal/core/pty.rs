@@ -6,11 +6,11 @@ use std::sync::{
 use tokio::sync::{Notify, mpsc};
 
 use crate::domain::{
-    session::SessionProfile,
+    session::{Protocol, SessionProfile},
     terminal::{TerminalData, TerminalFrame, TerminalSessionCommand, TerminalStatus},
 };
 
-use super::{TerminalView, ssh::run_ssh_session};
+use super::{super::TerminalView, ssh::run_ssh_session};
 
 pub(in crate::gui::workspace) struct TerminalModel {
     data: RwLock<TerminalData>,
@@ -19,9 +19,9 @@ pub(in crate::gui::workspace) struct TerminalModel {
     status_updates: Arc<Notify>,
 }
 
-pub(super) struct TerminalRuntime {
-    model: Arc<TerminalModel>,
-    commands: mpsc::UnboundedSender<TerminalSessionCommand>,
+pub(in crate::gui::workspace::terminal) struct TerminalRuntime {
+    pub(in crate::gui::workspace::terminal) model: Arc<TerminalModel>,
+    pub(in crate::gui::workspace::terminal) commands: mpsc::UnboundedSender<TerminalSessionCommand>,
     task: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -55,7 +55,7 @@ impl TerminalModel {
         revision
     }
 
-    pub(super) fn revision(&self) -> u64 {
+    pub(in crate::gui::workspace::terminal) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
     }
 
@@ -75,18 +75,11 @@ impl TerminalModel {
 }
 
 impl TerminalView {
-    pub(in crate::gui::workspace) fn model(
-        &self,
-        workspace_id: &str,
-    ) -> Option<Arc<TerminalModel>> {
-        Some(self.terminals.get(workspace_id)?.model.clone())
-    }
-
-    pub(in crate::gui::workspace) fn status_updates(&self) -> Arc<Notify> {
-        self.status_updates.clone()
-    }
-
-    pub(super) fn connect(&mut self, workspace_id: String, profile: SessionProfile) {
+    pub(in crate::gui::workspace::terminal) fn connect(
+        &mut self,
+        workspace_id: String,
+        profile: SessionProfile,
+    ) {
         let model = Arc::new(TerminalModel::new(
             TerminalData {
                 frame: Arc::new(TerminalFrame::default()),
@@ -130,26 +123,18 @@ impl TerminalView {
         );
     }
 
-    pub(super) fn close(&mut self, workspace_id: &str) {
+    pub(in crate::gui::workspace::terminal) fn close(&mut self, workspace_id: &str) {
         if let Some(terminal) = self.terminals.remove(workspace_id) {
             disconnect(terminal);
         }
     }
 
-    pub(in crate::gui::workspace) fn command_sender(
+    pub(in crate::gui::workspace::terminal) fn resize(
         &self,
         workspace_id: &str,
-    ) -> Option<mpsc::UnboundedSender<TerminalSessionCommand>> {
-        Some(self.terminals.get(workspace_id)?.commands.clone())
-    }
-
-    pub(in crate::gui::workspace) fn send_input(&self, workspace_id: &str, input: Vec<u8>) {
-        if let Some(terminal) = self.terminals.get(workspace_id) {
-            let _ = terminal.commands.send(TerminalSessionCommand::Input(input));
-        }
-    }
-
-    pub(super) fn resize(&self, workspace_id: &str, columns: u32, rows: u32) {
+        columns: u32,
+        rows: u32,
+    ) {
         if let Some(terminal) = self.terminals.get(workspace_id) {
             let _ = terminal
                 .commands
@@ -173,6 +158,6 @@ fn disconnect(terminal: TerminalRuntime) {
     }
 }
 
-fn supports_terminal_protocol(protocol: &str) -> bool {
-    protocol.eq_ignore_ascii_case("SSH")
+pub(in crate::gui::workspace::terminal) fn supports_terminal_protocol(protocol: &Protocol) -> bool {
+    matches!(protocol, Protocol::Ssh)
 }

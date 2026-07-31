@@ -1,15 +1,21 @@
 use gpui::*;
 use tokio::sync::oneshot;
+use uuid::Uuid;
 
 use crate::{
     application::agent_mcp::{
-        AgentMcpCommand, AgentMcpReceiver, ProfileSummary, TerminalReadPage, TerminalSummary,
+        AgentMcpCommand, AgentMcpReceiver, AgentSftpCommand, AgentSshCommand, ProfileSummary,
+        TerminalReadPage, TerminalSummary,
     },
-    domain::terminal::{TerminalHistoryPage, TerminalSessionCommand, TerminalStatus},
+    domain::{
+        session::Protocol,
+        terminal::{TerminalHistoryPage, TerminalSessionCommand, TerminalStatus},
+    },
+    global_state::{GlobalEvent, read_global_state},
     infrastructure::storage::Storage,
 };
 
-use super::{Workspace, terminal::keyboard::encode_agent_key};
+use super::{Workspace, terminal::encode_agent_key};
 
 const DEFAULT_READ_LIMIT: usize = 200;
 const MAX_READ_LIMIT: usize = 2_000;
@@ -19,12 +25,12 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             while let Some(command) = receiver.recv().await {
                 match command {
-                    AgentMcpCommand::ReadTerminal {
+                    AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal {
                         workspace_id,
                         offset,
                         limit,
                         reply,
-                    } => {
+                    }) => {
                         let request = this.update(cx, |this, cx| {
                             this.prepare_terminal_read(workspace_id, offset, limit, cx)
                         });
@@ -71,25 +77,15 @@ impl Workspace {
                     .map_err(|error| format!("读取连接配置失败: {error:#}"));
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::OpenSession { profile_id, reply } => {
-                let result = cx
-                    .global::<Storage>()
-                    .session
-                    .list()
-                    .map_err(|error| format!("读取连接配置失败: {error:#}"))
-                    .and_then(|profiles| {
-                        profiles
-                            .into_iter()
-                            .find(|profile| profile.id == profile_id)
-                            .ok_or_else(|| format!("连接配置不存在: {profile_id}"))
-                    })
-                    .map(|profile| {
-                        self.workspace
-                            .update(cx, |workspace, cx| workspace.open(profile, cx))
-                    });
+            AgentMcpCommand::Ssh(AgentSshCommand::Open { profile_id, reply }) => {
+                let result = self.open_agent_session(profile_id, Protocol::Ssh, cx);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::ListTerminals { reply } => {
+            AgentMcpCommand::Sftp(AgentSftpCommand::Open { profile_id, reply }) => {
+                let result = self.open_agent_session(profile_id, Protocol::Sftp, cx);
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }) => {
                 let selected_id = self.workspace.read(cx).selected_id();
                 let terminals = self
                     .workspace
@@ -100,30 +96,30 @@ impl Workspace {
                         let status = self
                             .terminal
                             .read(cx)
-                            .model(&opened.session.id)
+                            .model(&opened.id)
                             .map(|model| terminal_status_name(&model.read().status))
                             .unwrap_or("connecting");
                         TerminalSummary {
-                            workspace_id: opened.session.id.clone(),
-                            profile_id: opened.session.profile_id.clone(),
+                            workspace_id: opened.id.clone(),
+                            profile_id: opened.profile.id.clone(),
                             host: opened.profile.host.clone(),
                             status: status.to_owned(),
-                            selected: selected_id == Some(opened.session.id.as_str()),
+                            selected: selected_id == Some(opened.id.as_str()),
                         }
                     })
                     .collect();
                 let _ = reply.send(Ok(terminals));
             }
-            AgentMcpCommand::SelectTerminal {
+            AgentMcpCommand::Ssh(AgentSshCommand::SelectTerminal {
                 workspace_id,
                 reply,
-            } => {
+            }) => {
                 let exists = self
                     .workspace
                     .read(cx)
                     .sessions()
                     .iter()
-                    .any(|opened| opened.session.id == workspace_id);
+                    .any(|opened| opened.id == workspace_id);
                 let result = if exists {
                     self.workspace.update(cx, |workspace, cx| {
                         workspace.activate(&workspace_id, cx);
@@ -134,11 +130,11 @@ impl Workspace {
                 };
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::SendText {
+            AgentMcpCommand::Ssh(AgentSshCommand::SendText {
                 workspace_id,
                 text,
                 reply,
-            } => {
+            }) => {
                 let result = self
                     .resolve_terminal_id(workspace_id, cx)
                     .map(|workspace_id| {
@@ -148,14 +144,14 @@ impl Workspace {
                     });
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::SendKey {
+            AgentMcpCommand::Ssh(AgentSshCommand::SendKey {
                 workspace_id,
                 key,
                 control,
                 alt,
                 shift,
                 reply,
-            } => {
+            }) => {
                 let result = self
                     .resolve_terminal_id(workspace_id, cx)
                     .and_then(|workspace_id| {
@@ -170,8 +166,32 @@ impl Workspace {
                     });
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::ReadTerminal { .. } => unreachable!(),
+            AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal { .. }) => unreachable!(),
         }
+    }
+
+    fn open_agent_session(
+        &self,
+        profile_id: String,
+        protocol: Protocol,
+        cx: &mut Context<Self>,
+    ) -> Result<String, String> {
+        cx.global::<Storage>()
+            .session
+            .find(&profile_id)
+            .map_err(|error| format!("读取连接配置失败: {error:#}"))
+            .and_then(|profile| profile.ok_or_else(|| format!("连接配置不存在: {profile_id}")))
+            .map(|mut profile| {
+                profile.protocol = protocol;
+                let workspace_id = Uuid::new_v4().to_string();
+                read_global_state(cx).update(cx, |_, cx| {
+                    cx.emit(GlobalEvent::OpenWorkspaceSession(
+                        workspace_id.clone(),
+                        profile,
+                    ));
+                });
+                workspace_id
+            })
     }
 
     fn prepare_terminal_read(

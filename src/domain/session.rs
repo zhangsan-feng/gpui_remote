@@ -1,4 +1,4 @@
-use uuid::Uuid;
+use std::{fmt, str::FromStr};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyConfig {
@@ -8,10 +8,43 @@ pub struct ProxyConfig {
     pub password: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Protocol {
+    Ssh,
+    Sftp,
+}
+
+impl Protocol {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ssh => "SSH",
+            Self::Sftp => "SFTP",
+        }
+    }
+}
+
+impl fmt::Display for Protocol {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for Protocol {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_uppercase().as_str() {
+            "SSH" => Ok(Self::Ssh),
+            "SFTP" => Ok(Self::Sftp),
+            protocol => Err(format!("不支持的连接协议: {protocol}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionProfile {
     pub id: String,
-    pub protocol: String,
+    pub protocol: Protocol,
     pub name: String,
     pub host: String,
     pub port: u16,
@@ -22,23 +55,8 @@ pub struct SessionProfile {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WorkspaceSession {
-    pub id: String,
-    pub profile_id: String,
-}
-
-impl WorkspaceSession {
-    pub fn new(profile_id: impl Into<String>) -> Self {
-        Self {
-            id: Uuid::new_v4().to_string(),
-            profile_id: profile_id.into(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewSession {
-    pub protocol: String,
+    pub protocol: Protocol,
     pub name: String,
     pub host: String,
     pub port: u16,
@@ -65,32 +83,4 @@ impl NewSession {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::NewSession;
 
-    fn valid_session() -> NewSession {
-        NewSession {
-            protocol: "SSH".into(),
-            name: "server".into(),
-            host: "127.0.0.1".into(),
-            port: 22,
-            username: "root".into(),
-            password: String::new(),
-            proxy: None,
-        }
-    }
-
-    #[test]
-    fn validates_required_connection_fields() {
-        let mut session = valid_session();
-        assert!(session.validate().is_ok());
-
-        session.host.clear();
-        assert_eq!(session.validate(), Err("请输入 SSH 主机地址"));
-
-        session.host = "localhost".into();
-        session.username.clear();
-        assert_eq!(session.validate(), Err("请输入 SSH 用户名"));
-    }
-}

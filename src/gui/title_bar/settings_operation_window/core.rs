@@ -60,7 +60,7 @@ pub(crate) fn open_settings_window(cx: &mut App) {
             appears_transparent: false,
             traffic_light_position: None,
         }),
-        kind: WindowKind::Dialog,
+        // kind: WindowKind::Dialog,
         is_resizable: false,
         is_minimizable: false,
         ..Default::default()

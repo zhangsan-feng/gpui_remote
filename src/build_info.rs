@@ -1,1 +1,1 @@
-pub const BUILD_TIME: &str = env!("GPUI_REMOTE_BUILD_TIME");
+pub const BUILD_TIME: &str = env!("BUILD_TIME");

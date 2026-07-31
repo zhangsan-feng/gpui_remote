@@ -1,10 +1,61 @@
-use crate::component::{draggable_list::DraggableList, theme};
-use crate::gui::session::{ConnectSession, DeleteSession, EditSession, SessionComponent};
+use crate::component::{color::rgb_to_u32, draggable_list::DraggableList, theme};
+use crate::gui::session::{
+    ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent,
+};
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::menu::PopupMenu;
 use gpui_component::*;
 
 impl SessionComponent {
+    pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = cx.theme();
+        v_flex()
+            .on_action(cx.listener(Self::create_active_session))
+            .on_action(cx.listener(Self::create_active_sftp_session))
+            .on_action(cx.listener(Self::edit_session))
+            .on_action(cx.listener(Self::delete_session))
+            .h_full()
+            .w_full()
+            .flex_shrink_0()
+            .border_r_1()
+            .border_color(colors.sidebar_border)
+            .bg(theme::sidebar_color(cx))
+            .text_color(contrast_text(theme::sidebar_base_color(cx)))
+            .child(
+                h_flex()
+                    .h(px(48.))
+                    .px_4()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(colors.sidebar_border)
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("会话"),
+                    ),
+            )
+            .when_some(self.core_err.as_ref(), |this, error| {
+                this.child(
+                    div()
+                        .m_2()
+                        .p_2()
+                        .rounded_md()
+                        .bg(colors.danger)
+                        .text_xs()
+                        .text_color(colors.danger_foreground)
+                        .child(error.to_string()),
+                )
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(self.draggable_list.clone()),
+            )
+    }
+
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
         let colors = cx.theme();
         let mut list = DraggableList::new();
@@ -18,9 +69,14 @@ impl SessionComponent {
                 |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();
                     menu.menu_with_icon(
-                        "连接",
+                        "打开ssh",
                         IconName::SquareTerminal,
                         Box::new(ConnectSession(session_id.clone())),
+                    )
+                    .menu_with_icon(
+                        "打开sftp",
+                        IconName::FolderOpen,
+                        Box::new(ConnectSftpSession(session_id.clone())),
                     )
                     .menu_with_icon(
                         "编辑",
@@ -49,7 +105,7 @@ impl SessionComponent {
         let sessions = self.sessions.clone();
         let sidebar_accent = cx.theme().sidebar_accent;
         let sidebar_accent_foreground = cx.theme().sidebar_accent_foreground;
-        let sidebar_foreground = super::contrast_text(theme::sidebar_base_color(cx));
+        let sidebar_foreground = contrast_text(theme::sidebar_base_color(cx));
         let muted_foreground = cx.theme().muted_foreground;
 
         self.draggable_list.update(cx, move |this, _cx| {
@@ -101,5 +157,13 @@ impl SessionComponent {
                 });
             }
         });
+    }
+}
+
+fn contrast_text(background: Hsla) -> Hsla {
+    if background.l < 0.48 {
+        rgb_to_u32(248, 250, 252).into()
+    } else {
+        rgb_to_u32(30, 41, 59).into()
     }
 }

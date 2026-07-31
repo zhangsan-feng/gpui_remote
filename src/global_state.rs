@@ -7,12 +7,9 @@ pub enum GlobalEvent {
     CreateSession,
     UpdateSession,
     ThemeChanged,
-    CreateActiveSession(SessionProfile),
-    CreateActiveSessionTerminal {
-        workspace_id: String,
-        profile: SessionProfile,
-    },
-    CloseActiveSession(String),
+    OpenWorkspaceSession(String, SessionProfile),
+    SelectWorkspaceSession(Option<String>),
+    CloseWorkspaceSession { workspace_id: String },
 }
 
 pub struct GlobalState {}

@@ -3,10 +3,7 @@ use gpui_component::{ActiveTheme, ThemeColor, h_flex};
 
 use crate::{
     component::{color::rgb_to_u32, draggable_list::DraggableList, theme},
-    domain::{
-        session::{SessionProfile, WorkspaceSession as WorkspaceSessionConnection},
-        terminal::TerminalStatus,
-    },
+    domain::{session::SessionProfile, terminal::TerminalStatus},
 };
 
 use super::WorkspaceSession;
@@ -19,11 +16,7 @@ pub(super) fn new_workspace_tabs(cx: &App) -> DraggableList {
     } else {
         colors.tab_bar.into()
     };
-    let selected_bg = if has_wallpaper {
-        Hsla::transparent_black().into()
-    } else {
-        colors.background.into()
-    };
+    let selected_bg = colors.sidebar_accent.into();
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)
         .set_item_width(px(240.))
@@ -35,14 +28,15 @@ pub(super) fn new_workspace_tabs(cx: &App) -> DraggableList {
 }
 
 pub(in crate::gui::workspace) fn workspace_tab(
-    workspace_session: WorkspaceSessionConnection,
+    workspace_id: String,
     profile: SessionProfile,
     status: TerminalStatus,
     workspace: Entity<WorkspaceSession>,
     colors: ThemeColor,
 ) -> impl IntoElement {
-    let session_id = workspace_session.id.clone();
-    let close_id = workspace_session.id;
+    let session_id = workspace_id.clone();
+    let close_id = workspace_id;
+    let protocol = profile.protocol.as_str();
     let (status_color, status_text) = match status {
         TerminalStatus::Connecting => (rgb_to_u32(217, 119, 6), "连接中"),
         TerminalStatus::Connected => (rgb_to_u32(22, 163, 74), "已连接"),
@@ -61,10 +55,17 @@ pub(in crate::gui::workspace) fn workspace_tab(
         .text_color(colors.foreground)
         .child(
             div()
-                .size(px(7.))
+                .h(px(20.))
+                .px_2()
+                .flex()
+                .items_center()
                 .flex_shrink_0()
-                .rounded_full()
-                .bg(status_color),
+                .rounded_md()
+                .bg(colors.accent)
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(colors.accent_foreground)
+                .child(protocol),
         )
         .child(
             div()
@@ -72,7 +73,7 @@ pub(in crate::gui::workspace) fn workspace_tab(
                 .text_sm()
                 .whitespace_nowrap()
                 .overflow_hidden()
-                .child(format!("{}:{}", profile.host, profile.port)),
+                .child(format!("{}", profile.host)),
         )
         .child(
             div()

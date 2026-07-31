@@ -6,8 +6,9 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::application::agent_mcp::{
-    AgentMcpClient, ProfileSummary, TerminalReadPage, TerminalSummary,
+use crate::{
+    application::agent_mcp::{AgentMcpClient, ProfileSummary, TerminalReadPage, TerminalSummary},
+    domain::session::Protocol,
 };
 
 #[derive(Clone)]
@@ -24,6 +25,14 @@ impl AgentTerminalMcp {
 #[derive(Deserialize, JsonSchema)]
 struct OpenSessionInput {
     profile_id: String,
+    protocol: OpenSessionProtocol,
+}
+
+#[derive(Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+enum OpenSessionProtocol {
+    Ssh,
+    Sftp,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -104,13 +113,15 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "Open a new terminal session using a saved profile id.")]
+    #[tool(
+        description = "Open a new workspace session using a saved profile id and the requested protocol."
+    )]
     async fn open_session(
         &self,
         Parameters(input): Parameters<OpenSessionInput>,
     ) -> Result<Json<OpenSessionOutput>, ErrorData> {
         self.client
-            .open_session(input.profile_id)
+            .open_session(input.profile_id, input.protocol.into())
             .await
             .map(|workspace_id| Json(OpenSessionOutput { workspace_id }))
             .map_err(mcp_error)
@@ -181,6 +192,15 @@ impl AgentTerminalMcp {
             .await
             .map(|()| Json(ActionOutput { success: true }))
             .map_err(mcp_error)
+    }
+}
+
+impl From<OpenSessionProtocol> for Protocol {
+    fn from(protocol: OpenSessionProtocol) -> Self {
+        match protocol {
+            OpenSessionProtocol::Ssh => Self::Ssh,
+            OpenSessionProtocol::Sftp => Self::Sftp,
+        }
     }
 }
 

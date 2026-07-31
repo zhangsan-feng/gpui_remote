@@ -1,11 +1,6 @@
-mod buffer;
 mod core;
-pub(crate) mod keyboard;
-mod pty;
-mod scroll;
-mod selection;
-mod ssh;
-mod terminal_render;
+mod external;
+mod internal;
 mod ui;
 
 use std::{collections::HashMap, sync::Arc};
@@ -14,11 +9,10 @@ use gpui::*;
 use serde::Deserialize;
 use tokio::sync::Notify;
 
-use crate::global_state::{GlobalEvent, read_global_state};
+use core::TerminalRuntime;
+use internal::{TerminalScrollHandle, TerminalSelection};
 
-use pty::TerminalRuntime;
-use scroll::TerminalScrollHandle;
-use selection::TerminalSelection;
+pub(in crate::gui::workspace) use external::encode_agent_key;
 
 const TERMINAL_KEY_CONTEXT: &str = "Terminal";
 const TERMINAL_FONT_FAMILY: &str = "Consolas";
@@ -60,22 +54,6 @@ pub(in crate::gui::workspace) fn init(cx: &mut App) {
     ]);
 }
 
-fn terminal_cell_width(window: &Window) -> Pixels {
-    let run = TextRun {
-        len: 1,
-        font: Font {
-            family: TERMINAL_FONT_FAMILY.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let width = window
-        .text_system()
-        .layout_line("0", px(TERMINAL_FONT_SIZE), &[run], None)
-        .width;
-    if width > Pixels::ZERO { width } else { px(8.) }
-}
-
 impl TerminalView {
     pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
         let updates = Arc::new(Notify::new());
@@ -83,20 +61,6 @@ impl TerminalView {
         let list_state = ListState::new(0, ListAlignment::Top, px(256.))
             .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
         list_state.set_follow_mode(FollowMode::Tail);
-
-        let terminal_updates = updates.clone();
-        cx.spawn(async move |this, cx| {
-            loop {
-                terminal_updates.notified().await;
-                if this
-                    .update(cx, |this, cx| this.notify_if_model_changed(cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
 
         let this = Self {
             terminals: HashMap::new(),
@@ -112,26 +76,9 @@ impl TerminalView {
             selecting_text: false,
             scroll_handle: TerminalScrollHandle::default(),
         };
+        this.start_model_watcher(cx);
         this.start_subscribe(cx);
         this
-    }
-
-    fn start_subscribe(&self, cx: &mut Context<Self>) {
-        let global_state = read_global_state(cx);
-
-        cx.subscribe(&global_state, |this, _, event, cx| {
-            match event {
-                GlobalEvent::CreateActiveSessionTerminal {
-                    workspace_id,
-                    profile,
-                } => this.connect(workspace_id.clone(), profile.clone()),
-                GlobalEvent::CloseActiveSession(workspace_id) => this.close(workspace_id),
-                _ => return,
-            }
-            this.reset_active_view();
-            cx.notify();
-        })
-        .detach();
     }
 }
 

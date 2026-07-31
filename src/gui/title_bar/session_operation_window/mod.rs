@@ -1,19 +1,14 @@
 mod core;
+mod external;
+mod internal;
 mod ui;
 
-use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{
-    IconName,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    input::InputState,
-    v_flex,
-};
+use gpui_component::input::InputState;
 
-use crate::{component::color::rgb_to_u32, domain::session::SessionProfile};
+use crate::domain::session::SessionProfile;
 
-pub(crate) use core::{open_edit_session_window, open_new_session_window};
+pub(crate) use external::{open_edit_session_window, open_new_session_window};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConnectionProtocol {
@@ -79,7 +74,7 @@ impl SessionOperationWindow {
     ) -> Self {
         let protocol = profile
             .as_ref()
-            .map(|profile| ConnectionProtocol::from_label(&profile.protocol))
+            .map(|profile| ConnectionProtocol::from_label(profile.protocol.as_str()))
             .unwrap_or(ConnectionProtocol::Ssh);
         let proxy = profile.as_ref().and_then(|profile| profile.proxy.as_ref());
 
@@ -174,79 +169,6 @@ impl SessionOperationWindow {
 
 impl Render for SessionOperationWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .gap_2()
-            .p_2()
-            .size_full()
-            .bg(rgb_to_u32(248, 250, 252))
-            // .child(v_flex().p_2().gap_2().child(h_flex().gap_2().children(
-            //     ConnectionProtocol::ALL.map(|protocol| self.protocol_option(protocol, cx)),
-            // )))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .p_2()
-                    .gap_2()
-                    .items_stretch()
-                    .child(
-                        v_flex()
-                            .w(px(144.))
-                            .flex_shrink_0()
-                            .p_2()
-                            .gap_2()
-                            .rounded_xl()
-                            .border_1()
-                            .border_color(rgb_to_u32(226, 232, 240))
-                            .bg(rgb_to_u32(241, 245, 249))
-                            .children(
-                                FormSection::ALL.map(|section| self.section_option(section, cx)),
-                            ),
-                    )
-                    .child(match self.section {
-                        FormSection::Connection => self.connection_panel(),
-                        FormSection::Proxy => self.proxy_panel(),
-                    }),
-            )
-            .when_some(self.error.clone(), |this, error| {
-                this.child(
-                    h_flex()
-                        .p_2()
-                        .gap_2()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(rgb_to_u32(254, 202, 202))
-                        .bg(rgb_to_u32(254, 242, 242))
-                        .text_color(rgb_to_u32(185, 28, 28))
-                        .text_xs()
-                        .child(IconName::TriangleAlert)
-                        .child(error),
-                )
-            })
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_2()
-                    .p_2()
-                    .items_center()
-                    .justify_end()
-                    .border_t_1()
-                    .border_color(rgb_to_u32(226, 232, 240))
-                    .bg(rgb_to_u32(255, 255, 255))
-                    .child(
-                        Button::new("cancel-session-operation")
-                            .outline()
-                            .label("取消")
-                            .on_click(cx.listener(Self::cancel)),
-                    )
-                    .child(
-                        Button::new("save-session-operation")
-                            .primary()
-                            .label(match &self.mode {
-                                SessionFormMode::Create => "保存会话",
-                                SessionFormMode::Edit { .. } => "保存修改",
-                            })
-                            .on_click(cx.listener(Self::submit)),
-                    ),
-            )
+        self.render_view(cx)
     }
 }

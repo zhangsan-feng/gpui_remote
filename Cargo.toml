@@ -22,6 +22,7 @@ rust-embed = "8.11.0"
 uuid = { version = "1.22.0", features = ["v4"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 russh = "0.62.3"
+russh-sftp = "2.3.0"
 rmcp = { version = "3.0.0", features = ["transport-streamable-http-server"] }
 tokio-socks = "0.5.2"
 alacritty_terminal = { git = "https://github.com/zed-industries/alacritty", rev = "4c129667ce56611becdc82de6e28218c80e2e88f" }

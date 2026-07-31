@@ -1,7 +1,10 @@
 use tokio::sync::{mpsc, oneshot};
 
+use crate::domain::session::Protocol;
+
 use super::{
-    AgentMcpCommand, ProfileSummary, TerminalReadPage, TerminalSummary, command::AgentMcpResult,
+    AgentMcpCommand, AgentSftpCommand, AgentSshCommand, ProfileSummary, TerminalReadPage,
+    TerminalSummary, command::AgentMcpResult,
 };
 
 const CHANNEL_CAPACITY: usize = 64;
@@ -35,20 +38,29 @@ impl AgentMcpClient {
             .await
     }
 
-    pub async fn open_session(&self, profile_id: String) -> AgentMcpResult<String> {
-        self.request(|reply| AgentMcpCommand::OpenSession { profile_id, reply })
-            .await
+    pub async fn open_session(
+        &self,
+        profile_id: String,
+        protocol: Protocol,
+    ) -> AgentMcpResult<String> {
+        self.request(|reply| match protocol {
+            Protocol::Ssh => AgentMcpCommand::Ssh(AgentSshCommand::Open { profile_id, reply }),
+            Protocol::Sftp => AgentMcpCommand::Sftp(AgentSftpCommand::Open { profile_id, reply }),
+        })
+        .await
     }
 
     pub async fn list_terminals(&self) -> AgentMcpResult<Vec<TerminalSummary>> {
-        self.request(|reply| AgentMcpCommand::ListTerminals { reply })
+        self.request(|reply| AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }))
             .await
     }
 
     pub async fn select_terminal(&self, workspace_id: String) -> AgentMcpResult<()> {
-        self.request(|reply| AgentMcpCommand::SelectTerminal {
-            workspace_id,
-            reply,
+        self.request(|reply| {
+            AgentMcpCommand::Ssh(AgentSshCommand::SelectTerminal {
+                workspace_id,
+                reply,
+            })
         })
         .await
     }
@@ -59,11 +71,13 @@ impl AgentMcpClient {
         offset: usize,
         limit: usize,
     ) -> AgentMcpResult<TerminalReadPage> {
-        self.request(|reply| AgentMcpCommand::ReadTerminal {
-            workspace_id,
-            offset,
-            limit,
-            reply,
+        self.request(|reply| {
+            AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal {
+                workspace_id,
+                offset,
+                limit,
+                reply,
+            })
         })
         .await
     }
@@ -73,10 +87,12 @@ impl AgentMcpClient {
         workspace_id: Option<String>,
         text: String,
     ) -> AgentMcpResult<()> {
-        self.request(|reply| AgentMcpCommand::SendText {
-            workspace_id,
-            text,
-            reply,
+        self.request(|reply| {
+            AgentMcpCommand::Ssh(AgentSshCommand::SendText {
+                workspace_id,
+                text,
+                reply,
+            })
         })
         .await
     }
@@ -89,13 +105,15 @@ impl AgentMcpClient {
         alt: bool,
         shift: bool,
     ) -> AgentMcpResult<()> {
-        self.request(|reply| AgentMcpCommand::SendKey {
-            workspace_id,
-            key,
-            control,
-            alt,
-            shift,
-            reply,
+        self.request(|reply| {
+            AgentMcpCommand::Ssh(AgentSshCommand::SendKey {
+                workspace_id,
+                key,
+                control,
+                alt,
+                shift,
+                reply,
+            })
         })
         .await
     }

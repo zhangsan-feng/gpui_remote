@@ -1,10 +1,10 @@
 use anyhow::{Context as _, Result};
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, Row, params, types::Type};
 use uuid::Uuid;
 
 use crate::{
-    domain::session::{NewSession, ProxyConfig, SessionProfile},
+    domain::session::{NewSession, Protocol, ProxyConfig, SessionProfile},
     infrastructure::storage::derive::sqlite_drive::SqliteDrive,
 };
 
@@ -25,33 +25,24 @@ impl SessionStorageRepository {
                     proxy_host, proxy_port, proxy_username, proxy_password, created_at
              FROM sessions ORDER BY created_at DESC",
         )?;
-        let rows = statement.query_map([], |row| {
-            let proxy_host: Option<String> = row.get(7)?;
-            let proxy = if let Some(host) = proxy_host {
-                Some(ProxyConfig {
-                    host,
-                    port: row.get::<_, Option<u16>>(8)?.unwrap_or(1080),
-                    username: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
-                    password: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
-                })
-            } else {
-                None
-            };
-            Ok(SessionProfile {
-                id: row.get(0)?,
-                protocol: row.get(1)?,
-                name: row.get(2)?,
-                host: row.get(3)?,
-                port: row.get(4)?,
-                username: row.get(5)?,
-                password: row.get(6)?,
-                proxy,
-                created_at: row.get(11)?,
-            })
-        })?;
+        let rows = statement.query_map([], map_session)?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("read sessions from SQLite")
+    }
+
+    pub fn find(&self, id: &str) -> Result<Option<SessionProfile>> {
+        self.drive
+            .connection
+            .query_row(
+                "SELECT id, protocol, name, host, port, username, password,
+                        proxy_host, proxy_port, proxy_username, proxy_password, created_at
+                 FROM sessions WHERE id = ?1",
+                [id],
+                map_session,
+            )
+            .optional()
+            .context("find session in SQLite")
     }
 
     pub fn insert(&self, draft: NewSession) -> Result<SessionProfile> {
@@ -74,7 +65,7 @@ impl SessionStorageRepository {
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 profile.id,
-                profile.protocol,
+                profile.protocol.as_str(),
                 profile.name,
                 profile.host,
                 profile.port,
@@ -120,7 +111,7 @@ impl SessionStorageRepository {
              WHERE id = ?1",
             params![
                 profile.id,
-                profile.protocol,
+                profile.protocol.as_str(),
                 profile.name,
                 profile.host,
                 profile.port,
@@ -142,4 +133,39 @@ impl SessionStorageRepository {
             .context("delete session from SQLite")?;
         Ok(())
     }
+}
+
+fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
+    let protocol = row
+        .get::<_, String>(1)?
+        .parse::<Protocol>()
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                1,
+                Type::Text,
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error).into(),
+            )
+        })?;
+    let proxy_host: Option<String> = row.get(7)?;
+    let proxy = if let Some(host) = proxy_host {
+        Some(ProxyConfig {
+            host,
+            port: row.get::<_, Option<u16>>(8)?.unwrap_or(1080),
+            username: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+            password: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
+        })
+    } else {
+        None
+    };
+    Ok(SessionProfile {
+        id: row.get(0)?,
+        protocol,
+        name: row.get(2)?,
+        host: row.get(3)?,
+        port: row.get(4)?,
+        username: row.get(5)?,
+        password: row.get(6)?,
+        proxy,
+        created_at: row.get(11)?,
+    })
 }

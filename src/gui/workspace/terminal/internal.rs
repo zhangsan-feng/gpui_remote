@@ -165,7 +165,7 @@ mod scroll {
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
             let (thumb_top, thumb_size) = self.scroll_handle.thumb();
-            let terminal_background = theme::terminal_color(cx);
+            let terminal_background = theme::styles(cx).terminal;
             let bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
             let bounds_writer = bounds.clone();
             let down_bounds = bounds.clone();
@@ -272,6 +272,12 @@ mod selection {
     }
 
     impl TerminalSelection {
+        fn frame_start_row(&self) -> usize {
+            self.frame
+                .history_size
+                .saturating_sub(self.frame.display_offset)
+        }
+
         fn range(&self) -> (TerminalPoint, TerminalPoint) {
             if self.anchor <= self.head {
                 (self.anchor, self.head)
@@ -306,11 +312,16 @@ mod selection {
         pub(in crate::gui::workspace::terminal) fn select_point(
             &mut self,
             workspace_id: String,
-            point: TerminalPoint,
+            viewport_point: TerminalPoint,
             extend: bool,
             cx: &mut Context<Self>,
         ) {
             self.selecting_text = true;
+            let frame = self
+                .model(&workspace_id)
+                .map(|model| model.read().frame.clone())
+                .unwrap_or_default();
+            let point = buffer_point(&frame, viewport_point);
             if extend {
                 if let Some(selection) = self
                     .selection
@@ -322,10 +333,6 @@ mod selection {
                     return;
                 }
             }
-            let frame = self
-                .model(&workspace_id)
-                .map(|model| model.read().frame.clone())
-                .unwrap_or_default();
             self.selection = Some(TerminalSelection {
                 workspace_id,
                 anchor: point,
@@ -338,12 +345,17 @@ mod selection {
         pub(in crate::gui::workspace::terminal) fn extend_selection(
             &mut self,
             workspace_id: &str,
-            point: TerminalPoint,
+            viewport_point: TerminalPoint,
             cx: &mut Context<Self>,
         ) {
             if !self.selecting_text {
                 return;
             }
+            let frame = self
+                .model(workspace_id)
+                .map(|model| model.read().frame.clone())
+                .unwrap_or_default();
+            let point = buffer_point(&frame, viewport_point);
             if let Some(selection) = self
                 .selection
                 .as_mut()
@@ -427,15 +439,18 @@ mod selection {
 
     fn selected_text(frame: &TerminalFrame, selection: &TerminalSelection) -> String {
         let (start, end) = selection.range();
+        let frame_start_row = selection.frame_start_row();
+        let start_index = start.row.saturating_sub(frame_start_row);
+        let end_index = end.row.saturating_sub(frame_start_row);
         let Some(lines) = frame
             .lines
-            .get(start.row..=end.row.min(frame.lines.len().saturating_sub(1)))
+            .get(start_index..=end_index.min(frame.lines.len().saturating_sub(1)))
         else {
             return String::new();
         };
         let mut text = String::new();
         for (line_offset, line) in lines.iter().enumerate() {
-            let row = start.row + line_offset;
+            let row = start_index + frame_start_row + line_offset;
             let mut column = 0;
             for character in line.spans.iter().flat_map(|span| span.text.chars()) {
                 if selection.contains(TerminalPoint { row, column }) {
@@ -448,6 +463,23 @@ mod selection {
             }
         }
         text
+    }
+
+    pub(in crate::gui::workspace::terminal) fn buffer_row(
+        frame: &TerminalFrame,
+        viewport_row: usize,
+    ) -> usize {
+        frame
+            .history_size
+            .saturating_sub(frame.display_offset)
+            .saturating_add(viewport_row)
+    }
+
+    fn buffer_point(frame: &TerminalFrame, viewport_point: TerminalPoint) -> TerminalPoint {
+        TerminalPoint {
+            row: buffer_row(frame, viewport_point.row),
+            column: viewport_point.column,
+        }
     }
 
     fn terminal_character_width(character: char) -> usize {
@@ -484,6 +516,6 @@ mod watcher {
 
 pub(super) use scroll::{SCROLLBAR_WIDTH, TerminalScrollHandle};
 pub(super) use selection::{
-    SelectedFragment, TerminalPoint, TerminalSelection, nearest_character_column,
+    SelectedFragment, TerminalPoint, TerminalSelection, buffer_row, nearest_character_column,
     selected_fragments,
 };

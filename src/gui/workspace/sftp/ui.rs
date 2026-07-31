@@ -1,20 +1,27 @@
+use super::{
+    DragPreviewItem, LocalEntry, LocalSnapshot, SftpEntry, SftpSnapshot, SftpStatus, SftpView,
+    TransferRecord,
+};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow};
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex, v_flex,
 };
-use gpui_component::scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow};
+
 use crate::component::theme;
-use super::{DragPreviewItem, LocalEntry, LocalSnapshot, SftpEntry, SftpSnapshot, SftpStatus, SftpView, TransferRecord};
 
 const TRANSFER_PANEL_HEIGHT: f32 = 188.;
 
 impl SftpView {
     pub(super) fn render_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let Some(snapshot) = self.selected_snapshot() else {
-            return div().size_full().into_any_element();
+            return div()
+                .size_full()
+                .bg(theme::styles(cx).panel)
+                .into_any_element();
         };
         sync_list_state(&self.local_list_state, self.local.entries.len());
         sync_list_state(&self.remote_list_state, snapshot.entries.len());
@@ -24,7 +31,6 @@ impl SftpView {
 
     fn browser(&self, snapshot: SftpSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
         v_flex()
             .size_full()
             .min_h_0()
@@ -32,11 +38,7 @@ impl SftpView {
             .rounded_lg()
             .border_1()
             .border_color(colors.border)
-            .bg(if has_wallpaper {
-                colors.background.opacity(0.15)
-            } else {
-                colors.background
-            })
+            .bg(theme::styles(cx).panel)
             .child(
                 h_flex()
                     .flex_1()
@@ -50,7 +52,6 @@ impl SftpView {
 
     fn local_panel(&self, snapshot: LocalSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
         let content = if snapshot.entries.is_empty() && !snapshot.loading {
             self.empty_directory("桌面目录为空", cx).into_any_element()
         } else {
@@ -79,11 +80,7 @@ impl SftpView {
                     .px_2()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(if has_wallpaper {
-                        colors.background.opacity(0.15)
-                    } else {
-                        colors.background
-                    })
+                    .bg(theme::styles(cx).panel)
                     .child(
                         Button::new("sftp-local-parent")
                             .outline()
@@ -115,27 +112,19 @@ impl SftpView {
             .child(
                 h_flex()
                     .size_full()
+                    .child(div().gap_2().size_full().overflow_hidden().child(content))
                     .child(
-                        div()
-                            .gap_2()
-                            .size_full()
-                            .overflow_hidden()
-                            .child(content),
-                    )
-                .child(
-                    div().h_full().w(px(12.)).child(
-                        Scrollbar::vertical(&self.local_list_state)
-                            .scrollbar_show(ScrollbarShow::Always)
-                            .axis(ScrollbarAxis::Vertical),
+                        div().h_full().w(px(12.)).child(
+                            Scrollbar::vertical(&self.local_list_state)
+                                .scrollbar_show(ScrollbarShow::Always)
+                                .axis(ScrollbarAxis::Vertical),
+                        ),
                     ),
-                )
             )
-
     }
 
     fn remote_panel(&self, snapshot: SftpSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
         let connected = snapshot.status == SftpStatus::Connected;
         let content = if snapshot.entries.is_empty() && !snapshot.loading {
             self.empty_directory("远程目录为空", cx).into_any_element()
@@ -164,11 +153,7 @@ impl SftpView {
                     .gap_2()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(if has_wallpaper {
-                        colors.background.opacity(0.15)
-                    } else {
-                        colors.background
-                    })
+                    .bg(theme::styles(cx).panel)
                     .child(
                         Button::new("sftp-remote-parent")
                             .outline()
@@ -203,25 +188,18 @@ impl SftpView {
                 this.child(self.error_bar(error, cx))
             })
             .when(connected, |this| {
-                this.child(self.file_header(cx))
-                    .child(
-                        h_flex()
-                            .size_full()
-                            .child(
-                                div()
-                                    .gap_2()
-                                    .size_full()
-                                    .overflow_hidden()
-                                    .child(content),
-                            )
-                            .child(
-                                div().h_full().w(px(12.)).child(
-                                    Scrollbar::vertical(&self.remote_list_state)
-                                        .scrollbar_show(ScrollbarShow::Always)
-                                        .axis(ScrollbarAxis::Vertical),
-                                ),
-                            )
-                    )
+                this.child(self.file_header(cx)).child(
+                    h_flex()
+                        .size_full()
+                        .child(div().gap_2().size_full().overflow_hidden().child(content))
+                        .child(
+                            div().h_full().w(px(12.)).child(
+                                Scrollbar::vertical(&self.remote_list_state)
+                                    .scrollbar_show(ScrollbarShow::Always)
+                                    .axis(ScrollbarAxis::Vertical),
+                            ),
+                        ),
+                )
             })
             .when(!connected, |this| {
                 let (title, message) = match snapshot.status {
@@ -234,10 +212,8 @@ impl SftpView {
             })
     }
 
-
     fn path_bar(&self, path: String, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
         h_flex()
             .flex_1()
             .min_w_0()
@@ -247,31 +223,20 @@ impl SftpView {
             .rounded_md()
             .border_1()
             .border_color(colors.border)
-            .bg(if has_wallpaper {
-                colors.background.opacity(0.15)
-            }else {
-                colors.background
-            })
+            .bg(theme::styles(cx).panel)
             .text_xs()
             .child(path)
     }
 
     fn file_header(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
         h_flex()
             .h(px(32.))
             .flex_shrink_0()
             .px_3()
             .border_b_1()
             .border_color(colors.border)
-            .bg(
-                if has_wallpaper {
-                    colors.background.opacity(0.15)
-                }else {
-                    colors.background
-                }
-            )
+            .bg(theme::styles(cx).panel)
             .text_xs()
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(colors.muted_foreground)
@@ -314,15 +279,11 @@ impl SftpView {
                     .child(Self::format_local_modified(entry.modified_at)),
             )
             .on_drag(
-                DragPreviewItem {
-                    path: path.clone(),
-                },
+                DragPreviewItem { path: path.clone() },
                 |dragged, _, _, cx| {
                     let path = dragged.path.clone();
 
-                    cx.new(move |_| DragPreviewItem {
-                        path,
-                    })
+                    cx.new(move |_| DragPreviewItem { path })
                 },
             )
             .on_mouse_down(MouseButton::Left, move |event, _, cx| {
@@ -401,9 +362,7 @@ impl SftpView {
     }
 
     fn transfer_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
-
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
         let content = if self.transfers.is_empty() {
             v_flex()
                 .size_full()
@@ -439,13 +398,7 @@ impl SftpView {
                     .justify_between()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(
-                        if has_wallpaper {
-                            colors.background.opacity(0.15)
-                        }else {
-                            colors.background
-                        }
-                    )
+                    .bg(theme::styles(cx).panel)
                     .child(
                         div()
                             .text_sm()
@@ -478,20 +431,14 @@ impl SftpView {
             .child(
                 h_flex()
                     .size_full()
-                    .child(
-                        div()
-                            .gap_2()
-                            .size_full()
-                            .overflow_hidden()
-                            .child(content),
-                    )
+                    .child(div().gap_2().size_full().overflow_hidden().child(content))
                     .child(
                         div().h_full().w(px(12.)).child(
                             Scrollbar::vertical(&self.transfer_list_state)
                                 .scrollbar_show(ScrollbarShow::Always)
                                 .axis(ScrollbarAxis::Vertical),
                         ),
-                    )
+                    ),
             )
     }
 

@@ -12,7 +12,7 @@ mod terminal_render {
 
     use super::super::{
         CopyTerminal, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TerminalView,
-        internal::{TerminalPoint, nearest_character_column, selected_fragments},
+        internal::{TerminalPoint, buffer_row, nearest_character_column, selected_fragments},
     };
 
     pub(super) const GUTTER_WIDTH: f32 = 116.0;
@@ -25,11 +25,10 @@ mod terminal_render {
             cell_width: Pixels,
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
-            let terminal_background = theme::terminal_color(cx);
+            let styles = theme::styles(cx);
+            let terminal_background = styles.terminal;
             let selection_background = cx.theme().selection;
-            let default_foreground = theme::wallpaper(cx)
-                .is_some()
-                .then(|| cx.theme().foreground);
+            let default_foreground = styles.terminal_default_foreground;
             let selection = self.selection.clone();
             let terminal_view = cx.weak_entity();
             let resize_view = terminal_view.clone();
@@ -44,7 +43,8 @@ mod terminal_render {
                 let active_selection = selection
                     .as_ref()
                     .filter(|selection| selection.workspace_id == workspace_id);
-                let fragments = selected_fragments(&line, index, active_selection);
+                let fragments =
+                    selected_fragments(&line, buffer_row(&frame, index), active_selection);
                 let text_bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
                 let text_bounds_writer = text_bounds.clone();
                 let select_bounds = text_bounds.clone();
@@ -303,6 +303,7 @@ impl TerminalView {
             .sync(&frame, self.command_sender(&workspace_id));
         self.sync_list(&workspace_id, frame.lines.len().max(1));
         let cell_width = terminal_cell_width(window);
+        let styles = theme::styles(cx);
 
         let focus = self.focus.clone();
         let scroll_commands = self.command_sender(&workspace_id);
@@ -338,7 +339,7 @@ impl TerminalView {
                     cx.stop_propagation();
                 }
             })
-            .bg(theme::terminal_color(cx))
+            .bg(styles.terminal)
             .text_color(contrast_text(theme::terminal_base_color(cx)))
             .child(content)
             .into_any_element()

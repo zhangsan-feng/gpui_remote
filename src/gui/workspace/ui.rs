@@ -8,26 +8,18 @@ use super::Workspace;
 impl Workspace {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let has_wallpaper = theme::wallpaper(cx).is_some();
+        let styles = theme::styles(cx);
         v_flex()
             .p_2()
             .gap_2()
             .size_full()
-            .bg(if has_wallpaper {
-                colors.background.opacity(0.15)
-            } else {
-                colors.background
-            })
+            .bg(styles.panel)
             .child(
                 div()
                     .w_full()
                     .h(px(45.))
                     .border_color(colors.border)
-                    .bg(if has_wallpaper {
-                        Hsla::transparent_black()
-                    } else {
-                        colors.tab_bar
-                    })
+                    .bg(styles.tab_bar)
                     .child(self.workspace.clone()),
             )
             .child(match self.active_protocol {

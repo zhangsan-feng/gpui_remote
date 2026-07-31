@@ -4,8 +4,6 @@ use gpui::*;
 use gpui_component::{h_flex, v_flex};
 use uuid::Uuid;
 
-
-
 #[derive(Clone)]
 struct PanelResizeHandle {
     owner: EntityId,

@@ -10,6 +10,7 @@ use gpui_component::*;
 impl SessionComponent {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
+        let styles = theme::styles(cx);
         v_flex()
             .on_action(cx.listener(Self::create_active_session))
             .on_action(cx.listener(Self::create_active_sftp_session))
@@ -20,7 +21,7 @@ impl SessionComponent {
             .flex_shrink_0()
             .border_r_1()
             .border_color(colors.sidebar_border)
-            .bg(theme::sidebar_color(cx))
+            .bg(styles.sidebar)
             .text_color(contrast_text(theme::sidebar_base_color(cx)))
             .child(
                 h_flex()

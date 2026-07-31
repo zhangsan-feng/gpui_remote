@@ -26,6 +26,7 @@ impl Render for AppTitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let maximize_label = if window.is_maximized() { "❐" } else { "□" };
         let colors = cx.theme();
+        let styles = theme::styles(cx);
         h_flex()
             .id("app-title-bar")
             .on_action(cx.listener(Self::open_session_window))
@@ -35,11 +36,7 @@ impl Render for AppTitleBar {
             .flex_shrink_0()
             .border_b_1()
             .border_color(colors.title_bar_border)
-            .bg(if theme::wallpaper(cx).is_some() {
-                colors.title_bar.opacity(0.92)
-            } else {
-                colors.title_bar
-            })
+            .bg(styles.title_bar)
             .child(
                 h_flex()
                     .h_full()

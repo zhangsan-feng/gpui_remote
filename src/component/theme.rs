@@ -4,7 +4,7 @@ use std::{
 };
 
 use gpui::{App, Global, Hsla, Rgba};
-use gpui_component::{Colorize, Theme, ThemeMode};
+use gpui_component::{ActiveTheme, Colorize, Theme, ThemeMode};
 use serde::{Deserialize, Serialize};
 
 use crate::component::color::rgb_to_u32;
@@ -216,6 +216,16 @@ struct AppThemeState {
 
 impl Global for AppThemeState {}
 
+#[derive(Clone, Copy)]
+pub struct ThemeStyles {
+    pub panel: Hsla,
+    pub tab_bar: Hsla,
+    pub title_bar: Hsla,
+    pub sidebar: Hsla,
+    pub terminal: Hsla,
+    pub terminal_default_foreground: Option<Hsla>,
+}
+
 pub fn init(cx: &mut App) {
     let settings = load_settings();
     let custom_accent =
@@ -243,12 +253,38 @@ pub fn custom_accent(cx: &App) -> Hsla {
     cx.global::<AppThemeState>().custom_accent
 }
 
-pub fn sidebar_color(cx: &App) -> Hsla {
+pub fn styles(cx: &App) -> ThemeStyles {
     let state = cx.global::<AppThemeState>();
-    if state.wallpaper_path.is_some() {
-        return Hsla::transparent_black();
+    let colors = cx.theme();
+    let has_wallpaper = state.wallpaper_path.is_some();
+    ThemeStyles {
+        panel: if has_wallpaper {
+            colors.background.opacity(0.15)
+        } else {
+            colors.background
+        },
+        tab_bar: if has_wallpaper {
+            Hsla::transparent_black()
+        } else {
+            colors.tab_bar
+        },
+        title_bar: if has_wallpaper {
+            colors.title_bar.opacity(0.92)
+        } else {
+            colors.title_bar
+        },
+        sidebar: if has_wallpaper {
+            Hsla::transparent_black()
+        } else {
+            with_alpha(state.sidebar_background, state.sidebar_opacity)
+        },
+        terminal: if has_wallpaper {
+            Hsla::transparent_black()
+        } else {
+            with_alpha(state.terminal_background, state.terminal_opacity)
+        },
+        terminal_default_foreground: has_wallpaper.then_some(colors.foreground),
     }
-    with_alpha(state.sidebar_background, state.sidebar_opacity)
 }
 
 pub fn sidebar_base_color(cx: &App) -> Hsla {
@@ -257,14 +293,6 @@ pub fn sidebar_base_color(cx: &App) -> Hsla {
 
 pub fn sidebar_opacity(cx: &App) -> f32 {
     cx.global::<AppThemeState>().sidebar_opacity
-}
-
-pub fn terminal_color(cx: &App) -> Hsla {
-    let state = cx.global::<AppThemeState>();
-    if state.wallpaper_path.is_some() {
-        return Hsla::transparent_black();
-    }
-    with_alpha(state.terminal_background, state.terminal_opacity)
 }
 
 pub fn terminal_base_color(cx: &App) -> Hsla {

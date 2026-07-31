@@ -111,12 +111,14 @@ pub(in crate::gui::workspace) struct SftpView {
     status_updates: Arc<Notify>,
 }
 
-struct DragPreviewItem{
+struct DragPreviewItem {
     path: PathBuf,
 }
 impl Render for DragPreviewItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement{
-        div().size_full().child(self.path.to_str().unwrap().to_string())
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .child(self.path.to_str().unwrap().to_string())
     }
 }
 

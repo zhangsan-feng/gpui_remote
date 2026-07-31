@@ -10,12 +10,7 @@ use super::WorkspaceSession;
 
 pub(super) fn new_workspace_tabs(cx: &App) -> DraggableList {
     let colors = cx.theme();
-    let has_wallpaper = theme::wallpaper(cx).is_some();
-    let item_bg = if has_wallpaper {
-        Hsla::transparent_black().into()
-    } else {
-        colors.tab_bar.into()
-    };
+    let item_bg = theme::styles(cx).tab_bar.into();
     let selected_bg = colors.sidebar_accent.into();
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)

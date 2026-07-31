@@ -38,12 +38,7 @@ impl WorkspaceSession {
     }
 
     pub(super) fn reset_tab_style(&mut self, cx: &mut Context<Self>) {
-        let has_wallpaper = theme::wallpaper(cx).is_some();
-        let tab_bar = if has_wallpaper {
-            gpui::Hsla::transparent_black().into()
-        } else {
-            cx.theme().tab_bar.into()
-        };
+        let tab_bar = theme::styles(cx).tab_bar.into();
         let selected_background = cx.theme().sidebar_accent.into();
         let list_hover = cx.theme().list_hover.into();
         self.tabs.update(cx, move |tabs, tabs_cx| {

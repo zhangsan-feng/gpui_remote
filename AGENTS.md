@@ -8,4 +8,4 @@ gui 模块 职责边界收敛 core.rs (核心功能) internal.rs (给ui用的) e
 应用和基础设施 责任边界 core.rs (核心功能) external.rs(给外部用的) mod.rs(类型定义、子模块声明、初始化)
 单个文件行数代码维护在600-800行 超过800行 就按照目录拆分 core internal external ui 4个目录 按照功能拆分文件
    
-新需求 src/component/resizable_panel.rs 如果不设置宽度或者高度 就默认容器的上限
+

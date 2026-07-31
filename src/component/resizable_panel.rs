@@ -4,6 +4,8 @@ use gpui::*;
 use gpui_component::{h_flex, v_flex};
 use uuid::Uuid;
 
+
+
 #[derive(Clone)]
 struct PanelResizeHandle {
     owner: EntityId,
@@ -38,9 +40,10 @@ pub struct ResizablePanel {
     axis: Axis,
     panel_size: f32,
     min_panel_size: f32,
-    max_panel_size: f32,
+    max_panel_size: Option<f32>,
     resize_handle_style: ResizeHandleStyle,
     resize_handle_id: ElementId,
+    resize_handle_hit_id: ElementId,
     resize_start: Option<(Point<Pixels>, f32)>,
 }
 
@@ -56,9 +59,10 @@ impl ResizablePanel {
             axis: Axis::Horizontal,
             panel_size: 260.0,
             min_panel_size: 150.0,
-            max_panel_size: 600.0,
+            max_panel_size: None,
             resize_handle_style: ResizeHandleStyle::default(),
             resize_handle_id: ElementId::Uuid(Uuid::new_v4()),
+            resize_handle_hit_id: ElementId::Uuid(Uuid::new_v4()),
             resize_start: None,
         }
     }
@@ -75,7 +79,7 @@ impl ResizablePanel {
 
     pub fn with_panel_size_range(mut self, min_size: f32, max_size: f32) -> Self {
         self.min_panel_size = min_size;
-        self.max_panel_size = max_size;
+        self.max_panel_size = Some(max_size);
         self
     }
 
@@ -99,6 +103,7 @@ impl ResizablePanel {
             return;
         };
 
+        let max_panel_size = self.max_panel_size_for_bounds(&event.bounds);
         let delta = match self.axis {
             Axis::Horizontal => event.event.position.x - start_position.x,
             Axis::Vertical => event.event.position.y - start_position.y,
@@ -107,23 +112,46 @@ impl ResizablePanel {
             initial_size,
             f32::from(delta),
             self.min_panel_size,
-            self.max_panel_size,
+            max_panel_size,
         );
         cx.notify();
     }
 
+    fn max_panel_size_for_bounds(&self, bounds: &Bounds<Pixels>) -> f32 {
+        let container_size = match self.axis {
+            Axis::Horizontal => f32::from(bounds.size.width),
+            Axis::Vertical => f32::from(bounds.size.height),
+        };
+        let resize_handle_size = f32::from(self.resize_handle_style.size);
+        let container_limit = (container_size - resize_handle_size).max(0.0);
+
+        self.max_panel_size
+            .map(|max_panel_size| max_panel_size.min(container_limit))
+            .unwrap_or(container_limit)
+    }
+
+    fn resize_handle_hit_size(&self) -> Pixels {
+        px(f32::from(self.resize_handle_style.size).max(10.0))
+    }
+
     fn render_resize_handle(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let style = self.resize_handle_style;
-
-        div()
-            .id(self.resize_handle_id.clone())
-            .bg(style.bg)
-            .active(move |this| this.bg(style.active_bg))
+        let hit_size = self.resize_handle_hit_size();
+        let hit_offset = px((f32::from(style.size) - f32::from(hit_size)) / 2.0);
+        let hit_target = div()
+            .id(self.resize_handle_hit_id.clone())
+            .absolute()
             .when(matches!(self.axis, Axis::Horizontal), |this| {
-                this.w(style.size).h_full().cursor_col_resize()
+                this.left(hit_offset)
+                    .w(hit_size)
+                    .h_full()
+                    .cursor_col_resize()
             })
             .when(matches!(self.axis, Axis::Vertical), |this| {
-                this.h(style.size).w_full().cursor_row_resize()
+                this.top(hit_offset)
+                    .h(hit_size)
+                    .w_full()
+                    .cursor_row_resize()
             })
             .on_mouse_down(
                 MouseButton::Left,
@@ -139,14 +167,25 @@ impl ResizablePanel {
                     app.stop_propagation();
                     app.new(|_| handle.clone())
                 },
-            )
-            .on_drag_move(cx.listener(|this, event, _window, cx| {
-                this.handle_resize(event, cx);
-            }))
+            );
+
+        div()
+            .id(self.resize_handle_id.clone())
+            .relative()
+            .bg(style.bg)
+            .active(move |this| this.bg(style.active_bg))
+            .when(matches!(self.axis, Axis::Horizontal), |this| {
+                this.w(style.size).h_full().cursor_col_resize()
+            })
+            .when(matches!(self.axis, Axis::Vertical), |this| {
+                this.h(style.size).w_full().cursor_row_resize()
+            })
+            .child(hit_target)
     }
 }
 
 fn panel_size_after_drag(initial_size: f32, delta: f32, min_size: f32, max_size: f32) -> f32 {
+    let min_size = min_size.min(max_size);
     (initial_size + delta).clamp(min_size, max_size)
 }
 
@@ -160,6 +199,9 @@ impl Render for ResizablePanel {
         container
             .size_full()
             .overflow_hidden()
+            .on_drag_move(cx.listener(|this, event, _window, cx| {
+                this.handle_resize(event, cx);
+            }))
             .child(
                 div()
                     .when(matches!(self.axis, Axis::Horizontal), |this| {

@@ -286,9 +286,9 @@ impl SessionOperationWindow {
             .p_2()
             .size_full()
             .bg(rgb_to_u32(248, 250, 252))
-            .child(v_flex().p_2().gap_2().child(h_flex().gap_2().children(
-                ConnectionProtocol::ALL.map(|protocol| self.protocol_option(protocol, cx)),
-            )))
+            // .child(v_flex().p_2().gap_2().child(h_flex().gap_2().children(
+            //     ConnectionProtocol::ALL.map(|protocol| self.protocol_option(protocol, cx)),
+            // )))
             .child(
                 h_flex()
                     .flex_1()

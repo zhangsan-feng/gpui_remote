@@ -1,14 +1,20 @@
+mod remote;
+mod local;
+
 use super::{
-    DragPreviewItem, LocalEntry, LocalSnapshot, SftpEntry, SftpSnapshot, SftpStatus, SftpView,
-    TransferRecord,
+    DeleteLocalEntry, DeleteRemoteEntry, DragPreviewLocalToRemoteItem,
+    DragPreviewRemoteToLocalItem, LocalEntry, LocalSnapshot, SftpEntry, SftpSnapshot, SftpStatus,
+    SftpView, TransferRecord,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow};
 use gpui_component::{
-    ActiveTheme, Disableable, Icon, IconName, Sizable,
+    ActiveTheme, Disableable, ElementExt, Icon, IconName, Sizable,
     button::{Button, ButtonVariants as _},
-    h_flex, v_flex,
+    h_flex,
+    menu::ContextMenuExt,
+    v_flex,
 };
 
 use crate::component::theme;
@@ -25,13 +31,25 @@ impl SftpView {
         };
         sync_list_state(&self.local_list_state, self.local.entries.len());
         sync_list_state(&self.remote_list_state, snapshot.entries.len());
-        sync_list_state(&self.transfer_list_state, self.transfers.len());
-        self.browser(snapshot, cx).into_any_element()
+        let transfers = self
+            .transfers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        sync_list_state(&self.transfer_list_state, transfers.len());
+        self.browser(snapshot, transfers, cx).into_any_element()
     }
 
-    fn browser(&self, snapshot: SftpSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
+    fn browser(
+        &self,
+        snapshot: SftpSnapshot,
+        transfers: Vec<TransferRecord>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let colors = cx.theme();
         v_flex()
+            .on_action(cx.listener(Self::delete_local_entry))
+            .on_action(cx.listener(Self::delete_remote_entry))
             .size_full()
             .min_h_0()
             .overflow_hidden()
@@ -47,11 +65,12 @@ impl SftpView {
                     .child(self.local_panel(self.local.clone(), cx))
                     .child(self.remote_panel(snapshot, cx)),
             )
-            .child(self.transfer_panel(cx))
+            .child(self.transfer_panel(transfers, cx))
     }
 
     fn local_panel(&self, snapshot: LocalSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
+        let menu_view = cx.entity();
         let content = if snapshot.entries.is_empty() && !snapshot.loading {
             self.empty_directory("桌面目录为空", cx).into_any_element()
         } else {
@@ -121,10 +140,32 @@ impl SftpView {
                         ),
                     ),
             )
+            .on_drop(cx.listener(
+                |this, dragged: &DragPreviewRemoteToLocalItem, _window, cx| {
+                    this.download_file(
+                        dragged.path.clone(),
+                        dragged.name.clone(),
+                        dragged.size,
+                        dragged.is_directory,
+                        cx,
+                    );
+                },
+            ))
+            .context_menu(move |menu, _, menu_cx| {
+                // let Some(path) = menu_view.read(menu_cx).local_context_path.clone() else {
+                //     return menu;
+                // };
+                // let _ = menu_view.update(menu_cx, |this, _| {
+                //     this.local_context_path = None;
+                // });
+                // menu.menu_with_icon("删除", IconName::CircleX, Box::new(DeleteLocalEntry(path)))
+                menu
+            })
     }
 
     fn remote_panel(&self, snapshot: SftpSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
+        let menu_view = cx.entity();
         let connected = snapshot.status == SftpStatus::Connected;
         let content = if snapshot.entries.is_empty() && !snapshot.loading {
             self.empty_directory("远程目录为空", cx).into_any_element()
@@ -180,10 +221,11 @@ impl SftpView {
                         )
                     }),
             )
-            .on_drop(cx.listener(|this, dragged: &DragPreviewItem, _window, cx| {
-                println!("成功接收到了拖拽路径: {:?}", dragged.path);
-                cx.notify();
-            }))
+            .on_drop(cx.listener(
+                |this, dragged: &DragPreviewLocalToRemoteItem, _window, cx| {
+                    this.upload_file(dragged.path.clone(), cx);
+                },
+            ))
             .when_some(snapshot.error.clone(), |this, error| {
                 this.child(self.error_bar(error, cx))
             })
@@ -209,6 +251,22 @@ impl SftpView {
                     SftpStatus::Connected => unreachable!(),
                 };
                 this.child(self.status_view(title, message, cx))
+            })
+            .context_menu(move |menu, _, menu_cx| {
+                // let Some((path, is_directory)) =
+                //     menu_view.read(menu_cx).remote_context_entry.clone()
+                // else {
+                //     return menu;
+                // };
+                // let _ = menu_view.update(menu_cx, |this, _| {
+                //     this.remote_context_entry = None;
+                // });
+                // menu.menu_with_icon(
+                //     "删除",
+                //     IconName::CircleX,
+                //     Box::new(DeleteRemoteEntry { path, is_directory }),
+                // )
+                menu
             })
     }
 
@@ -248,6 +306,8 @@ impl SftpView {
     fn local_row(entry: LocalEntry, view: WeakEntity<SftpView>, cx: &mut App) -> AnyElement {
         let colors = cx.theme();
         let path = entry.path.clone();
+        let context_path = path.clone();
+        let context_view = view.clone();
         let is_directory = entry.is_directory;
         h_flex()
             .id(format!("sftp-local-{}", entry.path.display()))
@@ -278,12 +338,17 @@ impl SftpView {
                     .text_color(colors.muted_foreground)
                     .child(Self::format_local_modified(entry.modified_at)),
             )
+            .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                let _ = context_view.update(cx, |this, cx| {
+                    this.local_context_path = Some(context_path.clone());
+                    cx.notify();
+                });
+            })
             .on_drag(
-                DragPreviewItem { path: path.clone() },
+                DragPreviewLocalToRemoteItem { path: path.clone() },
                 |dragged, _, _, cx| {
                     let path = dragged.path.clone();
-
-                    cx.new(move |_| DragPreviewItem { path })
+                    cx.new(move |_| DragPreviewLocalToRemoteItem { path })
                 },
             )
             .on_mouse_down(MouseButton::Left, move |event, _, cx| {
@@ -299,7 +364,15 @@ impl SftpView {
     fn remote_row(entry: SftpEntry, view: WeakEntity<SftpView>, cx: &mut App) -> AnyElement {
         let colors = cx.theme();
         let path = entry.path.clone();
+        let context_path = path.clone();
+        let context_view = view.clone();
         let is_directory = entry.is_directory;
+        let drag_item = DragPreviewRemoteToLocalItem {
+            name: entry.name.clone(),
+            path: entry.path.clone(),
+            size: entry.size,
+            is_directory,
+        };
         h_flex()
             .id(format!("sftp-remote-{}", entry.path))
             .h(px(38.))
@@ -329,6 +402,21 @@ impl SftpView {
                     .text_color(colors.muted_foreground)
                     .child(Self::format_modified(entry.modified_at)),
             )
+            .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                let _ = context_view.update(cx, |this, cx| {
+                    this.remote_context_entry = Some((context_path.clone(), is_directory));
+                    cx.notify();
+                });
+            })
+            .on_drag(drag_item, |dragged, _, _, cx| {
+                let dragged = DragPreviewRemoteToLocalItem {
+                    name: dragged.name.clone(),
+                    path: dragged.path.clone(),
+                    size: dragged.size,
+                    is_directory: dragged.is_directory,
+                };
+                cx.new(move |_| dragged)
+            })
             .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                 if is_directory && event.click_count == 2 {
                     let _ = view.update(cx, |this, cx| {
@@ -361,9 +449,14 @@ impl SftpView {
             .child(div().min_w_0().text_sm().child(name).truncate())
     }
 
-    fn transfer_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn transfer_panel(
+        &self,
+        transfers: Vec<TransferRecord>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let colors = cx.theme();
-        let content = if self.transfers.is_empty() {
+        let transfer_count = transfers.len();
+        let content = if transfers.is_empty() {
             v_flex()
                 .size_full()
                 .items_center()
@@ -374,7 +467,6 @@ impl SftpView {
                 .child(div().text_xs().child("上传和下载任务会显示在这里"))
                 .into_any_element()
         } else {
-            let transfers = self.transfers.clone();
             list(self.transfer_list_state.clone(), move |index, _, cx| {
                 transfers
                     .get(index)
@@ -409,7 +501,7 @@ impl SftpView {
                         div()
                             .text_xs()
                             .text_color(colors.muted_foreground)
-                            .child(format!("{} 个任务", self.transfers.len())),
+                            .child(format!("{transfer_count} 个任务")),
                     ),
             )
             .child(

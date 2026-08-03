@@ -1,3 +1,6 @@
+mod remote;
+mod local;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -10,17 +13,20 @@ use gpui::*;
 use russh::{Disconnect, client};
 use russh_sftp::client::SftpSession;
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 use tokio_socks::tcp::Socks5Stream;
 
 use crate::{domain::session::SessionProfile, infrastructure::storage::verify_host_key};
 
 use super::{
-    LocalEntry, SftpCommand, SftpEntry, SftpModel, SftpRuntime, SftpSnapshot, SftpStatus, SftpView,
+    DeleteLocalEntry, DeleteRemoteEntry, LocalEntry, SftpCommand, SftpEntry, SftpModel,
+    SftpRuntime, SftpSnapshot, SftpStatus, SftpView, TransferRecord,
 };
+
+const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 
 trait SshStream: AsyncRead + AsyncWrite + Unpin + Send {}
 
@@ -124,6 +130,22 @@ impl SftpModel {
             true,
         );
     }
+
+    fn update_transfer(&self, transfer_id: u64, progress: f32, status: impl Into<String>) {
+        let mut transfers = self
+            .transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(transfer) = transfers
+            .iter_mut()
+            .find(|transfer| transfer.id == transfer_id)
+        {
+            transfer.progress = progress.clamp(0., 1.);
+            transfer.status = status.into();
+        }
+        drop(transfers);
+        self.updates.notify_waiters();
+    }
 }
 
 impl SftpView {
@@ -163,6 +185,7 @@ impl SftpView {
 
         let model = Arc::new(SftpModel {
             snapshot: RwLock::new(SftpSnapshot::default()),
+            transfers: self.transfers.clone(),
             updates: self.updates.clone(),
             status_updates: self.status_updates.clone(),
         });
@@ -207,6 +230,184 @@ impl SftpView {
         {
             runtime.model.set_error("SFTP 连接已关闭".to_owned());
         }
+    }
+
+    pub(super) fn upload_file(&mut self, local_path: PathBuf, cx: &mut Context<Self>) {
+        let Some(snapshot) = self.selected_snapshot() else {
+            return;
+        };
+        let Some(file_name) = local_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+        else {
+            return;
+        };
+        let Ok(metadata) = fs::metadata(&local_path) else {
+            return;
+        };
+        if !metadata.is_file() && !metadata.is_dir() {
+            return;
+        }
+        let Some(commands) = self.selected_commands() else {
+            return;
+        };
+        let remote_path = join_remote_path(&snapshot.path, &file_name);
+        let transfer_id = self.push_transfer(file_name, "上传", remote_path.clone(), cx);
+        if commands
+            .send(SftpCommand::Upload {
+                transfer_id,
+                local_path,
+                remote_path,
+                refresh_path: snapshot.path,
+            })
+            .is_err()
+        {
+            self.fail_queued_transfer(transfer_id, cx);
+        }
+    }
+
+    pub(super) fn download_file(
+        &mut self,
+        remote_path: String,
+        file_name: String,
+        total_size: u64,
+        is_directory: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(commands) = self.selected_commands() else {
+            return;
+        };
+        let local_directory = self.local.path.clone();
+        let local_path = local_directory.join(&file_name);
+        let transfer_id =
+            self.push_transfer(file_name, "下载", local_path.display().to_string(), cx);
+        let (complete, completion) = oneshot::channel();
+        if commands
+            .send(SftpCommand::Download {
+                transfer_id,
+                remote_path,
+                local_path,
+                total_size,
+                is_directory,
+                complete,
+            })
+            .is_err()
+        {
+            self.fail_queued_transfer(transfer_id, cx);
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            if completion.await.unwrap_or(false) {
+                let _ = this.update(cx, |this, cx| {
+                    if this.local.path == local_directory {
+                        this.load_local_directory(local_directory, cx);
+                    }
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn selected_commands(&self) -> Option<mpsc::UnboundedSender<SftpCommand>> {
+        let workspace_id = self.selected_workspace_id.as_deref()?;
+        Some(self.runtimes.get(workspace_id)?.commands.clone())
+    }
+
+    fn push_transfer(
+        &mut self,
+        name: String,
+        direction: &str,
+        target: String,
+        cx: &mut Context<Self>,
+    ) -> u64 {
+        let transfer_id = self.next_transfer_id;
+        self.next_transfer_id = self.next_transfer_id.wrapping_add(1).max(1);
+        self.transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(TransferRecord {
+                id: transfer_id,
+                name,
+                direction: direction.to_owned(),
+                target,
+                progress: 0.,
+                status: "等待中".to_owned(),
+            });
+        cx.notify();
+        transfer_id
+    }
+
+    fn fail_queued_transfer(&self, transfer_id: u64, cx: &mut Context<Self>) {
+        if let Some(transfer) = self
+            .transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter_mut()
+            .find(|transfer| transfer.id == transfer_id)
+        {
+            transfer.status = "失败".to_owned();
+        }
+        cx.notify();
+    }
+
+    pub(super) fn delete_local_entry(
+        &mut self,
+        action: &DeleteLocalEntry,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = action.0.clone();
+        let current_directory = self.local.path.clone();
+        self.local.error = None;
+        cx.spawn(async move |this, cx| {
+            let result = tokio::task::spawn_blocking(move || delete_local_path(&path))
+                .await
+                .map_err(|error| anyhow::anyhow!("删除本地路径任务失败: {error}"))
+                .and_then(|result| result);
+            let _ = this.update(cx, |this, cx| {
+                if this.local.path != current_directory {
+                    return;
+                }
+                match result {
+                    Ok(()) => this.load_local_directory(current_directory, cx),
+                    Err(error) => {
+                        this.local.error = Some(format!("{error:#}"));
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn delete_remote_entry(
+        &mut self,
+        action: &DeleteRemoteEntry,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(snapshot) = self.selected_snapshot() else {
+            return;
+        };
+        let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
+            return;
+        };
+        let Some(runtime) = self.runtimes.get(workspace_id) else {
+            return;
+        };
+        runtime.model.set_loading();
+        if runtime
+            .commands
+            .send(SftpCommand::Delete {
+                path: action.path.clone(),
+                is_directory: action.is_directory,
+                refresh_path: snapshot.path,
+            })
+            .is_err()
+        {
+            runtime.model.set_error("SFTP 连接已关闭".to_owned());
+        }
+        cx.notify();
     }
 }
 
@@ -319,6 +520,71 @@ async fn run_sftp(
                     Err(error) => model.set_error(format!("{error:#}")),
                 }
             }
+            SftpCommand::Upload {
+                transfer_id,
+                local_path,
+                remote_path,
+                refresh_path,
+            } => {
+                model.update_transfer(transfer_id, 0., "扫描中");
+                let result = upload_path(&sftp, &local_path, &remote_path, |progress| {
+                    model.update_transfer(transfer_id, progress, "传输中")
+                })
+                .await;
+                match result {
+                    Ok(()) => {
+                        model.update_transfer(transfer_id, 1., "已完成");
+                        if model.snapshot().path == refresh_path {
+                            match read_directory(&sftp, &refresh_path).await {
+                                Ok(entries) => model.set_directory(refresh_path, entries),
+                                Err(error) => model.set_error(format!("{error:#}")),
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        log::error!("上传文件失败: {error:#}");
+                        model.update_transfer(transfer_id, 0., "失败");
+                    }
+                }
+            }
+            SftpCommand::Download {
+                transfer_id,
+                remote_path,
+                local_path,
+                total_size,
+                is_directory,
+                complete,
+            } => {
+                model.update_transfer(transfer_id, 0., "扫描中");
+                let result = download_path(
+                    &sftp,
+                    &remote_path,
+                    &local_path,
+                    total_size,
+                    is_directory,
+                    |progress| model.update_transfer(transfer_id, progress, "传输中"),
+                )
+                .await;
+                let succeeded = result.is_ok();
+                if let Err(error) = result {
+                    log::error!("下载文件失败: {error:#}");
+                    model.update_transfer(transfer_id, 0., "失败");
+                } else {
+                    model.update_transfer(transfer_id, 1., "已完成");
+                }
+                let _ = complete.send(succeeded);
+            }
+            SftpCommand::Delete {
+                path,
+                is_directory,
+                refresh_path,
+            } => match delete_remote_path(&sftp, &path, is_directory).await {
+                Ok(()) => match read_directory(&sftp, &refresh_path).await {
+                    Ok(entries) => model.set_directory(refresh_path, entries),
+                    Err(error) => model.set_error(format!("{error:#}")),
+                },
+                Err(error) => model.set_error(format!("{error:#}")),
+            },
             SftpCommand::Disconnect => break,
         }
     }
@@ -335,6 +601,304 @@ async fn run_sftp(
         true,
     );
     Ok(())
+}
+
+struct LocalTransferEntry {
+    local_path: PathBuf,
+    remote_path: String,
+    is_directory: bool,
+}
+
+struct RemoteTransferEntry {
+    remote_path: String,
+    local_path: PathBuf,
+    is_directory: bool,
+}
+
+async fn upload_path(
+    sftp: &SftpSession,
+    local_path: &Path,
+    remote_path: &str,
+    mut on_progress: impl FnMut(f32),
+) -> Result<()> {
+    let local_root = local_path.to_owned();
+    let remote_root = remote_path.to_owned();
+    let (entries, total_size) =
+        tokio::task::spawn_blocking(move || collect_local_entries(&local_root, &remote_root))
+            .await
+            .context("扫描本地上传目录任务失败")??;
+    let mut transferred = 0_u64;
+
+    for entry in entries {
+        if entry.is_directory {
+            if !sftp
+                .try_exists(&entry.remote_path)
+                .await
+                .with_context(|| format!("检查远程目录 {} 失败", entry.remote_path))?
+            {
+                sftp.create_dir(&entry.remote_path)
+                    .await
+                    .with_context(|| format!("创建远程目录 {} 失败", entry.remote_path))?;
+            }
+            continue;
+        }
+
+        let mut source = tokio::fs::File::open(&entry.local_path)
+            .await
+            .with_context(|| format!("打开本地文件 {} 失败", entry.local_path.display()))?;
+        let mut target = sftp
+            .create(&entry.remote_path)
+            .await
+            .with_context(|| format!("创建远程文件 {} 失败", entry.remote_path))?;
+        copy_with_progress(
+            &mut source,
+            &mut target,
+            total_size,
+            &mut transferred,
+            &mut on_progress,
+        )
+        .await?;
+        target
+            .flush()
+            .await
+            .with_context(|| format!("刷新远程文件 {} 失败", entry.remote_path))?;
+    }
+    on_progress(1.);
+    Ok(())
+}
+
+async fn download_path(
+    sftp: &SftpSession,
+    remote_path: &str,
+    local_path: &Path,
+    known_size: u64,
+    is_directory: bool,
+    mut on_progress: impl FnMut(f32),
+) -> Result<()> {
+    let (entries, total_size) =
+        collect_remote_entries(sftp, remote_path, local_path, known_size, is_directory).await?;
+    let mut transferred = 0_u64;
+
+    for entry in entries {
+        if entry.is_directory {
+            tokio::fs::create_dir_all(&entry.local_path)
+                .await
+                .with_context(|| format!("创建本地目录 {} 失败", entry.local_path.display()))?;
+            continue;
+        }
+        if let Some(parent) = entry.local_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("创建本地目录 {} 失败", parent.display()))?;
+        }
+        let mut source = sftp
+            .open(&entry.remote_path)
+            .await
+            .with_context(|| format!("打开远程文件 {} 失败", entry.remote_path))?;
+        let mut target = tokio::fs::File::create(&entry.local_path)
+            .await
+            .with_context(|| format!("创建本地文件 {} 失败", entry.local_path.display()))?;
+        copy_with_progress(
+            &mut source,
+            &mut target,
+            total_size,
+            &mut transferred,
+            &mut on_progress,
+        )
+        .await?;
+        target
+            .flush()
+            .await
+            .with_context(|| format!("刷新本地文件 {} 失败", entry.local_path.display()))?;
+    }
+    on_progress(1.);
+    Ok(())
+}
+
+fn collect_local_entries(
+    local_root: &Path,
+    remote_root: &str,
+) -> Result<(Vec<LocalTransferEntry>, u64)> {
+    let mut entries = Vec::new();
+    let mut total_size = 0_u64;
+    let mut pending = vec![(local_root.to_owned(), remote_root.to_owned())];
+
+    while let Some((local_path, remote_path)) = pending.pop() {
+        let metadata = fs::symlink_metadata(&local_path)
+            .with_context(|| format!("读取本地路径 {} 失败", local_path.display()))?;
+        if metadata.file_type().is_symlink() {
+            bail!("暂不支持传输符号链接 {}", local_path.display());
+        }
+        let is_directory = metadata.is_dir();
+        entries.push(LocalTransferEntry {
+            local_path: local_path.clone(),
+            remote_path: remote_path.clone(),
+            is_directory,
+        });
+        if !is_directory {
+            total_size = total_size.saturating_add(metadata.len());
+            continue;
+        }
+        for child in fs::read_dir(&local_path)
+            .with_context(|| format!("读取本地目录 {} 失败", local_path.display()))?
+        {
+            let child =
+                child.with_context(|| format!("读取本地目录项 {} 失败", local_path.display()))?;
+            let name = child.file_name().to_string_lossy().into_owned();
+            pending.push((child.path(), join_remote_path(&remote_path, &name)));
+        }
+    }
+    Ok((entries, total_size))
+}
+
+fn delete_local_path(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("读取本地路径 {} 失败", path.display()))?;
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path).with_context(|| format!("删除本地目录 {} 失败", path.display()))
+    } else {
+        fs::remove_file(path).with_context(|| format!("删除本地文件 {} 失败", path.display()))
+    }
+}
+
+async fn collect_remote_entries(
+    sftp: &SftpSession,
+    remote_root: &str,
+    local_root: &Path,
+    known_size: u64,
+    is_directory: bool,
+) -> Result<(Vec<RemoteTransferEntry>, u64)> {
+    if !is_directory {
+        let total_size = if known_size == 0 {
+            sftp.metadata(remote_root)
+                .await
+                .with_context(|| format!("读取远程文件 {remote_root} 信息失败"))?
+                .len()
+        } else {
+            known_size
+        };
+        return Ok((
+            vec![RemoteTransferEntry {
+                remote_path: remote_root.to_owned(),
+                local_path: local_root.to_owned(),
+                is_directory: false,
+            }],
+            total_size,
+        ));
+    }
+
+    let mut entries = Vec::new();
+    let mut total_size = 0_u64;
+    let mut pending = vec![(remote_root.to_owned(), local_root.to_owned())];
+    while let Some((remote_path, local_path)) = pending.pop() {
+        entries.push(RemoteTransferEntry {
+            remote_path: remote_path.clone(),
+            local_path: local_path.clone(),
+            is_directory: true,
+        });
+        let children = sftp
+            .read_dir(&remote_path)
+            .await
+            .with_context(|| format!("读取远程目录 {remote_path} 失败"))?;
+        for child in children {
+            let name = child.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let metadata = child.metadata();
+            let child_local_path = local_path.join(&name);
+            if metadata.is_dir() {
+                pending.push((child.path(), child_local_path));
+            } else {
+                total_size = total_size.saturating_add(metadata.len());
+                entries.push(RemoteTransferEntry {
+                    remote_path: child.path(),
+                    local_path: child_local_path,
+                    is_directory: false,
+                });
+            }
+        }
+    }
+    Ok((entries, total_size))
+}
+
+async fn delete_remote_path(
+    sftp: &SftpSession,
+    remote_path: &str,
+    is_directory: bool,
+) -> Result<()> {
+    if !is_directory {
+        return sftp
+            .remove_file(remote_path)
+            .await
+            .with_context(|| format!("删除远程文件 {remote_path} 失败"));
+    }
+
+    let mut directories = Vec::new();
+    let mut pending = vec![remote_path.to_owned()];
+    while let Some(directory) = pending.pop() {
+        directories.push(directory.clone());
+        let children = sftp
+            .read_dir(&directory)
+            .await
+            .with_context(|| format!("读取远程目录 {directory} 失败"))?;
+        for child in children {
+            let name = child.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            if child.metadata().is_dir() {
+                pending.push(child.path());
+            } else {
+                let child_path = child.path();
+                sftp.remove_file(&child_path)
+                    .await
+                    .with_context(|| format!("删除远程文件 {child_path} 失败"))?;
+            }
+        }
+    }
+    for directory in directories.into_iter().rev() {
+        sftp.remove_dir(&directory)
+            .await
+            .with_context(|| format!("删除远程目录 {directory} 失败"))?;
+    }
+    Ok(())
+}
+
+async fn copy_with_progress(
+    source: &mut (impl AsyncRead + Unpin),
+    target: &mut (impl AsyncWrite + Unpin),
+    total_size: u64,
+    transferred: &mut u64,
+    on_progress: &mut impl FnMut(f32),
+) -> Result<()> {
+    let mut buffer = vec![0; TRANSFER_BUFFER_SIZE];
+    loop {
+        let read = source.read(&mut buffer).await.context("读取传输数据失败")?;
+        if read == 0 {
+            break;
+        }
+        target
+            .write_all(&buffer[..read])
+            .await
+            .context("写入传输数据失败")?;
+        *transferred = transferred.saturating_add(read as u64);
+        let progress = if total_size == 0 {
+            1.
+        } else {
+            *transferred as f32 / total_size as f32
+        };
+        on_progress(progress);
+    }
+    Ok(())
+}
+
+fn join_remote_path(directory: &str, file_name: &str) -> String {
+    if directory == "/" {
+        format!("/{file_name}")
+    } else {
+        format!("{}/{file_name}", directory.trim_end_matches('/'))
+    }
 }
 
 async fn read_directory(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>> {

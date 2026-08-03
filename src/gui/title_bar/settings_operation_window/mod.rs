@@ -8,12 +8,13 @@ use gpui_component::{
     v_flex,
 };
 
-mod background;
-mod color;
-mod core;
-mod ui;
 
-pub(crate) use core::open_settings_window;
+mod core;
+mod external;
+mod ui;
+mod internal;
+
+pub(crate) use external::open_settings_window;
 
 pub struct SettingsOperationWindow {
     color_picker: Entity<ColorPickerState>,

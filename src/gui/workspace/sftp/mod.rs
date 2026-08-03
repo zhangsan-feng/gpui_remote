@@ -13,8 +13,9 @@ use std::{
 };
 
 use gpui::*;
+use serde::Deserialize;
 use tokio::{
-    sync::{Notify, mpsc},
+    sync::{Notify, mpsc, oneshot},
     task::JoinHandle,
 };
 
@@ -54,6 +55,7 @@ struct LocalSnapshot {
 
 #[derive(Clone, Debug)]
 struct TransferRecord {
+    id: u64,
     name: String,
     direction: String,
     target: String,
@@ -84,12 +86,32 @@ impl Default for SftpSnapshot {
 
 struct SftpModel {
     snapshot: RwLock<SftpSnapshot>,
+    transfers: Arc<RwLock<Vec<TransferRecord>>>,
     updates: Arc<Notify>,
     status_updates: Arc<Notify>,
 }
 
 enum SftpCommand {
     LoadDirectory(String),
+    Upload {
+        transfer_id: u64,
+        local_path: PathBuf,
+        remote_path: String,
+        refresh_path: String,
+    },
+    Download {
+        transfer_id: u64,
+        remote_path: String,
+        local_path: PathBuf,
+        total_size: u64,
+        is_directory: bool,
+        complete: oneshot::Sender<bool>,
+    },
+    Delete {
+        path: String,
+        is_directory: bool,
+        refresh_path: String,
+    },
     Disconnect,
 }
 
@@ -103,7 +125,10 @@ pub(in crate::gui::workspace) struct SftpView {
     runtimes: HashMap<String, SftpRuntime>,
     selected_workspace_id: Option<String>,
     local: LocalSnapshot,
-    transfers: Vec<TransferRecord>,
+    local_context_path: Option<PathBuf>,
+    remote_context_entry: Option<(String, bool)>,
+    transfers: Arc<RwLock<Vec<TransferRecord>>>,
+    next_transfer_id: u64,
     local_list_state: ListState,
     remote_list_state: ListState,
     transfer_list_state: ListState,
@@ -111,14 +136,39 @@ pub(in crate::gui::workspace) struct SftpView {
     status_updates: Arc<Notify>,
 }
 
-struct DragPreviewItem {
+#[derive(Clone)]
+struct DragPreviewLocalToRemoteItem {
     path: PathBuf,
 }
-impl Render for DragPreviewItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl Render for DragPreviewLocalToRemoteItem {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
-            .child(self.path.to_str().unwrap().to_string())
+            .child(self.path.to_string_lossy().into_owned())
+    }
+}
+
+#[derive(Clone)]
+struct DragPreviewRemoteToLocalItem {
+    name: String,
+    path: String,
+    size: u64,
+    is_directory: bool,
+}
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = sftp, no_json)]
+struct DeleteLocalEntry(PathBuf);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = sftp, no_json)]
+struct DeleteRemoteEntry {
+    path: String,
+    is_directory: bool,
+}
+impl Render for DragPreviewRemoteToLocalItem {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(self.name.clone())
     }
 }
 
@@ -152,7 +202,10 @@ impl SftpView {
                 loading: true,
                 error: None,
             },
-            transfers: Vec::new(),
+            local_context_path: None,
+            remote_context_entry: None,
+            transfers: Arc::new(RwLock::new(Vec::new())),
+            next_transfer_id: 1,
             local_list_state,
             remote_list_state,
             transfer_list_state,

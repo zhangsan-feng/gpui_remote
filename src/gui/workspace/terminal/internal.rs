@@ -309,36 +309,20 @@ mod selection {
             cx.stop_propagation();
         }
 
-        pub(in crate::gui::workspace::terminal) fn select_point(
+        pub(in crate::gui::workspace::terminal) fn begin_text_selection(
             &mut self,
             workspace_id: String,
             viewport_point: TerminalPoint,
-            extend: bool,
             cx: &mut Context<Self>,
         ) {
-            self.selecting_text = true;
             let frame = self
                 .model(&workspace_id)
                 .map(|model| model.read().frame.clone())
                 .unwrap_or_default();
             let point = buffer_point(&frame, viewport_point);
-            if extend {
-                if let Some(selection) = self
-                    .selection
-                    .as_mut()
-                    .filter(|selection| selection.workspace_id == workspace_id)
-                {
-                    selection.head = point;
-                    cx.notify();
-                    return;
-                }
-            }
-            self.selection = Some(TerminalSelection {
-                workspace_id,
-                anchor: point,
-                head: point,
-                frame,
-            });
+            self.selection = None;
+            self.selection_origin = Some((workspace_id, point));
+            self.selecting_text = false;
             cx.notify();
         }
 
@@ -349,6 +333,28 @@ mod selection {
             cx: &mut Context<Self>,
         ) {
             if !self.selecting_text {
+                let Some((origin_workspace_id, anchor)) = self.selection_origin.as_ref() else {
+                    return;
+                };
+                if origin_workspace_id != workspace_id {
+                    return;
+                }
+                let frame = self
+                    .model(workspace_id)
+                    .map(|model| model.read().frame.clone())
+                    .unwrap_or_default();
+                let point = buffer_point(&frame, viewport_point);
+                if *anchor == point {
+                    return;
+                }
+                self.selection = Some(TerminalSelection {
+                    workspace_id: workspace_id.to_owned(),
+                    anchor: *anchor,
+                    head: point,
+                    frame,
+                });
+                self.selecting_text = true;
+                cx.notify();
                 return;
             }
             let frame = self
@@ -374,6 +380,7 @@ mod selection {
             _: &mut Window,
             _: &mut Context<Self>,
         ) {
+            self.selection_origin = None;
             self.selecting_text = false;
         }
     }

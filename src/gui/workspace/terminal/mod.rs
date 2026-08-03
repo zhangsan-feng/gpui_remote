@@ -10,7 +10,7 @@ use serde::Deserialize;
 use tokio::sync::Notify;
 
 use core::TerminalRuntime;
-use internal::{TerminalScrollHandle, TerminalSelection};
+use internal::{TerminalPoint, TerminalScrollHandle, TerminalSelection};
 
 pub(in crate::gui::workspace) use external::encode_agent_key;
 
@@ -43,6 +43,7 @@ pub(super) struct TerminalView {
     last_pty_size: Option<(String, u32, u32)>,
     observed_revision: Option<(String, u64)>,
     selection: Option<TerminalSelection>,
+    selection_origin: Option<(String, TerminalPoint)>,
     selecting_text: bool,
     scroll_handle: TerminalScrollHandle,
 }
@@ -73,6 +74,7 @@ impl TerminalView {
             last_pty_size: None,
             observed_revision: None,
             selection: None,
+            selection_origin: None,
             selecting_text: false,
             scroll_handle: TerminalScrollHandle::default(),
         };

@@ -4,4 +4,7 @@ mod model;
 
 pub use bridge::{AgentMcpClient, AgentMcpReceiver, agent_mcp_channel};
 pub use command::{AgentMcpCommand, AgentSftpCommand, AgentSshCommand};
-pub use model::{ProfileSummary, TerminalReadPage, TerminalSummary};
+pub use model::{
+    ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferSummary, TerminalReadPage,
+    TerminalSummary,
+};

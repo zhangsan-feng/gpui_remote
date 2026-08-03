@@ -7,7 +7,10 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::agent_mcp::{AgentMcpClient, ProfileSummary, TerminalReadPage, TerminalSummary},
+    application::agent_mcp::{
+        AgentMcpClient, ProfileSummary, SftpDirectorySummary, SftpEntrySummary,
+        SftpTransferSummary, TerminalReadPage, TerminalSummary,
+    },
     domain::session::Protocol,
 };
 
@@ -47,6 +50,23 @@ struct ReadTerminalInput {
     offset: usize,
     #[serde(default = "default_read_limit")]
     limit: usize,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SftpWorkspaceInput {
+    workspace_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SftpUploadInput {
+    workspace_id: String,
+    local_paths: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SftpDownloadInput {
+    workspace_id: String,
+    remote_paths: Vec<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -98,6 +118,27 @@ struct TerminalReadOutput {
 }
 
 #[derive(Serialize, JsonSchema)]
+struct SftpEntryOutput {
+    name: String,
+    path: String,
+    is_directory: bool,
+    size: u64,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct SftpDirectoryOutput {
+    path: String,
+    entries: Vec<SftpEntryOutput>,
+    loading: bool,
+    error: Option<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct SftpTransferOutput {
+    queued: usize,
+}
+
+#[derive(Serialize, JsonSchema)]
 struct ActionOutput {
     success: bool,
 }
@@ -124,6 +165,55 @@ impl AgentTerminalMcp {
             .open_session(input.profile_id, input.protocol.into())
             .await
             .map(|workspace_id| Json(OpenSessionOutput { workspace_id }))
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "List the local directory currently shown by the SFTP workspace.")]
+    async fn list_sftp_local(&self) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
+        self.client
+            .list_sftp_local()
+            .await
+            .map(|directory| Json(directory.into()))
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "List the current remote directory for an open SFTP workspace.")]
+    async fn list_sftp_remote(
+        &self,
+        Parameters(input): Parameters<SftpWorkspaceInput>,
+    ) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
+        self.client
+            .list_sftp_remote(input.workspace_id)
+            .await
+            .map(|directory| Json(directory.into()))
+            .map_err(mcp_error)
+    }
+
+    #[tool(
+        description = "Queue one or more local files or directories for upload to the current remote SFTP directory."
+    )]
+    async fn upload_sftp(
+        &self,
+        Parameters(input): Parameters<SftpUploadInput>,
+    ) -> Result<Json<SftpTransferOutput>, ErrorData> {
+        self.client
+            .upload_sftp(input.workspace_id, input.local_paths)
+            .await
+            .map(|transfer| Json(transfer.into()))
+            .map_err(mcp_error)
+    }
+
+    #[tool(
+        description = "Queue one or more entries from the current remote SFTP directory for download to the current local directory."
+    )]
+    async fn download_sftp(
+        &self,
+        Parameters(input): Parameters<SftpDownloadInput>,
+    ) -> Result<Json<SftpTransferOutput>, ErrorData> {
+        self.client
+            .download_sftp(input.workspace_id, input.remote_paths)
+            .await
+            .map(|transfer| Json(transfer.into()))
             .map_err(mcp_error)
     }
 
@@ -234,6 +324,36 @@ impl From<TerminalReadPage> for TerminalReadOutput {
             offset: page.offset,
             limit: page.limit,
             has_more: page.has_more,
+        }
+    }
+}
+
+impl From<SftpDirectorySummary> for SftpDirectoryOutput {
+    fn from(directory: SftpDirectorySummary) -> Self {
+        Self {
+            path: directory.path,
+            entries: directory.entries.into_iter().map(Into::into).collect(),
+            loading: directory.loading,
+            error: directory.error,
+        }
+    }
+}
+
+impl From<SftpEntrySummary> for SftpEntryOutput {
+    fn from(entry: SftpEntrySummary) -> Self {
+        Self {
+            name: entry.name,
+            path: entry.path,
+            is_directory: entry.is_directory,
+            size: entry.size,
+        }
+    }
+}
+
+impl From<SftpTransferSummary> for SftpTransferOutput {
+    fn from(transfer: SftpTransferSummary) -> Self {
+        Self {
+            queued: transfer.queued,
         }
     }
 }

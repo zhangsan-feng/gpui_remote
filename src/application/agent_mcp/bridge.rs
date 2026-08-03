@@ -3,8 +3,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::domain::session::Protocol;
 
 use super::{
-    AgentMcpCommand, AgentSftpCommand, AgentSshCommand, ProfileSummary, TerminalReadPage,
-    TerminalSummary, command::AgentMcpResult,
+    AgentMcpCommand, AgentSftpCommand, AgentSshCommand, ProfileSummary, SftpDirectorySummary,
+    SftpTransferSummary, TerminalReadPage, TerminalSummary, command::AgentMcpResult,
 };
 
 const CHANNEL_CAPACITY: usize = 64;
@@ -46,6 +46,54 @@ impl AgentMcpClient {
         self.request(|reply| match protocol {
             Protocol::Ssh => AgentMcpCommand::Ssh(AgentSshCommand::Open { profile_id, reply }),
             Protocol::Sftp => AgentMcpCommand::Sftp(AgentSftpCommand::Open { profile_id, reply }),
+        })
+        .await
+    }
+
+    pub async fn list_sftp_local(&self) -> AgentMcpResult<SftpDirectorySummary> {
+        self.request(|reply| AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }))
+            .await
+    }
+
+    pub async fn list_sftp_remote(
+        &self,
+        workspace_id: String,
+    ) -> AgentMcpResult<SftpDirectorySummary> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListRemote {
+                workspace_id,
+                reply,
+            })
+        })
+        .await
+    }
+
+    pub async fn upload_sftp(
+        &self,
+        workspace_id: String,
+        local_paths: Vec<String>,
+    ) -> AgentMcpResult<SftpTransferSummary> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::Upload {
+                workspace_id,
+                local_paths,
+                reply,
+            })
+        })
+        .await
+    }
+
+    pub async fn download_sftp(
+        &self,
+        workspace_id: String,
+        remote_paths: Vec<String>,
+    ) -> AgentMcpResult<SftpTransferSummary> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::Download {
+                workspace_id,
+                remote_paths,
+                reply,
+            })
         })
         .await
     }

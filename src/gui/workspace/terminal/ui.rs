@@ -83,10 +83,9 @@ mod terminal_render {
                                     cell_width,
                                 );
                                 let _ = select_view.update(cx, |this, cx| {
-                                    this.select_point(
+                                    this.begin_text_selection(
                                         select_workspace_id.clone(),
                                         point,
-                                        event.modifiers.shift,
                                         cx,
                                     );
                                 });

@@ -21,6 +21,7 @@ impl TerminalView {
         self.last_pty_size = None;
         self.observed_revision = None;
         self.selection = None;
+        self.selection_origin = None;
         self.selecting_text = false;
     }
 

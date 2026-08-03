@@ -24,3 +24,24 @@ pub struct TerminalReadPage {
     pub limit: usize,
     pub has_more: bool,
 }
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SftpEntrySummary {
+    pub name: String,
+    pub path: String,
+    pub is_directory: bool,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SftpDirectorySummary {
+    pub path: String,
+    pub entries: Vec<SftpEntrySummary>,
+    pub loading: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SftpTransferSummary {
+    pub queued: usize,
+}

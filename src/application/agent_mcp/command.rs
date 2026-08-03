@@ -1,6 +1,8 @@
 use tokio::sync::oneshot;
 
-use super::{ProfileSummary, TerminalReadPage, TerminalSummary};
+use super::{
+    ProfileSummary, SftpDirectorySummary, SftpTransferSummary, TerminalReadPage, TerminalSummary,
+};
 
 pub type AgentMcpResult<T> = Result<T, String>;
 
@@ -49,5 +51,22 @@ pub enum AgentSftpCommand {
     Open {
         profile_id: String,
         reply: oneshot::Sender<AgentMcpResult<String>>,
+    },
+    ListLocal {
+        reply: oneshot::Sender<AgentMcpResult<SftpDirectorySummary>>,
+    },
+    ListRemote {
+        workspace_id: String,
+        reply: oneshot::Sender<AgentMcpResult<SftpDirectorySummary>>,
+    },
+    Upload {
+        workspace_id: String,
+        local_paths: Vec<String>,
+        reply: oneshot::Sender<AgentMcpResult<SftpTransferSummary>>,
+    },
+    Download {
+        workspace_id: String,
+        remote_paths: Vec<String>,
+        reply: oneshot::Sender<AgentMcpResult<SftpTransferSummary>>,
     },
 }

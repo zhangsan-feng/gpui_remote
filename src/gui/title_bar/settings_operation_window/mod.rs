@@ -8,11 +8,10 @@ use gpui_component::{
     v_flex,
 };
 
-
 mod core;
 mod external;
-mod ui;
 mod internal;
+mod ui;
 
 pub(crate) use external::open_settings_window;
 

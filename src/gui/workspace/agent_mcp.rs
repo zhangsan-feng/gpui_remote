@@ -85,6 +85,43 @@ impl Workspace {
                 let result = self.open_agent_session(profile_id, Protocol::Sftp, cx);
                 let _ = reply.send(result);
             }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }) => {
+                let result = Ok(self.sftp.read(cx).mcp_local_directory());
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListRemote {
+                workspace_id,
+                reply,
+            }) => {
+                let result = self.sftp.read(cx).mcp_remote_directory(&workspace_id);
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::Upload {
+                workspace_id,
+                local_paths,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .update(cx, |sftp, cx| {
+                        sftp.mcp_upload(&workspace_id, local_paths, cx)
+                    })
+                    .map_err(|_| "工作区已关闭".to_owned());
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::Download {
+                workspace_id,
+                remote_paths,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .update(cx, |sftp, cx| {
+                        sftp.mcp_download(&workspace_id, remote_paths, cx)
+                    })
+                    .map_err(|_| "工作区已关闭".to_owned());
+                let _ = reply.send(result);
+            }
             AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }) => {
                 let selected_id = self.workspace.read(cx).selected_id();
                 let terminals = self

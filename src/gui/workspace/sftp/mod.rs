@@ -3,7 +3,7 @@ mod external;
 mod internal;
 mod ui;
 
-use self::core::default_desktop_path;
+use self::{core::default_desktop_path, ui::MultiSelection};
 
 use std::{
     collections::HashMap,
@@ -126,7 +126,10 @@ pub(in crate::gui::workspace) struct SftpView {
     selected_workspace_id: Option<String>,
     local: LocalSnapshot,
     local_context_path: Option<PathBuf>,
+    local_selection: MultiSelection<PathBuf>,
+    drag_started: bool,
     remote_context_entry: Option<(String, bool)>,
+    remote_selection: MultiSelection<String>,
     transfers: Arc<RwLock<Vec<TransferRecord>>>,
     next_transfer_id: u64,
     local_list_state: ListState,
@@ -138,22 +141,30 @@ pub(in crate::gui::workspace) struct SftpView {
 
 #[derive(Clone)]
 struct DragPreviewLocalToRemoteItem {
-    path: PathBuf,
+    paths: Vec<PathBuf>,
 }
 impl Render for DragPreviewLocalToRemoteItem {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .child(self.path.to_string_lossy().into_owned())
+        let label = if self.paths.len() == 1 {
+            self.paths[0].to_string_lossy().into_owned()
+        } else {
+            format!("{} 个本地项目", self.paths.len())
+        };
+        div().size_full().child(label)
     }
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+struct RemoteTransferItem {
+    path: String,
+    name: String,
+    size: u64,
+    is_directory: bool,
 }
 
 #[derive(Clone)]
 struct DragPreviewRemoteToLocalItem {
-    name: String,
-    path: String,
-    size: u64,
-    is_directory: bool,
+    items: Vec<RemoteTransferItem>,
 }
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -166,9 +177,24 @@ struct DeleteRemoteEntry {
     path: String,
     is_directory: bool,
 }
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = sftp, no_json)]
+struct UploadLocalEntry(Vec<PathBuf>);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = sftp, no_json)]
+struct DownloadRemoteEntry {
+    items: Vec<RemoteTransferItem>,
+}
 impl Render for DragPreviewRemoteToLocalItem {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(self.name.clone())
+        let label = if self.items.len() == 1 {
+            self.items[0].name.clone()
+        } else {
+            format!("{} 个远程项目", self.items.len())
+        };
+        div().size_full().child(label)
     }
 }
 
@@ -203,7 +229,10 @@ impl SftpView {
                 error: None,
             },
             local_context_path: None,
+            local_selection: MultiSelection::default(),
+            drag_started: false,
             remote_context_entry: None,
+            remote_selection: MultiSelection::default(),
             transfers: Arc::new(RwLock::new(Vec::new())),
             next_transfer_id: 1,
             local_list_state,

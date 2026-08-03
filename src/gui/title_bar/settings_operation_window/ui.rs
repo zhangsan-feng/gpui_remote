@@ -1,12 +1,12 @@
+use crate::component::theme::{self, AppTheme};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable, color_picker::ColorPicker, h_flex, v_flex,
-};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::color_picker::ColorPickerState;
 use gpui_component::slider::{Slider, SliderState};
-use crate::component::theme::{self, AppTheme};
+use gpui_component::{
+    ActiveTheme, Icon, IconName, Sizable, color_picker::ColorPicker, h_flex, v_flex,
+};
 
 use super::SettingsOperationWindow;
 
@@ -169,7 +169,6 @@ impl SettingsOperationWindow {
             )
             .on_click(move |_, _, cx| theme::select(selected_theme, cx))
     }
-
 
     pub(super) fn wallpaper_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme();

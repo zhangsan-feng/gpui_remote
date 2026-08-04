@@ -1,10 +1,9 @@
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
-    v_flex,
+    v_flex, ActiveTheme, Sizable,
 };
 
 use super::super::SftpView;
@@ -89,8 +88,14 @@ impl SftpView {
         };
         let parent = cx.weak_entity();
         let _ = cx.open_window(options, move |window, cx| {
+            window.set_background_appearance(
+                crate::component::theme::window_background_appearance(cx),
+            );
             let dialog = cx.new(|cx| PathInputDialog::new(parent, target, path, window, cx));
-            cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+            cx.new(|cx| {
+                gpui_component::Root::new(dialog, window, cx)
+                    .opacity(crate::component::theme::window_opacity(cx))
+            })
         });
     }
 }

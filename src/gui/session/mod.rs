@@ -5,7 +5,7 @@ mod ui;
 
 use anyhow::Error;
 use gpui::*;
-use gpui_component::input::InputState;
+use gpui_component::input::{InputEvent, InputState};
 use serde::Deserialize;
 
 use crate::{component::draggable_list::DraggableList, domain::session::SessionProfile};
@@ -39,8 +39,15 @@ impl SessionComponent {
             draggable_list: cx.new(move |_| DraggableList::new()),
             sessions: Vec::new(),
             core_err: None,
-            search_input: cx.new(|cx| InputState::new(window, cx)),
+            search_input: cx.new(|cx| InputState::new(window, cx).placeholder("搜索会话")),
         };
+        cx.subscribe(&this.search_input, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.refer_item(cx);
+                cx.notify();
+            }
+        })
+        .detach();
         this.start_subscribe(cx);
         if let Err(error) = this.reload_session(cx) {
             this.core_err = Some(error);

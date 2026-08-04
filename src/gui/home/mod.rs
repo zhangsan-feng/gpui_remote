@@ -1,6 +1,6 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{Root, v_flex};
+use gpui_component::{v_flex, Root};
 
 use crate::{
     component::{resizable_panel::ResizablePanel, theme},
@@ -32,10 +32,17 @@ impl HomeView {
 
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_background_appearance(theme::window_background_appearance(cx));
+        let styles = theme::styles(cx);
+        let wallpaper = styles
+            .window_background_img
+            .clone()
+            .map(|path| (path, theme::wallpaper_opacity(cx)));
         div()
             .relative()
             .size_full()
-            .when_some(theme::wallpaper(cx), |this, (path, opacity)| {
+            .bg(styles.window_background)
+            .when_some(wallpaper, |this, (path, opacity)| {
                 this.child(
                     img(path)
                         .absolute()

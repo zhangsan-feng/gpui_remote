@@ -6,13 +6,14 @@ mod selection;
 pub(super) use select_path_dialog::PathTarget;
 pub(super) use selection::MultiSelection;
 
-use super::{SftpSnapshot, SftpView, TransferRecord};
+use super::{CancelTransfer, RetryTransfer, SftpSnapshot, SftpView, TransferRecord};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable, h_flex,
+    h_flex,
+    menu::ContextMenuExt,
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
-    v_flex,
+    v_flex, ActiveTheme, Icon, IconName, Sizable,
 };
 
 use crate::component::theme;
@@ -24,7 +25,7 @@ impl SftpView {
         let Some(snapshot) = self.selected_snapshot() else {
             return div()
                 .size_full()
-                .bg(theme::styles(cx).panel)
+                .bg(theme::panel_background(cx))
                 .into_any_element();
         };
         sync_list_state(&self.local_list_state, self.local.entries.len());
@@ -44,19 +45,22 @@ impl SftpView {
         transfers: Vec<TransferRecord>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let colors = cx.theme();
+        let styles = theme::styles(cx);
         v_flex()
             .on_action(cx.listener(Self::delete_local_entry))
             .on_action(cx.listener(Self::delete_remote_entry))
             .on_action(cx.listener(Self::upload_local_entry))
             .on_action(cx.listener(Self::download_remote_entry))
+            .on_action(cx.listener(Self::cancel_transfer))
+            .on_action(cx.listener(Self::retry_transfer))
             .size_full()
             .min_h_0()
             .overflow_hidden()
             .rounded_lg()
             .border_1()
-            .border_color(colors.border)
-            .bg(theme::styles(cx).panel)
+            .border_color(theme::border_color(cx))
+            .bg(theme::panel_background(cx))
+            .text_color(styles.foreground)
             .child(
                 h_flex()
                     .flex_1()
@@ -80,7 +84,7 @@ impl SftpView {
             .rounded_md()
             .border_1()
             .border_color(colors.border)
-            .bg(theme::styles(cx).panel)
+            .bg(theme::panel_background(cx))
             .text_xs()
             .child(path)
             .on_mouse_down(
@@ -101,7 +105,7 @@ impl SftpView {
             .px_3()
             .border_b_1()
             .border_color(colors.border)
-            .bg(theme::styles(cx).panel)
+            .bg(theme::panel_background(cx))
             .text_xs()
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(colors.muted_foreground)
@@ -139,6 +143,8 @@ impl SftpView {
     ) -> impl IntoElement {
         let colors = cx.theme();
         let transfer_count = transfers.len();
+        let menu_view = cx.entity();
+        let row_view = cx.weak_entity();
         let content = if transfers.is_empty() {
             v_flex()
                 .size_full()
@@ -154,13 +160,16 @@ impl SftpView {
                 transfers
                     .get(index)
                     .cloned()
-                    .map(|record| Self::transfer_row(record, cx).into_any_element())
+                    .map(|record| {
+                        Self::transfer_row(record, row_view.clone(), cx).into_any_element()
+                    })
                     .unwrap_or_else(|| div().into_any_element())
             })
             .size_full()
             .into_any_element()
         };
         v_flex()
+            .id("sftp-transfer-panel")
             .h(px(TRANSFER_PANEL_HEIGHT))
             .flex_shrink_0()
             .border_t_1()
@@ -173,7 +182,7 @@ impl SftpView {
                     .justify_between()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(theme::styles(cx).panel)
+                    .bg(theme::panel_background(cx))
                     .child(
                         div()
                             .text_sm()
@@ -201,6 +210,7 @@ impl SftpView {
                     .child(div().flex_1().min_w_0().child("文件"))
                     .child(div().flex_1().min_w_0().child("目标"))
                     .child(div().w(px(180.)).child("进度"))
+                    .child(div().w(px(100.)).child("速度"))
                     .child(div().w(px(86.)).child("状态")),
             )
             .child(
@@ -215,12 +225,50 @@ impl SftpView {
                         ),
                     ),
             )
+            .context_menu(move |menu, _, menu_cx| {
+                let Some(transfer_id) = menu_view.read(menu_cx).transfer_context_id else {
+                    return menu;
+                };
+                let record = menu_view
+                    .read(menu_cx)
+                    .transfers
+                    .read()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .iter()
+                    .find(|record| record.id == transfer_id)
+                    .cloned();
+                let _ = menu_view.update(menu_cx, |this, _| {
+                    this.transfer_context_id = None;
+                });
+                let Some(record) = record else {
+                    return menu;
+                };
+                let can_cancel = matches!(record.status.as_str(), "等待中" | "扫描中" | "传输中");
+                let can_retry = matches!(record.status.as_str(), "失败" | "已取消");
+                let menu = if can_cancel {
+                    menu.menu("取消", Box::new(CancelTransfer(transfer_id)))
+                } else {
+                    menu
+                };
+                if can_retry {
+                    menu.menu("重试", Box::new(RetryTransfer(transfer_id)))
+                } else {
+                    menu
+                }
+            })
     }
 
-    fn transfer_row(record: TransferRecord, cx: &App) -> impl IntoElement {
+    fn transfer_row(
+        record: TransferRecord,
+        view: WeakEntity<SftpView>,
+        cx: &App,
+    ) -> impl IntoElement {
         let colors = cx.theme();
         let progress = record.progress.clamp(0., 1.);
+        let transfer_id = record.id;
+        let context_view = view;
         h_flex()
+            .id(format!("sftp-transfer-row-{transfer_id}"))
             .h(px(38.))
             .flex_shrink_0()
             .px_3()
@@ -229,13 +277,14 @@ impl SftpView {
             .border_color(colors.border)
             .text_xs()
             .child(div().w(px(72.)).child(record.direction))
-            .child(div().flex_1().min_w_0().child(record.name))
+            .child(div().flex_1().min_w_0().child(record.name).truncate())
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .text_color(colors.muted_foreground)
-                    .child(record.target),
+                    .child(record.target)
+                    .truncate(),
             )
             .child(
                 h_flex()
@@ -258,7 +307,26 @@ impl SftpView {
                     )
                     .child(format!("{:.0}%", progress * 100.)),
             )
+            .child(
+                div()
+                    .w(px(100.))
+                    .text_color(colors.muted_foreground)
+                    .child(Self::format_transfer_speed(record.speed)),
+            )
             .child(div().w(px(86.)).child(record.status))
+            .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                let _ = context_view.update(cx, |this, cx| {
+                    this.transfer_context_id = Some(transfer_id);
+                    cx.notify();
+                });
+            })
+    }
+
+    fn format_transfer_speed(speed: u64) -> String {
+        if speed == 0 {
+            return "—".to_owned();
+        }
+        format!("{}/s", Self::format_size(speed))
     }
 
     fn error_bar(&self, error: String, cx: &Context<Self>) -> impl IntoElement {

@@ -1,12 +1,11 @@
 use gpui::*;
 use gpui_component::{
-    ActiveTheme,
     color_picker::{ColorPickerEvent, ColorPickerState},
-    h_flex,
-    scroll::ScrollableElement,
     slider::{SliderEvent, SliderState},
-    v_flex,
+    ActiveTheme,
 };
+
+use crate::component::theme;
 
 mod core;
 mod external;
@@ -15,14 +14,22 @@ mod ui;
 
 pub(crate) use external::open_settings_window;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingsSection {
+    Theme,
+    Wallpaper,
+}
+
 pub struct SettingsOperationWindow {
     color_picker: Entity<ColorPickerState>,
-    sidebar_color_picker: Entity<ColorPickerState>,
-    terminal_color_picker: Entity<ColorPickerState>,
-    sidebar_opacity: Entity<SliderState>,
-    terminal_opacity: Entity<SliderState>,
+    font_color_picker: Entity<ColorPickerState>,
+    background_color_picker: Entity<ColorPickerState>,
+    hover_color_picker: Entity<ColorPickerState>,
+    selected_color_picker: Entity<ColorPickerState>,
     wallpaper_opacity: Entity<SliderState>,
+    window_opacity: Entity<SliderState>,
     wallpaper_error: Option<String>,
+    active_section: SettingsSection,
 }
 
 impl SettingsOperationWindow {
@@ -31,37 +38,39 @@ impl SettingsOperationWindow {
             ColorPickerState::new(window, cx)
                 .default_value(crate::component::theme::custom_accent(cx))
         });
-        let sidebar_color_picker = cx.new(|cx| {
-            ColorPickerState::new(window, cx)
-                .default_value(crate::component::theme::sidebar_base_color(cx))
+        let font_color_picker = cx.new(|cx| {
+            ColorPickerState::new(window, cx).default_value(
+                crate::component::theme::font_color(cx).unwrap_or(cx.theme().foreground),
+            )
         });
-        let terminal_color_picker = cx.new(|cx| {
-            ColorPickerState::new(window, cx)
-                .default_value(crate::component::theme::terminal_base_color(cx))
+        let background_color_picker = cx.new(|cx| {
+            ColorPickerState::new(window, cx).default_value(
+                crate::component::theme::background_color(cx).unwrap_or(cx.theme().background),
+            )
         });
-        let sidebar_opacity_value = crate::component::theme::sidebar_opacity(cx) * 100.;
-        let terminal_opacity_value = crate::component::theme::terminal_opacity(cx) * 100.;
+        let hover_color_picker = cx.new(|cx| {
+            ColorPickerState::new(window, cx)
+                .default_value(theme::hover_color(cx).unwrap_or(theme::styles(cx).hover))
+        });
+        let selected_color_picker = cx.new(|cx| {
+            ColorPickerState::new(window, cx)
+                .default_value(theme::selected_color(cx).unwrap_or(theme::styles(cx).selected))
+        });
         let wallpaper_opacity_value = crate::component::theme::wallpaper_opacity(cx) * 100.;
-        let sidebar_opacity = cx.new(move |_| {
-            SliderState::new()
-                .min(0.)
-                .max(100.)
-                .step(1.)
-                .default_value(sidebar_opacity_value)
-        });
-        let terminal_opacity = cx.new(move |_| {
-            SliderState::new()
-                .min(0.)
-                .max(100.)
-                .step(1.)
-                .default_value(terminal_opacity_value)
-        });
         let wallpaper_opacity = cx.new(move |_| {
             SliderState::new()
                 .min(0.)
                 .max(100.)
                 .step(1.)
                 .default_value(wallpaper_opacity_value)
+        });
+        let window_opacity_value = crate::component::theme::window_opacity(cx) * 100.;
+        let window_opacity = cx.new(move |_| {
+            SliderState::new()
+                .min(20.)
+                .max(100.)
+                .step(1.)
+                .default_value(window_opacity_value)
         });
         cx.subscribe(
             &color_picker,
@@ -73,35 +82,35 @@ impl SettingsOperationWindow {
             },
         )
         .detach();
+        cx.subscribe(&font_color_picker, |_, _, event: &ColorPickerEvent, cx| {
+            if let ColorPickerEvent::Change(Some(color)) = event {
+                crate::component::theme::set_font_color(*color, cx);
+            }
+        })
+        .detach();
         cx.subscribe(
-            &sidebar_color_picker,
+            &background_color_picker,
             |_, _, event: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
-                    crate::component::theme::set_sidebar_color(*color, cx);
+                    crate::component::theme::set_background_color(*color, cx);
                 }
             },
         )
         .detach();
+        cx.subscribe(&hover_color_picker, |_, _, event: &ColorPickerEvent, cx| {
+            if let ColorPickerEvent::Change(Some(color)) = event {
+                theme::set_hover_color(*color, cx);
+            }
+        })
+        .detach();
         cx.subscribe(
-            &terminal_color_picker,
+            &selected_color_picker,
             |_, _, event: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
-                    crate::component::theme::set_terminal_color(*color, cx);
+                    theme::set_selected_color(*color, cx);
                 }
             },
         )
-        .detach();
-        cx.subscribe(&sidebar_opacity, |_, _, event: &SliderEvent, cx| {
-            if let SliderEvent::Change(value) = event {
-                crate::component::theme::set_sidebar_opacity(value.start() / 100., cx);
-            }
-        })
-        .detach();
-        cx.subscribe(&terminal_opacity, |_, _, event: &SliderEvent, cx| {
-            if let SliderEvent::Change(value) = event {
-                crate::component::theme::set_terminal_opacity(value.start() / 100., cx);
-            }
-        })
         .detach();
         cx.subscribe(&wallpaper_opacity, |_, _, event: &SliderEvent, cx| {
             if let SliderEvent::Change(value) = event {
@@ -109,69 +118,68 @@ impl SettingsOperationWindow {
             }
         })
         .detach();
+        cx.subscribe(&window_opacity, |_, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(value) = event {
+                crate::component::theme::set_window_opacity(value.start() / 100., cx);
+            }
+        })
+        .detach();
         Self {
             color_picker,
-            sidebar_color_picker,
-            terminal_color_picker,
-            sidebar_opacity,
-            terminal_opacity,
+            font_color_picker,
+            background_color_picker,
+            hover_color_picker,
+            selected_color_picker,
             wallpaper_opacity,
+            window_opacity,
             wallpaper_error: None,
+            active_section: SettingsSection::Theme,
+        }
+    }
+
+    pub(super) fn sync_color_pickers(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let styles = theme::styles(cx);
+        Self::sync_picker(
+            &self.font_color_picker,
+            theme::font_color(cx).unwrap_or(styles.foreground),
+            window,
+            cx,
+        );
+        Self::sync_picker(
+            &self.background_color_picker,
+            theme::background_color(cx).unwrap_or(styles.background),
+            window,
+            cx,
+        );
+        Self::sync_picker(
+            &self.hover_color_picker,
+            theme::hover_color(cx).unwrap_or(styles.hover),
+            window,
+            cx,
+        );
+        Self::sync_picker(
+            &self.selected_color_picker,
+            theme::selected_color(cx).unwrap_or(styles.selected),
+            window,
+            cx,
+        );
+    }
+
+    fn sync_picker(
+        picker: &Entity<ColorPickerState>,
+        color: Hsla,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if picker.read(cx).value() != Some(color) {
+            picker.update(cx, |picker, cx| picker.set_value(color, window, cx));
         }
     }
 }
 
 impl Render for SettingsOperationWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = cx.theme();
-        h_flex()
-            .size_full()
-            .items_stretch()
-            .bg(colors.background)
-            .text_color(colors.foreground)
-            .child(self.sidebar(cx))
-            .child(
-                v_flex().flex_1().min_w_0().bg(colors.background).child(
-                    v_flex()
-                        .flex_1()
-                        .overflow_y_scrollbar()
-                        .p_6()
-                        .gap_5()
-                        .child(
-                            v_flex()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_xl()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child("外观"),
-                                )
-                                .child(
-                                    div().text_sm().text_color(colors.muted_foreground).child(
-                                        "选择预设主题或自定义主色，修改后立即生效并自动保存。",
-                                    ),
-                                ),
-                        )
-                        .child(self.region_appearance_panel(cx))
-                        .child(self.wallpaper_panel(cx))
-                        .child(self.custom_color_panel(cx))
-                        .child(
-                            v_flex()
-                                .gap_3()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child("主题预设"),
-                                )
-                                .child(
-                                    div().grid().grid_cols(3).gap_3().children(
-                                        crate::component::theme::AppTheme::ALL
-                                            .map(|theme| self.theme_card(theme, cx)),
-                                    ),
-                                ),
-                        ),
-                ),
-            )
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_color_pickers(window, cx);
+        self.render_view(window, cx)
     }
 }

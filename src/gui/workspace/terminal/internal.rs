@@ -2,8 +2,8 @@ mod keyboard {
     use gpui::*;
 
     use super::super::{
-        PasteTerminal, SendTab, TerminalView,
         core::{encode_control_key, encode_special_key},
+        PasteTerminal, SendTab, TerminalView,
     };
 
     impl TerminalView {
@@ -165,7 +165,7 @@ mod scroll {
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
             let (thumb_top, thumb_size) = self.scroll_handle.thumb();
-            let terminal_background = theme::styles(cx).terminal;
+            let terminal_background = theme::terminal_background(cx);
             let bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
             let bounds_writer = bounds.clone();
             let down_bounds = bounds.clone();
@@ -505,15 +505,13 @@ mod watcher {
             cx: &mut Context<Self>,
         ) {
             let terminal_updates = self.updates.clone();
-            cx.spawn(async move |this, cx| {
-                loop {
-                    terminal_updates.notified().await;
-                    if this
-                        .update(cx, |this, cx| this.notify_if_model_changed(cx))
-                        .is_err()
-                    {
-                        break;
-                    }
+            cx.spawn(async move |this, cx| loop {
+                terminal_updates.notified().await;
+                if this
+                    .update(cx, |this, cx| this.notify_if_model_changed(cx))
+                    .is_err()
+                {
+                    break;
                 }
             })
             .detach();
@@ -521,8 +519,8 @@ mod watcher {
     }
 }
 
-pub(super) use scroll::{SCROLLBAR_WIDTH, TerminalScrollHandle};
+pub(super) use scroll::{TerminalScrollHandle, SCROLLBAR_WIDTH};
 pub(super) use selection::{
-    SelectedFragment, TerminalPoint, TerminalSelection, buffer_row, nearest_character_column,
-    selected_fragments,
+    buffer_row, nearest_character_column, selected_fragments, SelectedFragment, TerminalPoint,
+    TerminalSelection,
 };

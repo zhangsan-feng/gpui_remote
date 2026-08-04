@@ -6,7 +6,7 @@ use tokio::sync::Notify;
 use crate::{
     application::agent_mcp::{SftpDirectorySummary, SftpEntrySummary, SftpTransferSummary},
     domain::{session::Protocol, terminal::TerminalStatus},
-    global_state::{GlobalEvent, read_global_state},
+    global_state::{read_global_state, GlobalEvent},
 };
 
 use super::{SftpStatus, SftpView};

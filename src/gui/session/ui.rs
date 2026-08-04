@@ -1,9 +1,10 @@
-use crate::component::{color::rgb_to_u32, draggable_list::DraggableList, theme};
+use crate::component::{draggable_list::DraggableList, theme};
 use crate::gui::session::{
     ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::input::Input;
 use gpui_component::menu::PopupMenu;
 use gpui_component::*;
 
@@ -20,9 +21,9 @@ impl SessionComponent {
             .w_full()
             .flex_shrink_0()
             .border_r_1()
-            .border_color(colors.sidebar_border)
-            .bg(styles.sidebar)
-            .text_color(contrast_text(theme::sidebar_base_color(cx)))
+            .border_color(theme::border_color(cx))
+            .bg(theme::sidebar_background(cx))
+            .text_color(styles.foreground)
             .child(
                 h_flex()
                     .h(px(48.))
@@ -36,6 +37,15 @@ impl SessionComponent {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("会话"),
                     ),
+            )
+            .child(
+                h_flex()
+                    .h(px(42.))
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(colors.sidebar_border)
+                    .child(Input::new(&self.search_input).small().cleanable(true)),
             )
             .when_some(self.core_err.as_ref(), |this, error| {
                 this.child(
@@ -58,14 +68,14 @@ impl SessionComponent {
     }
 
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
-        let colors = cx.theme();
+        let styles = theme::styles(cx);
         let mut list = DraggableList::new();
         let session = cx.weak_entity();
 
         list.set_item_height(px(58.))
             .set_item_bg(Hsla::transparent_black().into())
-            .set_item_selected_bg(colors.sidebar_accent.into())
-            .set_item_hover_bg(colors.list_hover.into())
+            .set_item_selected_bg(styles.selected.into())
+            .set_item_hover_bg(styles.hover.into())
             .set_context_menu(
                 |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();
@@ -103,10 +113,29 @@ impl SessionComponent {
     }
 
     pub(super) fn refer_item(&mut self, cx: &mut Context<Self>) {
-        let sessions = self.sessions.clone();
+        let query = self.search_input.read(cx).value().trim().to_lowercase();
+        let sessions = self
+            .sessions
+            .iter()
+            .filter(|session| {
+                if query.is_empty() {
+                    return true;
+                }
+                format!(
+                    "{} {} {} {}",
+                    session.name,
+                    session.host,
+                    session.username,
+                    session.protocol.as_str(),
+                )
+                .to_lowercase()
+                .contains(&query)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let sidebar_accent = cx.theme().sidebar_accent;
         let sidebar_accent_foreground = cx.theme().sidebar_accent_foreground;
-        let sidebar_foreground = contrast_text(theme::sidebar_base_color(cx));
+        let sidebar_foreground = theme::styles(cx).foreground;
         let muted_foreground = cx.theme().muted_foreground;
 
         self.draggable_list.update(cx, move |this, _cx| {
@@ -158,13 +187,5 @@ impl SessionComponent {
                 });
             }
         });
-    }
-}
-
-fn contrast_text(background: Hsla) -> Hsla {
-    if background.l < 0.48 {
-        rgb_to_u32(248, 250, 252).into()
-    } else {
-        rgb_to_u32(30, 41, 59).into()
     }
 }

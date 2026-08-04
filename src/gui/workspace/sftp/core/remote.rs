@@ -3,8 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Context as _, Result, bail};
-use russh::{Disconnect, client};
+use anyhow::{bail, Context as _, Result};
+use russh::{client, Disconnect};
 use russh_sftp::client::SftpSession;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -14,7 +14,7 @@ use tokio::{
 use crate::domain::session::SessionProfile;
 
 use super::super::{SftpCommand, SftpEntry, SftpModel, SftpStatus};
-use super::conn::{SftpClientHandler, connect_transport, ssh_config};
+use super::conn::{connect_transport, ssh_config, SftpClientHandler};
 
 const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -81,24 +81,47 @@ pub(super) async fn run_sftp(
                 remote_path,
                 refresh_path,
             } => {
-                model.update_transfer(transfer_id, 0., "扫描中");
-                let result = upload_path(&sftp, &local_path, &remote_path, |progress| {
-                    model.update_transfer(transfer_id, progress, "传输中")
-                })
+                if model.is_cancelled(transfer_id) {
+                    model.update_transfer(transfer_id, 0., 0, "已取消");
+                    continue;
+                }
+                model.update_transfer(transfer_id, 0., 0, "扫描中");
+                let result = upload_path(
+                    &sftp,
+                    &local_path,
+                    &remote_path,
+                    |transferred, total| {
+                        let progress = if total == 0 {
+                            1.
+                        } else {
+                            transferred as f32 / total as f32
+                        };
+                        model.update_transfer(transfer_id, progress, transferred, "传输中")
+                    },
+                    || model.is_cancelled(transfer_id),
+                )
                 .await;
                 match result {
                     Ok(()) => {
-                        model.update_transfer(transfer_id, 1., "已完成");
-                        if model.snapshot().path == refresh_path {
-                            match read_directory(&sftp, &refresh_path).await {
-                                Ok(entries) => model.set_directory(refresh_path, entries),
-                                Err(error) => model.set_error(format!("{error:#}")),
+                        if model.is_cancelled(transfer_id) {
+                            model.update_transfer(transfer_id, 0., 0, "已取消");
+                        } else {
+                            model.update_transfer(transfer_id, 1., 0, "已完成");
+                            if model.snapshot().path == refresh_path {
+                                match read_directory(&sftp, &refresh_path).await {
+                                    Ok(entries) => model.set_directory(refresh_path, entries),
+                                    Err(error) => model.set_error(format!("{error:#}")),
+                                }
                             }
                         }
                     }
                     Err(error) => {
-                        log::error!("上传文件失败: {error:#}");
-                        model.update_transfer(transfer_id, 0., "失败");
+                        if model.is_cancelled(transfer_id) {
+                            model.update_transfer(transfer_id, 0., 0, "已取消");
+                        } else {
+                            log::error!("上传文件失败: {error:#}");
+                            model.update_transfer(transfer_id, 0., 0, "失败");
+                        }
                     }
                 }
             }
@@ -110,22 +133,37 @@ pub(super) async fn run_sftp(
                 is_directory,
                 complete,
             } => {
-                model.update_transfer(transfer_id, 0., "扫描中");
+                if model.is_cancelled(transfer_id) {
+                    model.update_transfer(transfer_id, 0., 0, "已取消");
+                    let _ = complete.send(false);
+                    continue;
+                }
+                model.update_transfer(transfer_id, 0., 0, "扫描中");
                 let result = download_path(
                     &sftp,
                     &remote_path,
                     &local_path,
                     total_size,
                     is_directory,
-                    |progress| model.update_transfer(transfer_id, progress, "传输中"),
+                    |transferred, total| {
+                        let progress = if total == 0 {
+                            1.
+                        } else {
+                            transferred as f32 / total as f32
+                        };
+                        model.update_transfer(transfer_id, progress, transferred, "传输中")
+                    },
+                    || model.is_cancelled(transfer_id),
                 )
                 .await;
-                let succeeded = result.is_ok();
-                if let Err(error) = result {
+                let succeeded = result.is_ok() && !model.is_cancelled(transfer_id);
+                if model.is_cancelled(transfer_id) {
+                    model.update_transfer(transfer_id, 0., 0, "已取消");
+                } else if let Err(error) = result {
                     log::error!("下载文件失败: {error:#}");
-                    model.update_transfer(transfer_id, 0., "失败");
+                    model.update_transfer(transfer_id, 0., 0, "失败");
                 } else {
-                    model.update_transfer(transfer_id, 1., "已完成");
+                    model.update_transfer(transfer_id, 1., 0, "已完成");
                 }
                 let _ = complete.send(succeeded);
             }
@@ -174,7 +212,8 @@ async fn upload_path(
     sftp: &SftpSession,
     local_path: &Path,
     remote_path: &str,
-    mut on_progress: impl FnMut(f32),
+    mut on_progress: impl FnMut(u64, u64),
+    is_cancelled: impl Fn() -> bool,
 ) -> Result<()> {
     let local_root = local_path.to_owned();
     let remote_root = remote_path.to_owned();
@@ -185,6 +224,9 @@ async fn upload_path(
     let mut transferred = 0_u64;
 
     for entry in entries {
+        if is_cancelled() {
+            bail!("传输已取消");
+        }
         if entry.is_directory {
             if !sftp
                 .try_exists(&entry.remote_path)
@@ -210,6 +252,7 @@ async fn upload_path(
             total_size,
             &mut transferred,
             &mut on_progress,
+            &is_cancelled,
         )
         .await?;
         target
@@ -217,7 +260,7 @@ async fn upload_path(
             .await
             .with_context(|| format!("刷新远程文件 {} 失败", entry.remote_path))?;
     }
-    on_progress(1.);
+    on_progress(total_size, total_size);
     Ok(())
 }
 
@@ -227,12 +270,16 @@ async fn download_path(
     local_path: &Path,
     known_size: u64,
     is_directory: bool,
-    mut on_progress: impl FnMut(f32),
+    mut on_progress: impl FnMut(u64, u64),
+    is_cancelled: impl Fn() -> bool,
 ) -> Result<()> {
     let (entries, total_size) =
         collect_remote_entries(sftp, remote_path, local_path, known_size, is_directory).await?;
     let mut transferred = 0_u64;
     for entry in entries {
+        if is_cancelled() {
+            bail!("传输已取消");
+        }
         if entry.is_directory {
             tokio::fs::create_dir_all(&entry.local_path)
                 .await
@@ -257,6 +304,7 @@ async fn download_path(
             total_size,
             &mut transferred,
             &mut on_progress,
+            &is_cancelled,
         )
         .await?;
         target
@@ -264,7 +312,7 @@ async fn download_path(
             .await
             .with_context(|| format!("刷新本地文件 {} 失败", entry.local_path.display()))?;
     }
-    on_progress(1.);
+    on_progress(total_size, total_size);
     Ok(())
 }
 
@@ -411,25 +459,27 @@ async fn copy_with_progress(
     target: &mut (impl AsyncWrite + Unpin),
     total_size: u64,
     transferred: &mut u64,
-    on_progress: &mut impl FnMut(f32),
+    on_progress: &mut impl FnMut(u64, u64),
+    is_cancelled: &impl Fn() -> bool,
 ) -> Result<()> {
     let mut buffer = vec![0; TRANSFER_BUFFER_SIZE];
     loop {
+        if is_cancelled() {
+            bail!("传输已取消");
+        }
         let read = source.read(&mut buffer).await.context("读取传输数据失败")?;
         if read == 0 {
             break;
+        }
+        if is_cancelled() {
+            bail!("传输已取消");
         }
         target
             .write_all(&buffer[..read])
             .await
             .context("写入传输数据失败")?;
         *transferred = transferred.saturating_add(read as u64);
-        let progress = if total_size == 0 {
-            1.
-        } else {
-            *transferred as f32 / total_size as f32
-        };
-        on_progress(progress);
+        on_progress(*transferred, total_size);
     }
     Ok(())
 }

@@ -6,6 +6,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use gpui::*;
@@ -14,8 +15,9 @@ use tokio::sync::{mpsc, oneshot};
 use crate::domain::session::SessionProfile;
 
 use super::{
-    DeleteLocalEntry, DeleteRemoteEntry, DownloadRemoteEntry, SftpCommand, SftpModel, SftpRuntime,
-    SftpSnapshot, SftpStatus, SftpView, TransferRecord, UploadLocalEntry,
+    CancelTransfer, DeleteLocalEntry, DeleteRemoteEntry, DownloadRemoteEntry, RetryTransfer,
+    SftpCommand, SftpModel, SftpRuntime, SftpSnapshot, SftpStatus, SftpView, TransferRecord,
+    TransferRequest, UploadLocalEntry,
 };
 
 impl SftpModel {
@@ -96,7 +98,15 @@ impl SftpModel {
         );
     }
 
-    fn update_transfer(&self, transfer_id: u64, progress: f32, status: impl Into<String>) {
+    fn update_transfer(
+        &self,
+        transfer_id: u64,
+        progress: f32,
+        transferred: u64,
+        status: impl Into<String>,
+    ) {
+        let status = status.into();
+        let now = std::time::Instant::now();
         let mut transfers = self
             .transfers
             .write()
@@ -106,9 +116,62 @@ impl SftpModel {
             .find(|transfer| transfer.id == transfer_id)
         {
             transfer.progress = progress.clamp(0., 1.);
-            transfer.status = status.into();
+            if status == "扫描中" {
+                transfer.speed = 0;
+                transfer.started_at = None;
+                transfer.speed_updated_at = None;
+            } else if transferred > 0 {
+                let started_at = transfer.started_at.get_or_insert(now);
+                let elapsed = now.duration_since(*started_at).as_secs_f64();
+                let should_update = transfer.speed_updated_at.is_none_or(|updated_at| {
+                    now.duration_since(updated_at) >= Duration::from_secs(1)
+                });
+                if elapsed > 0. && should_update {
+                    transfer.speed = (transferred as f64 / elapsed) as u64;
+                    transfer.speed_updated_at = Some(now);
+                }
+            }
+            transfer.status = status;
         }
         drop(transfers);
+        self.updates.notify_waiters();
+    }
+
+    pub(super) fn request_cancel(&self, transfer_id: u64) {
+        self.cancelled_transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(transfer_id);
+        self.set_transfer_status(transfer_id, "已取消");
+    }
+
+    pub(super) fn clear_cancel(&self, transfer_id: u64) {
+        self.cancelled_transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&transfer_id);
+    }
+
+    pub(super) fn is_cancelled(&self, transfer_id: u64) -> bool {
+        self.cancelled_transfers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(&transfer_id)
+    }
+
+    fn set_transfer_status(&self, transfer_id: u64, status: &str) {
+        if let Some(transfer) = self
+            .transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter_mut()
+            .find(|transfer| transfer.id == transfer_id)
+        {
+            transfer.status = status.to_owned();
+            if status == "已取消" {
+                transfer.speed = 0;
+            }
+        }
         self.updates.notify_waiters();
     }
 }
@@ -153,6 +216,7 @@ impl SftpView {
         let model = Arc::new(SftpModel {
             snapshot: RwLock::new(SftpSnapshot::default()),
             transfers: self.transfers.clone(),
+            cancelled_transfers: RwLock::new(Default::default()),
             updates: self.updates.clone(),
             status_updates: self.status_updates.clone(),
         });
@@ -233,7 +297,11 @@ impl SftpView {
             return false;
         }
         let remote_path = remote::join_remote_path(&snapshot.path, &file_name);
-        let transfer_id = self.push_transfer(file_name, "上传", remote_path.clone(), cx);
+        let request = TransferRequest::Upload {
+            workspace_id: workspace_id.to_owned(),
+            local_path: local_path.clone(),
+        };
+        let transfer_id = self.push_transfer(file_name, "上传", remote_path.clone(), request, cx);
         if commands
             .send(SftpCommand::Upload {
                 transfer_id,
@@ -285,8 +353,20 @@ impl SftpView {
         let commands = runtime.commands.clone();
         let local_directory = self.local.path.clone();
         let local_path = local_directory.join(&file_name);
-        let transfer_id =
-            self.push_transfer(file_name, "下载", local_path.display().to_string(), cx);
+        let request = TransferRequest::Download {
+            workspace_id: workspace_id.to_owned(),
+            remote_path: remote_path.clone(),
+            file_name: file_name.clone(),
+            total_size,
+            is_directory,
+        };
+        let transfer_id = self.push_transfer(
+            file_name,
+            "下载",
+            local_path.display().to_string(),
+            request,
+            cx,
+        );
         let (complete, completion) = oneshot::channel();
         if commands
             .send(SftpCommand::Download {
@@ -320,6 +400,7 @@ impl SftpView {
         name: String,
         direction: &str,
         target: String,
+        request: TransferRequest,
         cx: &mut Context<Self>,
     ) -> u64 {
         let transfer_id = self.next_transfer_id;
@@ -332,7 +413,11 @@ impl SftpView {
                 name,
                 direction: direction.to_owned(),
                 target,
+                request,
                 progress: 0.,
+                speed: 0,
+                started_at: None,
+                speed_updated_at: None,
                 status: "等待中".to_owned(),
             });
         cx.notify();
@@ -350,6 +435,77 @@ impl SftpView {
             transfer.status = "失败".to_owned();
         }
         cx.notify();
+    }
+
+    pub(super) fn cancel_transfer(
+        &mut self,
+        action: &CancelTransfer,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(record) = self
+            .transfers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .find(|transfer| transfer.id == action.0)
+            .cloned()
+        else {
+            return;
+        };
+        if let Some(runtime) = self.runtimes.get(record.request.workspace_id()) {
+            runtime.model.request_cancel(record.id);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn retry_transfer(
+        &mut self,
+        action: &RetryTransfer,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(record) = self
+            .transfers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .find(|transfer| transfer.id == action.0)
+            .cloned()
+        else {
+            return;
+        };
+        if record.status != "失败" && record.status != "已取消" {
+            return;
+        }
+        let request = record.request;
+        if let Some(runtime) = self.runtimes.get(request.workspace_id()) {
+            runtime.model.clear_cancel(record.id);
+        }
+        match request {
+            TransferRequest::Upload {
+                workspace_id,
+                local_path,
+            } => {
+                self.upload_file_for_workspace(&workspace_id, local_path, cx);
+            }
+            TransferRequest::Download {
+                workspace_id,
+                remote_path,
+                file_name,
+                total_size,
+                is_directory,
+            } => {
+                self.download_file_for_workspace(
+                    &workspace_id,
+                    remote_path,
+                    file_name,
+                    total_size,
+                    is_directory,
+                    cx,
+                );
+            }
+        }
     }
 
     pub(super) fn delete_local_entry(
@@ -447,5 +603,9 @@ pub(super) fn default_desktop_path() -> PathBuf {
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));
     let desktop = profile.join("Desktop");
-    if desktop.is_dir() { desktop } else { profile }
+    if desktop.is_dir() {
+        desktop
+    } else {
+        profile
+    }
 }

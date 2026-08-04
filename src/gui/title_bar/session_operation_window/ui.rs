@@ -1,14 +1,13 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    Icon, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
-    v_flex,
+    v_flex, ActiveTheme, Icon, IconName, Sizable, ThemeColor,
 };
 
-use crate::component::color::rgb_to_u32;
+use crate::component::theme;
 
 use super::{ConnectionProtocol, FormSection, SessionFormMode, SessionOperationWindow};
 
@@ -57,11 +56,13 @@ impl FormSection {
 
 impl SessionOperationWindow {
     fn protocol_option(&self, protocol: ConnectionProtocol, cx: &Context<Self>) -> AnyElement {
+        let colors = cx.theme().colors;
+        let styles = theme::styles(cx);
         let selected = self.protocol == protocol;
         let icon_color = if selected {
-            rgb_to_u32(109, 40, 217)
+            colors.accent
         } else {
-            rgb_to_u32(100, 116, 139)
+            colors.muted_foreground
         };
 
         div()
@@ -72,17 +73,17 @@ impl SessionOperationWindow {
             .rounded_lg()
             .border_1()
             .border_color(if selected {
-                rgb_to_u32(167, 139, 250)
+                colors.primary
             } else {
-                rgb_to_u32(226, 232, 240)
+                theme::border_color(cx)
             })
             .bg(if selected {
-                rgb_to_u32(245, 243, 255)
+                styles.selected
             } else {
-                rgb_to_u32(255, 255, 255)
+                theme::panel_background(cx)
             })
             .cursor_pointer()
-            .hover(|style| style.bg(rgb_to_u32(248, 250, 252)))
+            .hover(|style| style.bg(styles.hover))
             .child(
                 h_flex()
                     .gap_2()
@@ -95,9 +96,9 @@ impl SessionOperationWindow {
                             .items_center()
                             .justify_center()
                             .bg(if selected {
-                                rgb_to_u32(237, 233, 254)
+                                colors.accent
                             } else {
-                                rgb_to_u32(241, 245, 249)
+                                styles.hover
                             })
                             .child(Icon::new(protocol.icon()).small().text_color(icon_color)),
                     )
@@ -108,13 +109,13 @@ impl SessionOperationWindow {
                                 div()
                                     .text_sm()
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb_to_u32(30, 41, 59))
+                                    .text_color(colors.foreground)
                                     .child(protocol.label()),
                             )
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb_to_u32(100, 116, 139))
+                                    .text_color(colors.muted_foreground)
                                     .child(protocol.description()),
                             ),
                     ),
@@ -125,7 +126,7 @@ impl SessionOperationWindow {
             .into_any_element()
     }
 
-    fn field(label: &'static str, input: &Entity<InputState>) -> Div {
+    fn field(label: &'static str, input: &Entity<InputState>, colors: ThemeColor) -> Div {
         h_flex()
             .w_full()
             .h(px(34.))
@@ -137,13 +138,14 @@ impl SessionOperationWindow {
                     .flex_shrink_0()
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb_to_u32(71, 85, 105))
+                    .text_color(colors.muted_foreground)
                     .child(label),
             )
             .child(div().flex_1().child(Input::new(input).small()))
     }
 
-    fn connection_panel(&self) -> Div {
+    fn connection_panel(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
         v_flex()
             .flex_1()
             .h_full()
@@ -151,21 +153,23 @@ impl SessionOperationWindow {
             .gap_2()
             .rounded_xl()
             .border_1()
-            .border_color(rgb_to_u32(226, 232, 240))
-            .bg(rgb_to_u32(255, 255, 255))
+            .border_color(theme::border_color(cx))
+            .bg(theme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::SquareTerminal,
                 "连接信息",
                 "配置远程主机与登录凭据",
+                colors,
             ))
-            .child(Self::field("标题", &self.name))
-            .child(Self::field("主机", &self.host))
-            .child(Self::field("端口", &self.port))
-            .child(Self::field("用户名", &self.username))
-            .child(Self::field("密码", &self.password))
+            .child(Self::field("标题", &self.name, colors))
+            .child(Self::field("主机", &self.host, colors))
+            .child(Self::field("端口", &self.port, colors))
+            .child(Self::field("用户名", &self.username, colors))
+            .child(Self::field("密码", &self.password, colors))
     }
 
-    fn proxy_panel(&self) -> Div {
+    fn proxy_panel(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
         v_flex()
             .flex_1()
             .h_full()
@@ -173,20 +177,26 @@ impl SessionOperationWindow {
             .gap_2()
             .rounded_xl()
             .border_1()
-            .border_color(rgb_to_u32(226, 232, 240))
-            .bg(rgb_to_u32(255, 255, 255))
+            .border_color(theme::border_color(cx))
+            .bg(theme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::Settings2,
                 "代理",
                 "可选的 SOCKS 或跳板代理配置",
+                colors,
             ))
-            .child(Self::field("代理主机", &self.proxy_host))
-            .child(Self::field("代理端口", &self.proxy_port))
-            .child(Self::field("代理用户名", &self.proxy_username))
-            .child(Self::field("代理密码", &self.proxy_password))
+            .child(Self::field("代理主机", &self.proxy_host, colors))
+            .child(Self::field("代理端口", &self.proxy_port, colors))
+            .child(Self::field("代理用户名", &self.proxy_username, colors))
+            .child(Self::field("代理密码", &self.proxy_password, colors))
     }
 
-    fn panel_heading(icon: IconName, title: &'static str, description: &'static str) -> Div {
+    fn panel_heading(
+        icon: IconName,
+        title: &'static str,
+        description: &'static str,
+        colors: ThemeColor,
+    ) -> Div {
         h_flex()
             .gap_2()
             .items_center()
@@ -198,8 +208,8 @@ impl SessionOperationWindow {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .bg(rgb_to_u32(237, 233, 254))
-                    .child(Icon::new(icon).small().text_color(rgb_to_u32(109, 40, 217))),
+                    .bg(colors.accent)
+                    .child(Icon::new(icon).small().text_color(colors.accent_foreground)),
             )
             .child(
                 v_flex()
@@ -208,19 +218,21 @@ impl SessionOperationWindow {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb_to_u32(30, 41, 59))
+                            .text_color(colors.foreground)
                             .child(title),
                     )
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb_to_u32(100, 116, 139))
+                            .text_color(colors.muted_foreground)
                             .child(description),
                     ),
             )
     }
 
     fn section_option(&self, section: FormSection, cx: &Context<Self>) -> AnyElement {
+        let colors = cx.theme();
+        let styles = theme::styles(cx);
         let selected = self.section == section;
         let label = section.label();
 
@@ -232,25 +244,25 @@ impl SessionOperationWindow {
             .rounded_lg()
             .cursor_pointer()
             .bg(if selected {
-                rgb_to_u32(237, 233, 254)
+                styles.selected
             } else {
-                rgb_to_u32(241, 245, 249)
+                theme::panel_background(cx)
             })
             .border_1()
             .border_color(if selected {
-                rgb_to_u32(196, 181, 253)
+                colors.primary
             } else {
-                rgb_to_u32(241, 245, 249)
+                theme::border_color(cx)
             })
-            .hover(|style| style.bg(rgb_to_u32(238, 242, 255)))
+            .hover(|style| style.bg(styles.hover))
             .child(
                 h_flex()
                     .gap_2()
                     .items_center()
                     .child(Icon::new(section.icon()).small().text_color(if selected {
-                        rgb_to_u32(109, 40, 217)
+                        colors.accent
                     } else {
-                        rgb_to_u32(100, 116, 139)
+                        colors.muted_foreground
                     }))
                     .child(
                         v_flex()
@@ -263,13 +275,13 @@ impl SessionOperationWindow {
                                     } else {
                                         FontWeight::MEDIUM
                                     })
-                                    .text_color(rgb_to_u32(51, 65, 85))
+                                    .text_color(colors.foreground)
                                     .child(label),
                             )
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb_to_u32(100, 116, 139))
+                                    .text_color(colors.muted_foreground)
                                     .child(section.description()),
                             ),
                     ),
@@ -281,11 +293,13 @@ impl SessionOperationWindow {
     }
 
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = cx.theme();
+        let styles = theme::styles(cx);
         v_flex()
             .gap_2()
             .p_2()
             .size_full()
-            .bg(rgb_to_u32(248, 250, 252))
+            .bg(styles.window_background)
             // .child(v_flex().p_2().gap_2().child(h_flex().gap_2().children(
             //     ConnectionProtocol::ALL.map(|protocol| self.protocol_option(protocol, cx)),
             // )))
@@ -303,15 +317,15 @@ impl SessionOperationWindow {
                             .gap_2()
                             .rounded_xl()
                             .border_1()
-                            .border_color(rgb_to_u32(226, 232, 240))
-                            .bg(rgb_to_u32(241, 245, 249))
+                            .border_color(theme::border_color(cx))
+                            .bg(theme::panel_background(cx))
                             .children(
                                 FormSection::ALL.map(|section| self.section_option(section, cx)),
                             ),
                     )
                     .child(match self.section {
-                        FormSection::Connection => self.connection_panel(),
-                        FormSection::Proxy => self.proxy_panel(),
+                        FormSection::Connection => self.connection_panel(cx),
+                        FormSection::Proxy => self.proxy_panel(cx),
                     }),
             )
             .when_some(self.error.clone(), |this, error| {
@@ -321,9 +335,9 @@ impl SessionOperationWindow {
                         .gap_2()
                         .rounded_md()
                         .border_1()
-                        .border_color(rgb_to_u32(254, 202, 202))
-                        .bg(rgb_to_u32(254, 242, 242))
-                        .text_color(rgb_to_u32(185, 28, 28))
+                        .border_color(colors.danger)
+                        .bg(colors.danger.opacity(0.12))
+                        .text_color(colors.danger)
                         .text_xs()
                         .child(IconName::TriangleAlert)
                         .child(error),
@@ -337,8 +351,8 @@ impl SessionOperationWindow {
                     .items_center()
                     .justify_end()
                     .border_t_1()
-                    .border_color(rgb_to_u32(226, 232, 240))
-                    .bg(rgb_to_u32(255, 255, 255))
+                    .border_color(theme::border_color(cx))
+                    .bg(theme::panel_background(cx))
                     .child(
                         Button::new("cancel-session-operation")
                             .outline()

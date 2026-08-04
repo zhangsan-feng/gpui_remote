@@ -83,9 +83,6 @@ impl SftpView {
             .map(|time| time.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|| "—".to_owned())
     }
-    pub fn open_file_directory() {}
-    pub fn open_local_file() {}
-    pub fn open_remote_file() {}
 }
 
 fn parent_path(path: &str) -> String {

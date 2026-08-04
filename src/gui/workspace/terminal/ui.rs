@@ -3,7 +3,7 @@ mod terminal_render {
 
     use gpui::prelude::FluentBuilder;
     use gpui::*;
-    use gpui_component::{ActiveTheme, ElementExt, h_flex, menu::ContextMenuExt};
+    use gpui_component::{h_flex, menu::ContextMenuExt, ElementExt};
 
     use crate::{
         component::{color::rgb_to_u32, theme},
@@ -11,8 +11,8 @@ mod terminal_render {
     };
 
     use super::super::{
-        CopyTerminal, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TerminalView,
-        internal::{TerminalPoint, buffer_row, nearest_character_column, selected_fragments},
+        internal::{buffer_row, nearest_character_column, selected_fragments, TerminalPoint},
+        CopyTerminal, TerminalView, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE,
     };
 
     pub(super) const GUTTER_WIDTH: f32 = 116.0;
@@ -26,9 +26,10 @@ mod terminal_render {
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
             let styles = theme::styles(cx);
-            let terminal_background = styles.terminal;
-            let selection_background = cx.theme().selection;
-            let default_foreground = styles.terminal_default_foreground;
+            let terminal_background = theme::terminal_background(cx);
+            let terminal_foreground = styles.foreground;
+            let selection_background = styles.selected;
+            let default_foreground = theme::terminal_foreground(cx);
             let selection = self.selection.clone();
             let terminal_view = cx.weak_entity();
             let resize_view = terminal_view.clone();
@@ -63,7 +64,12 @@ mod terminal_render {
                     .text_size(px(TERMINAL_FONT_SIZE))
                     .line_height(px(19.))
                     .whitespace_nowrap()
-                    .child(render_gutter(timestamp, line_number, terminal_background))
+                    .child(render_gutter(
+                        timestamp,
+                        line_number,
+                        terminal_background,
+                        terminal_foreground,
+                    ))
                     .child(
                         h_flex()
                             .h_full()
@@ -146,6 +152,7 @@ mod terminal_render {
         timestamp: Option<SharedString>,
         line_number: Option<SharedString>,
         terminal_background: Hsla,
+        terminal_foreground: Hsla,
     ) -> Div {
         h_flex()
             .h_full()
@@ -161,14 +168,14 @@ mod terminal_render {
             .child(
                 div()
                     .w(px(68.))
-                    .text_color(rgb_to_u32(100, 116, 139))
+                    .text_color(terminal_foreground)
                     .when_some(timestamp, |this, timestamp| this.child(timestamp)),
             )
             .child(
                 h_flex()
                     .flex_1()
                     .justify_end()
-                    .text_color(rgb_to_u32(71, 85, 105))
+                    .text_color(terminal_foreground)
                     .when_some(line_number, |this, line_number| this.child(line_number)),
             )
     }
@@ -274,7 +281,11 @@ fn terminal_cell_width(window: &Window) -> Pixels {
         .text_system()
         .layout_line("0", px(TERMINAL_FONT_SIZE), &[run], None)
         .width;
-    if width > Pixels::ZERO { width } else { px(8.) }
+    if width > Pixels::ZERO {
+        width
+    } else {
+        px(8.)
+    }
 }
 
 impl TerminalView {
@@ -302,7 +313,6 @@ impl TerminalView {
             .sync(&frame, self.command_sender(&workspace_id));
         self.sync_list(&workspace_id, frame.lines.len().max(1));
         let cell_width = terminal_cell_width(window);
-        let styles = theme::styles(cx);
 
         let focus = self.focus.clone();
         let scroll_commands = self.command_sender(&workspace_id);
@@ -338,8 +348,8 @@ impl TerminalView {
                     cx.stop_propagation();
                 }
             })
-            .bg(styles.terminal)
-            .text_color(contrast_text(theme::terminal_base_color(cx)))
+            .bg(theme::terminal_background(cx))
+            .text_color(theme::styles(cx).foreground)
             .child(content)
             .into_any_element()
     }
@@ -382,14 +392,6 @@ impl TerminalView {
             self.resize(workspace_id, columns, rows);
             self.last_pty_size = Some(pty_size);
         }
-    }
-}
-
-fn contrast_text(background: Hsla) -> Hsla {
-    if background.l < 0.48 {
-        rgb_to_u32(226, 232, 240).into()
-    } else {
-        rgb_to_u32(30, 41, 59).into()
     }
 }
 

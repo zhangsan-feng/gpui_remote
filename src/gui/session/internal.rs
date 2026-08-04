@@ -45,11 +45,11 @@ impl SessionComponent {
     pub(super) fn edit_session(
         &mut self,
         action: &EditSession,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match self.query_session(&action.0, cx) {
-            Ok(profile) => open_edit_session_window(profile, cx.entity(), cx),
+            Ok(profile) => open_edit_session_window(profile, cx.entity(),window, cx),
             Err(error) => self.set_error(error, cx),
         }
     }

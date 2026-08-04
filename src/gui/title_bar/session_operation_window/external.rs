@@ -3,10 +3,10 @@ use gpui::*;
 
 use crate::{
     domain::session::{NewSession, SessionProfile},
-    global_state::{GlobalEvent, read_global_state},
+    global_state::{read_global_state, GlobalEvent},
     infrastructure::storage::Storage,
 };
-
+use crate::component::window::window_center_options;
 use super::{SessionFormMode, SessionOperationWindow};
 
 impl SessionOperationWindow {
@@ -32,47 +32,44 @@ impl SessionOperationWindow {
     }
 }
 
-pub(crate) fn open_new_session_window(cx: &mut App) {
-    open_session_window(None, cx);
+pub(crate) fn open_new_session_window(window: &mut Window, cx: &mut App) {
+    open_session_window(None,window, cx);
 }
 
 pub(crate) fn open_edit_session_window<T: 'static>(
     profile: SessionProfile,
     _session_list: Entity<T>,
+    window: &mut Window,
     cx: &mut App,
 ) {
-    open_session_window(Some(profile), cx);
+    open_session_window(Some(profile),window, cx);
 }
 
-fn open_session_window(profile: Option<SessionProfile>, cx: &mut App) {
+fn open_session_window(profile: Option<SessionProfile>, window: &mut Window, cx: &mut App) {
     let editing = profile.is_some();
-    let window_size = size(px(680.), px(500.));
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::centered(window_size, cx)),
-        window_min_size: Some(window_size),
-        titlebar: Some(TitlebarOptions {
-            title: Some(
-                if editing {
-                    "编辑远程会话"
-                } else {
-                    "新建远程会话"
-                }
+    let mut options = window_center_options(window, 680., 500.);
+    options.titlebar = Some(TitlebarOptions {
+        title: Some(
+            if editing {
+                "编辑远程会话"
+            } else {
+                "新建远程会话"
+            }
                 .into(),
-            ),
-            appears_transparent: false,
-            traffic_light_position: None,
-        }),
-        kind: WindowKind::Dialog,
-        is_resizable: false,
-        is_minimizable: false,
-        ..Default::default()
-    };
+        ),
+        appears_transparent: false,
+        traffic_light_position: None,
+    });
+    options.kind =  WindowKind::Dialog;
+    options.is_resizable = false;
+    options.is_minimizable = false;
+
 
     let _ = cx.open_window(options, move |window, cx| {
         let form = match profile {
             Some(profile) => cx.new(|cx| SessionOperationWindow::edit(profile, window, cx)),
             None => cx.new(|cx| SessionOperationWindow::new(window, cx)),
         };
-        cx.new(|cx| gpui_component::Root::new(form, window, cx))
+        cx.new(|cx| { gpui_component::Root::new(form, window, cx) })
     });
 }

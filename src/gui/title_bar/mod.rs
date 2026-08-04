@@ -6,10 +6,10 @@ mod ui;
 use crate::component::theme;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::DropdownMenu as _,
+    ActiveTheme, IconName, Sizable,
 };
 
 actions!(title_bar, [CreateSession, OpenSettings]);
@@ -26,7 +26,6 @@ impl Render for AppTitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let maximize_label = if window.is_maximized() { "❐" } else { "□" };
         let colors = cx.theme();
-        let styles = theme::styles(cx);
         h_flex()
             .id("app-title-bar")
             .on_action(cx.listener(Self::open_session_window))
@@ -35,8 +34,8 @@ impl Render for AppTitleBar {
             .h(px(42.))
             .flex_shrink_0()
             .border_b_1()
-            .border_color(colors.title_bar_border)
-            .bg(styles.title_bar)
+            .border_color(theme::border_color(cx))
+            .bg(theme::title_background(cx))
             .child(
                 h_flex()
                     .h_full()

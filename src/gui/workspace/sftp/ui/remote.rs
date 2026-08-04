@@ -7,12 +7,11 @@ use super::PathTarget;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::ContextMenuExt,
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
-    v_flex,
+    v_flex, ActiveTheme, Disableable, Sizable,
 };
 
 use crate::component::theme;
@@ -68,7 +67,7 @@ impl SftpView {
                     .gap_2()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(theme::styles(cx).panel)
+                    .bg(theme::panel_background(cx))
                     .child(
                         Button::new("sftp-remote-parent")
                             .outline()
@@ -192,6 +191,7 @@ impl SftpView {
         cx: &mut App,
     ) -> AnyElement {
         let colors = cx.theme();
+        let styles = theme::styles(cx);
         let path = entry.path.clone();
         let is_directory = entry.is_directory;
         let context_path = path.clone();
@@ -220,8 +220,8 @@ impl SftpView {
             .px_3()
             .border_b_1()
             .border_color(colors.border)
-            .hover(|style| style.bg(colors.list_hover))
-            .when(selected, |this| this.bg(colors.selection))
+            .hover(|style| style.bg(styles.hover))
+            .when(selected, |this| this.bg(styles.selected))
             .cursor_pointer()
             .child(Self::entry_name(entry.name, is_directory, cx))
             .child(

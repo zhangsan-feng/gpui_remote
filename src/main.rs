@@ -129,6 +129,7 @@ async fn main() {
             let window_size = size(px(1200.), px(700.));
             window_options.window_bounds = Some(WindowBounds::centered(window_size, cx));
             window_options.window_min_size = Some(window_size);
+            // window_options.window_background = WindowBackgroundAppearance::Transparent;
             window_options.titlebar = Some(TitlebarOptions {
                 title: None,
                 // Hide the platform titlebar; HomeView renders the compatible custom one.
@@ -142,13 +143,14 @@ async fn main() {
             cx.open_window(window_options, |window, app| {
                 gpui_component::init(app);
                 component::theme::init(app);
+                window.set_background_appearance(component::theme::window_background_appearance(app));
 
                 app.new(|cx| {
                     let global_state = cx.new(|_| GlobalState {});
                     cx.set_global(infrastructure::storage::Storage::new());
                     cx.set_global(GlobalStateHandle(global_state));
                     let main_window = cx.new(|cx| gui::home::HomeView::new(window, cx));
-                    Root::new(main_window, window, cx)
+                    Root::new(main_window, window, cx).opacity(component::theme::window_opacity(cx))
                 })
             })
             .expect("Failed to create app");

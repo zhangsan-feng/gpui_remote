@@ -3,6 +3,50 @@ use gpui::*;
 use super::SettingsOperationWindow;
 
 impl SettingsOperationWindow {
+    pub(super) fn reset_font_color(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::component::theme::clear_font_color(cx);
+        self.sync_color_pickers(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn reset_background_color(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::component::theme::clear_background_color(cx);
+        self.sync_color_pickers(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn reset_hover_color(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::component::theme::clear_hover_color(cx);
+        self.sync_color_pickers(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn reset_selected_color(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::component::theme::clear_selected_color(cx);
+        self.sync_color_pickers(window, cx);
+        cx.notify();
+    }
+
     pub(super) fn choose_wallpaper(
         &mut self,
         _: &ClickEvent,

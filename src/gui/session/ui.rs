@@ -138,7 +138,8 @@ impl SessionComponent {
         let sidebar_foreground = theme::styles(cx).foreground;
         let muted_foreground = cx.theme().muted_foreground;
 
-        self.draggable_list.update(cx, move |this, _cx| {
+        self.draggable_list.update(cx, move |this, list_cx| {
+            this.clear(list_cx);
             for session in sessions {
                 this.child(session.id.clone(), move || {
                     let session_id = session.id.clone();

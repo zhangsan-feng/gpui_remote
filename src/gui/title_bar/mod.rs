@@ -2,6 +2,8 @@ mod core;
 pub mod session_operation_window;
 mod settings_operation_window;
 mod ui;
+mod mcp_opertaion_window;
+mod tools_operation_window;
 
 use crate::component::theme;
 use gpui::*;

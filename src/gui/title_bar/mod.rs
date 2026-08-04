@@ -2,8 +2,6 @@ mod core;
 pub mod session_operation_window;
 mod settings_operation_window;
 mod ui;
-mod mcp_opertaion_window;
-mod tools_operation_window;
 
 use crate::component::theme;
 use gpui::*;
@@ -14,7 +12,7 @@ use gpui_component::{
     ActiveTheme, IconName, Sizable,
 };
 
-actions!(title_bar, [CreateSession, OpenSettings]);
+actions!(title_bar, [CreateSession, OpenSettings, OpenTools]);
 
 pub struct AppTitleBar;
 
@@ -68,7 +66,7 @@ impl Render for AppTitleBar {
                                     Box::new(OpenSettings),
                                 )
                             }),
-                    ),
+                    )
             )
             .child(
                 div()

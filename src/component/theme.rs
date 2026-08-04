@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use gpui::{App, Global, Hsla, Rgba, Styled, WindowBackgroundAppearance};
+use gpui::{App, Global, Hsla, Rgba, WindowBackgroundAppearance};
 use gpui_component::{ActiveTheme, Colorize, Theme, ThemeMode};
 use serde::{Deserialize, Serialize};
 
@@ -98,7 +98,6 @@ struct ColorOverrides {
 }
 
 struct VisualSettings {
-    window_opacity: f32,
     wallpaper: Option<PathBuf>,
     wallpaper_opacity: f32,
 }
@@ -133,7 +132,6 @@ pub struct ThemePreview {
 struct ThemeSettings {
     theme: AppTheme,
     colors: StoredColors,
-    window_opacity: f32,
     wallpaper: Option<String>,
     wallpaper_opacity: f32,
 }
@@ -176,7 +174,6 @@ pub fn init(cx: &mut App) {
         colors.selected = None;
     }
     let visual = VisualSettings {
-        window_opacity: settings.window_opacity.clamp(0.2, 1.),
         wallpaper: settings.wallpaper.map(PathBuf::from),
         wallpaper_opacity: settings.wallpaper_opacity.clamp(0., 1.),
     };
@@ -226,10 +223,6 @@ pub fn selected_color(cx: &App) -> Option<Hsla> {
     cx.global::<AppThemeState>().colors.selected
 }
 
-pub fn window_opacity(cx: &App) -> f32 {
-    cx.global::<AppThemeState>().visual.window_opacity
-}
-
 pub fn wallpaper(cx: &App) -> Option<(PathBuf, f32)> {
     let visual = &cx.global::<AppThemeState>().visual;
     visual
@@ -251,7 +244,7 @@ pub fn styles(cx: &App) -> CustomThemeStyles {
         foreground: colors.foreground,
         hover: colors.list_hover,
         selected: colors.selection,
-        window_background: colors.background.opacity(window_opacity(cx)),
+        window_background: colors.background,
         window_background_img: state.visual.wallpaper.clone(),
     }
 }
@@ -358,11 +351,6 @@ pub fn set_selected_color(color: Hsla, cx: &mut App) {
 pub fn clear_selected_color(cx: &mut App) {
     cx.global_mut::<AppThemeState>().colors.selected = None;
     refresh(cx, true);
-}
-
-pub fn set_window_opacity(opacity: f32, cx: &mut App) {
-    cx.global_mut::<AppThemeState>().visual.window_opacity = opacity.clamp(0.2, 1.);
-    refresh(cx, false);
 }
 
 pub fn set_wallpaper_opacity(opacity: f32, cx: &mut App) {
@@ -596,21 +584,7 @@ fn refresh(cx: &mut App, reapply_theme: bool) {
         apply_theme(cx);
     }
     persist(cx);
-    sync_window_roots(cx);
     cx.refresh_windows();
-}
-
-fn sync_window_roots(cx: &mut App) {
-    let opacity = window_opacity(cx);
-    for handle in cx.windows() {
-        let Some(root) = handle.downcast::<gpui_component::Root>() else {
-            continue;
-        };
-        let _ = root.update(cx, |root, window, _| {
-            root.style().opacity = Some(opacity);
-            window.set_background_appearance(WindowBackgroundAppearance::Transparent);
-        });
-    }
 }
 
 fn load_settings() -> ThemeSettings {
@@ -632,7 +606,6 @@ fn persist(cx: &mut App) {
                 hover: state.colors.hover.map(|color| color.to_hex()),
                 selected: state.colors.selected.map(|color| color.to_hex()),
             },
-            window_opacity: state.visual.window_opacity,
             wallpaper: state
                 .visual
                 .wallpaper

@@ -150,7 +150,7 @@ async fn main() {
                     cx.set_global(infrastructure::storage::Storage::new());
                     cx.set_global(GlobalStateHandle(global_state));
                     let main_window = cx.new(|cx| gui::home::HomeView::new(window, cx));
-                    Root::new(main_window, window, cx).opacity(component::theme::window_opacity(cx))
+                    Root::new(main_window, window, cx)
                 })
             })
             .expect("Failed to create app");

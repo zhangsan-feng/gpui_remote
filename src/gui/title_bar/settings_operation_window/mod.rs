@@ -27,7 +27,6 @@ pub struct SettingsOperationWindow {
     hover_color_picker: Entity<ColorPickerState>,
     selected_color_picker: Entity<ColorPickerState>,
     wallpaper_opacity: Entity<SliderState>,
-    window_opacity: Entity<SliderState>,
     wallpaper_error: Option<String>,
     active_section: SettingsSection,
 }
@@ -63,14 +62,6 @@ impl SettingsOperationWindow {
                 .max(100.)
                 .step(1.)
                 .default_value(wallpaper_opacity_value)
-        });
-        let window_opacity_value = crate::component::theme::window_opacity(cx) * 100.;
-        let window_opacity = cx.new(move |_| {
-            SliderState::new()
-                .min(20.)
-                .max(100.)
-                .step(1.)
-                .default_value(window_opacity_value)
         });
         cx.subscribe(
             &color_picker,
@@ -118,12 +109,6 @@ impl SettingsOperationWindow {
             }
         })
         .detach();
-        cx.subscribe(&window_opacity, |_, _, event: &SliderEvent, cx| {
-            if let SliderEvent::Change(value) = event {
-                crate::component::theme::set_window_opacity(value.start() / 100., cx);
-            }
-        })
-        .detach();
         Self {
             color_picker,
             font_color_picker,
@@ -131,7 +116,6 @@ impl SettingsOperationWindow {
             hover_color_picker,
             selected_color_picker,
             wallpaper_opacity,
-            window_opacity,
             wallpaper_error: None,
             active_section: SettingsSection::Theme,
         }

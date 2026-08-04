@@ -88,14 +88,8 @@ impl SftpView {
         };
         let parent = cx.weak_entity();
         let _ = cx.open_window(options, move |window, cx| {
-            window.set_background_appearance(
-                crate::component::theme::window_background_appearance(cx),
-            );
             let dialog = cx.new(|cx| PathInputDialog::new(parent, target, path, window, cx));
-            cx.new(|cx| {
-                gpui_component::Root::new(dialog, window, cx)
-                    .opacity(crate::component::theme::window_opacity(cx))
-            })
+            cx.new(|cx| { gpui_component::Root::new(dialog, window, cx) })
         });
     }
 }

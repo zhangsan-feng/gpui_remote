@@ -124,13 +124,6 @@ impl SettingsOperationWindow {
             )
             .child(self.custom_color_panel(cx))
             .child(self.color_overrides_panel(cx))
-            .child(self.window_opacity_panel(cx))
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(colors.muted_foreground)
-                    .child("自定义配色会在选择主色后立即生成完整主题。"),
-            )
     }
 
     fn wallpaper_section(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -216,22 +209,6 @@ impl SettingsOperationWindow {
             .border_1()
             .border_color(theme::border_color(cx))
             .bg(theme::panel_background(cx))
-            .child(
-                v_flex()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("界面颜色"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("未设置时自动跟随当前主题。"),
-                    ),
-            )
             .child(self.color_override_row(
                 "字体颜色",
                 "应用内文字的主要颜色",
@@ -313,39 +290,6 @@ impl SettingsOperationWindow {
                         )
                     }),
             )
-    }
-
-    fn window_opacity_panel(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = cx.theme();
-        v_flex()
-            .gap_3()
-            .p_4()
-            .rounded_xl()
-            .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
-            .child(
-                h_flex()
-                    .justify_between()
-                    .child(
-                        v_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child("窗口透明度"),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(colors.muted_foreground)
-                                    .child("背景图片存在时会优先显示图片。"),
-                            ),
-                    )
-                    .child(format!("{:.0}%", theme::window_opacity(cx) * 100.)),
-            )
-            .child(Slider::new(&self.window_opacity).horizontal().w_full())
     }
 
     fn theme_card(

@@ -1,10 +1,10 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{v_flex, Root};
+use gpui_component::{Root, v_flex};
 
 use crate::{
     component::{resizable_panel::ResizablePanel, theme},
-    gui::{session::SessionComponent, title_bar::AppTitleBar, workspace::Workspace},
+    gui::{sidebar_session::SessionComponent, title_bar::AppTitleBar, workspace::Workspace},
 };
 
 pub struct HomeView {
@@ -21,7 +21,7 @@ impl HomeView {
                 .with_axis(Axis::Horizontal)
                 .with_panel_size(252.)
                 .with_panel_size_range(190., 480.)
-                .set_id("home-session-resize-handle")
+                .set_id("home-top_session-resize-handle")
         });
         Self {
             title_bar: cx.new(|cx| AppTitleBar::new(window, cx)),
@@ -32,16 +32,16 @@ impl HomeView {
 
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        window.set_background_appearance(theme::window_background_appearance(cx));
-        let styles = theme::styles(cx);
-        let wallpaper = styles
-            .window_background_img
+        window.set_background_appearance(theme::CustomerUiTheme::window_background_appearance(cx));
+        let colors = theme::CustomerUiTheme::colors(cx);
+        let wallpaper = colors
+            .background_image
             .clone()
-            .map(|path| (path, theme::wallpaper_opacity(cx)));
+            .map(|path| (path, colors.image_opacity));
         div()
             .relative()
             .size_full()
-            .bg(styles.window_background)
+            .bg(colors.background)
             .when_some(wallpaper, |this, (path, opacity)| {
                 this.child(
                     img(path)

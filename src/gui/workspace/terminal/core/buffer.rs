@@ -32,6 +32,10 @@ mod color {
         }
     }
 
+    pub(super) fn is_default_background(color: Color) -> bool {
+        matches!(color, Color::Named(NamedColor::Background))
+    }
+
     impl From<Rgb> for TerminalRgb {
         fn from(value: Rgb) -> Self {
             Self {
@@ -160,7 +164,7 @@ mod core {
     use super::{
         DEFAULT_COLUMNS, DEFAULT_ROWS, MAX_SCROLLBACK_LINES, MAX_TRACKED_LINE_METADATA,
         TerminalBuffer, TerminalPtyProxy, TerminalSize,
-        color::{default_background, resolve_color},
+        color::{default_background, is_default_background, resolve_color},
     };
 
     impl TerminalBuffer {
@@ -375,7 +379,11 @@ mod core {
                     continue;
                 }
                 let mut foreground = resolve_color(cell.fg, &colors, true, cell.flags);
-                let mut background = resolve_color(cell.bg, &colors, false, cell.flags);
+                let mut background = if is_default_background(cell.bg) {
+                    default_background()
+                } else {
+                    resolve_color(cell.bg, &colors, false, cell.flags)
+                };
                 let is_cursor = show_cursor && cursor.line.0 == row && cursor.column.0 == column;
                 if cell.flags.contains(Flags::INVERSE) || is_cursor {
                     std::mem::swap(&mut foreground, &mut background);
@@ -435,8 +443,6 @@ mod core {
         }
     }
 }
-
-pub(in crate::gui::workspace::terminal) use color::{default_background, default_foreground};
 
 use std::{collections::VecDeque, sync::Arc};
 

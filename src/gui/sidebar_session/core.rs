@@ -16,7 +16,7 @@ impl SessionComponent {
             .list()?
             .into_iter()
             .find(|session| session.id == id)
-            .with_context(|| format!("session not found: {id}"))
+            .with_context(|| format!("top_session not found: {id}"))
     }
 
     pub(super) fn remove_session(&self, id: &str, cx: &Context<Self>) -> Result<()> {

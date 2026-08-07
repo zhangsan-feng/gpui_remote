@@ -10,10 +10,10 @@ use super::{CancelTransfer, RetryTransfer, SftpSnapshot, SftpView, TransferRecor
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
-    h_flex,
+    ActiveTheme, Icon, IconName, Sizable, h_flex,
     menu::ContextMenuExt,
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
-    v_flex, ActiveTheme, Icon, IconName, Sizable,
+    v_flex,
 };
 
 use crate::component::theme;
@@ -25,7 +25,7 @@ impl SftpView {
         let Some(snapshot) = self.selected_snapshot() else {
             return div()
                 .size_full()
-                .bg(theme::panel_background(cx))
+                .bg(theme::CustomerUiTheme::workspace_background(cx))
                 .into_any_element();
         };
         sync_list_state(&self.local_list_state, self.local.entries.len());
@@ -45,7 +45,7 @@ impl SftpView {
         transfers: Vec<TransferRecord>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let styles = theme::styles(cx);
+        let colors = theme::CustomerUiTheme::colors(cx);
         v_flex()
             .on_action(cx.listener(Self::delete_local_entry))
             .on_action(cx.listener(Self::delete_remote_entry))
@@ -58,9 +58,9 @@ impl SftpView {
             .overflow_hidden()
             .rounded_lg()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
-            .text_color(styles.foreground)
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::workspace_background(cx))
+            .text_color(colors.workspace_text_color)
             .child(
                 h_flex()
                     .flex_1()
@@ -84,7 +84,7 @@ impl SftpView {
             .rounded_md()
             .border_1()
             .border_color(colors.border)
-            .bg(theme::panel_background(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .text_xs()
             .child(path)
             .on_mouse_down(
@@ -105,7 +105,7 @@ impl SftpView {
             .px_3()
             .border_b_1()
             .border_color(colors.border)
-            .bg(theme::panel_background(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .text_xs()
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(colors.muted_foreground)
@@ -182,7 +182,7 @@ impl SftpView {
                     .justify_between()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(theme::panel_background(cx))
+                    .bg(theme::CustomerUiTheme::panel_background(cx))
                     .child(
                         div()
                             .text_sm()

@@ -6,10 +6,10 @@ mod ui;
 use crate::component::theme;
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::DropdownMenu as _,
-    ActiveTheme, IconName, Sizable,
 };
 
 actions!(title_bar, [CreateSession, OpenSettings, OpenTools]);
@@ -34,15 +34,15 @@ impl Render for AppTitleBar {
             .h(px(42.))
             .flex_shrink_0()
             .border_b_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::title_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::title_background(cx))
             .child(
                 h_flex()
                     .h_full()
                     .px_3()
                     .gap_2()
                     .child(
-                        Button::new("session-menu")
+                        Button::new("top_session-menu")
                             .ghost()
                             .small()
                             .label("会话")
@@ -66,7 +66,7 @@ impl Render for AppTitleBar {
                                     Box::new(OpenSettings),
                                 )
                             }),
-                    )
+                    ),
             )
             .child(
                 div()

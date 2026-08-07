@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{v_flex, ActiveTheme, IconName};
+use gpui_component::{ActiveTheme, IconName, v_flex};
 
 use crate::{component::theme, domain::session::Protocol};
 
@@ -9,12 +9,12 @@ impl Workspace {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
         v_flex()
-            .p_2()
+            // .p_2()
             .gap_2()
             .size_full()
-            .bg(theme::panel_background(cx))
+            .bg(theme::CustomerUiTheme::workspace_background(cx))
             .border_1()
-            .border_color(theme::border_color(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
             .rounded_lg()
             .shadow_lg()
             .child(
@@ -22,7 +22,7 @@ impl Workspace {
                     .w_full()
                     .h(px(45.))
                     .border_color(colors.border)
-                    .bg(theme::tab_background(cx))
+                    .bg(theme::CustomerUiTheme::tab_background(cx))
                     .child(self.workspace.clone()),
             )
             .child(match self.active_protocol {

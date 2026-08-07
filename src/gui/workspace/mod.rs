@@ -2,7 +2,7 @@ mod agent_mcp;
 mod core;
 mod external;
 mod internal;
-mod session;
+mod top_session;
 mod sftp;
 mod terminal;
 mod ui;
@@ -10,7 +10,7 @@ mod ui;
 use gpui::*;
 
 use crate::domain::session::Protocol;
-use session::WorkspaceSession;
+use top_session::WorkspaceSession;
 use sftp::SftpView;
 use terminal::TerminalView;
 

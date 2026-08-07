@@ -2,7 +2,7 @@ use gpui::Context;
 
 use crate::domain::session::Protocol;
 
-use super::{Workspace, session::terminal_statuses};
+use super::{Workspace, top_session::terminal_statuses};
 
 impl Workspace {
     pub(super) fn protocol_for_workspace(

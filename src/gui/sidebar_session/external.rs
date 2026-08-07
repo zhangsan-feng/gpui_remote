@@ -13,9 +13,7 @@ impl SessionComponent {
         let global_events = read_global_state(cx);
         cx.subscribe(&global_events, |this, _, event, cx| {
             match event {
-                GlobalEvent::CreateSession
-                | GlobalEvent::UpdateSession
-                | GlobalEvent::ThemeChanged => {}
+                GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
                 _ => return,
             }
             if let Err(error) = this.reload_session(cx) {

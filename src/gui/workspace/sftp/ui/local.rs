@@ -8,11 +8,12 @@ use std::path::PathBuf;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::ContextMenuExt,
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
-    v_flex, ActiveTheme, Sizable,
+    v_flex,
 };
 
 use crate::component::theme;
@@ -60,7 +61,7 @@ impl SftpView {
                     .gap_2()
                     .border_b_1()
                     .border_color(colors.border)
-                    .bg(theme::panel_background(cx))
+                    .bg(theme::CustomerUiTheme::panel_background(cx))
                     .child(
                         Button::new("sftp-local-parent")
                             .outline()
@@ -146,7 +147,7 @@ impl SftpView {
         cx: &mut App,
     ) -> AnyElement {
         let colors = cx.theme();
-        let styles = theme::styles(cx);
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         let path = entry.path.clone();
         let is_directory = entry.is_directory;
         let drag_paths = if selected {
@@ -169,8 +170,8 @@ impl SftpView {
             .w_full()
             .border_b_1()
             .border_color(colors.border)
-            .hover(|style| style.bg(styles.hover))
-            .when(selected, |this| this.bg(styles.selected))
+            .hover(|style| style.bg(ui_colors.hover_background))
+            .when(selected, |this| this.bg(ui_colors.select_background))
             .cursor_pointer()
             .child(Self::entry_name(entry.name, is_directory, cx))
             .child(

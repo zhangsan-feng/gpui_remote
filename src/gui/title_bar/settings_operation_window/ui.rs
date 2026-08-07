@@ -5,7 +5,7 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::color_picker::{ColorPicker, ColorPickerState};
 use gpui_component::slider::Slider;
 use gpui_component::{
-    h_flex, scroll::ScrollableElement, v_flex, ActiveTheme, Icon, IconName, Sizable,
+    ActiveTheme, Icon, IconName, Sizable, h_flex, scroll::ScrollableElement, v_flex,
 };
 
 use super::{SettingsOperationWindow, SettingsSection};
@@ -16,7 +16,7 @@ impl SettingsOperationWindow {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let styles = theme::styles(cx);
+        let colors = theme::CustomerUiTheme::colors(cx);
         let content = match self.active_section {
             SettingsSection::Theme => self.theme_section(cx).into_any_element(),
             SettingsSection::Wallpaper => self.wallpaper_section(cx).into_any_element(),
@@ -25,8 +25,8 @@ impl SettingsOperationWindow {
         h_flex()
             .size_full()
             .items_stretch()
-            .bg(styles.window_background)
-            .text_color(styles.foreground)
+            .bg(colors.background)
+            .text_color(colors.text_color)
             .child(self.sidebar(cx))
             .child(
                 v_flex()
@@ -51,8 +51,8 @@ impl SettingsOperationWindow {
             .p_3()
             .gap_2()
             .border_r_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::sidebar_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::sidebar_background(cx))
             .child(
                 div()
                     .px_3()
@@ -73,8 +73,7 @@ impl SettingsOperationWindow {
         label: &'static str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = cx.theme();
-        let styles = theme::styles(cx);
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         let selected = self.active_section == section;
         h_flex()
             .id(match section {
@@ -86,11 +85,12 @@ impl SettingsOperationWindow {
             .gap_2()
             .rounded_lg()
             .when(selected, |this| {
-                this.bg(styles.selected).text_color(colors.foreground)
+                this.bg(ui_colors.select_background)
+                    .text_color(ui_colors.text_color)
             })
             .when(!selected, |this| {
-                this.text_color(colors.sidebar_foreground)
-                    .hover(|style| style.bg(styles.hover))
+                this.text_color(cx.theme().sidebar_foreground)
+                    .hover(|style| style.bg(ui_colors.hover_background))
             })
             .cursor_pointer()
             .child(Icon::new(icon).small())
@@ -102,7 +102,6 @@ impl SettingsOperationWindow {
     }
 
     fn theme_section(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = cx.theme();
         v_flex()
             .gap_5()
             .child(self.section_heading("主题", "选择默认主题或自定义配色。", cx))
@@ -115,12 +114,15 @@ impl SettingsOperationWindow {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("主题模式"),
                     )
-                    .child(div().grid().grid_cols(1).gap_3().child(self.theme_card(
-                        AppTheme::Wisteria,
-                        "默认主题",
-                        "简洁、稳定的默认配色。",
-                        cx,
-                    ))),
+                    .child(
+                        div()
+                            .grid()
+                            .grid_cols(2)
+                            .gap_3()
+                            .children(AppTheme::BUILT_IN.map(|theme| {
+                                self.theme_card(theme, theme.label(), theme.description(), cx)
+                            })),
+                    ),
             )
             .child(self.custom_color_panel(cx))
             .child(self.color_overrides_panel(cx))
@@ -139,7 +141,6 @@ impl SettingsOperationWindow {
         description: &'static str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = cx.theme();
         v_flex()
             .gap_1()
             .child(
@@ -151,15 +152,15 @@ impl SettingsOperationWindow {
             .child(
                 div()
                     .text_sm()
-                    .text_color(colors.muted_foreground)
+                    .text_color(cx.theme().muted_foreground)
                     .child(description),
             )
     }
 
     fn custom_color_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let selected = theme::active(cx) == AppTheme::Custom;
-        let featured_colors = vec![theme::preview(AppTheme::Wisteria).accent];
+        let selected = theme::CustomerTheme::active(cx) == AppTheme::Custom;
+        let featured_colors = vec![theme::CustomerTheme::preview(AppTheme::Wisteria).accent];
 
         h_flex()
             .p_4()
@@ -170,9 +171,9 @@ impl SettingsOperationWindow {
             .border_color(if selected {
                 colors.primary
             } else {
-                theme::border_color(cx)
+                theme::CustomerUiTheme::border_color(cx)
             })
-            .bg(theme::panel_background(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(
                 v_flex()
                     .gap_1()
@@ -207,13 +208,13 @@ impl SettingsOperationWindow {
             .p_4()
             .rounded_xl()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(self.color_override_row(
                 "字体颜色",
                 "应用内文字的主要颜色",
                 &self.font_color_picker,
-                theme::font_color(cx).is_some(),
+                theme::CustomerUiColor::font_color(cx).is_some(),
                 "reset-font-color",
                 Self::reset_font_color,
                 cx,
@@ -222,7 +223,7 @@ impl SettingsOperationWindow {
                 "背景颜色",
                 "应用主题的基础背景色",
                 &self.background_color_picker,
-                theme::background_color(cx).is_some(),
+                theme::CustomerUiColor::background_color(cx).is_some(),
                 "reset-background-color",
                 Self::reset_background_color,
                 cx,
@@ -231,7 +232,7 @@ impl SettingsOperationWindow {
                 "悬浮颜色",
                 "鼠标悬浮在列表项上的背景色",
                 &self.hover_color_picker,
-                theme::hover_color(cx).is_some(),
+                theme::CustomerUiColor::hover_color(cx).is_some(),
                 "reset-hover-color",
                 Self::reset_hover_color,
                 cx,
@@ -240,7 +241,7 @@ impl SettingsOperationWindow {
                 "选中颜色",
                 "列表项和文本选中的背景色",
                 &self.selected_color_picker,
-                theme::selected_color(cx).is_some(),
+                theme::CustomerUiColor::selected_color(cx).is_some(),
                 "reset-selected-color",
                 Self::reset_selected_color,
                 cx,
@@ -299,10 +300,10 @@ impl SettingsOperationWindow {
         description: &'static str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = cx.theme();
-        let styles = theme::styles(cx);
-        let preview = theme::preview(selected_theme);
-        let selected = theme::active(cx) == selected_theme;
+        let component_colors = cx.theme();
+        let colors = theme::CustomerUiTheme::colors(cx);
+        let preview = theme::CustomerTheme::preview(selected_theme);
+        let selected = theme::CustomerTheme::active(cx) == selected_theme;
 
         v_flex()
             .id(format!("theme-{selected_theme:?}"))
@@ -313,16 +314,16 @@ impl SettingsOperationWindow {
             .rounded_xl()
             .border_1()
             .border_color(if selected {
-                colors.primary
+                component_colors.primary
             } else {
-                theme::border_color(cx)
+                theme::CustomerUiTheme::border_color(cx)
             })
             .bg(if selected {
-                styles.selected
+                colors.select_background
             } else {
-                theme::panel_background(cx)
+                theme::CustomerUiTheme::panel_background(cx)
             })
-            .hover(|style| style.bg(styles.hover))
+            .hover(|style| style.bg(colors.hover_background))
             .cursor_pointer()
             .when(selected, |this| {
                 this.child(
@@ -335,8 +336,8 @@ impl SettingsOperationWindow {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .bg(colors.primary)
-                        .text_color(colors.primary_foreground)
+                        .bg(component_colors.primary)
+                        .text_color(component_colors.primary_foreground)
                         .child(Icon::new(IconName::Check).xsmall()),
                 )
             })
@@ -346,7 +347,7 @@ impl SettingsOperationWindow {
                         .size(px(24.))
                         .rounded_full()
                         .border_1()
-                        .border_color(theme::border_color(cx))
+                        .border_color(theme::CustomerUiTheme::border_color(cx))
                         .bg(color)
                 }),
             ))
@@ -362,16 +363,16 @@ impl SettingsOperationWindow {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(colors.muted_foreground)
+                            .text_color(component_colors.muted_foreground)
                             .child(description),
                     ),
             )
-            .on_click(move |_, _, cx| theme::select(selected_theme, cx))
+            .on_click(move |_, _, cx| theme::CustomerTheme::select(selected_theme, cx))
     }
 
     fn wallpaper_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let wallpaper = theme::wallpaper(cx);
+        let wallpaper = theme::CustomerUiColor::wallpaper(cx);
         let wallpaper_name = wallpaper
             .as_ref()
             .and_then(|(path, _)| path.file_name())
@@ -384,8 +385,8 @@ impl SettingsOperationWindow {
             .gap_3()
             .rounded_xl()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(
                 h_flex()
                     .gap_3()
@@ -448,7 +449,10 @@ impl SettingsOperationWindow {
                             .text_xs()
                             .text_color(colors.muted_foreground)
                             .child("图片透明度")
-                            .child(format!("{:.0}%", theme::wallpaper_opacity(cx) * 100.)),
+                            .child(format!(
+                                "{:.0}%",
+                                theme::CustomerUiColor::wallpaper_opacity(cx) * 100.
+                            )),
                     )
                     .child(Slider::new(&self.wallpaper_opacity).horizontal().w_full()),
             )

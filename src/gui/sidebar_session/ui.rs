@@ -1,5 +1,5 @@
 use crate::component::{draggable_list::DraggableList, theme};
-use crate::gui::session::{
+use crate::gui::sidebar_session::{
     ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent,
 };
 use gpui::prelude::FluentBuilder;
@@ -10,8 +10,8 @@ use gpui_component::*;
 
 impl SessionComponent {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = cx.theme();
-        let styles = theme::styles(cx);
+        let component_colors = cx.theme();
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         v_flex()
             .on_action(cx.listener(Self::create_active_session))
             .on_action(cx.listener(Self::create_active_sftp_session))
@@ -21,16 +21,16 @@ impl SessionComponent {
             .w_full()
             .flex_shrink_0()
             .border_r_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::sidebar_background(cx))
-            .text_color(styles.foreground)
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::sidebar_background(cx))
+            .text_color(ui_colors.text_color)
             .child(
                 h_flex()
                     .h(px(48.))
                     .px_4()
                     .justify_between()
                     .border_b_1()
-                    .border_color(colors.sidebar_border)
+                    .border_color(component_colors.sidebar_border)
                     .child(
                         div()
                             .text_sm()
@@ -44,7 +44,7 @@ impl SessionComponent {
                     .px_3()
                     .py_2()
                     .border_b_1()
-                    .border_color(colors.sidebar_border)
+                    .border_color(component_colors.sidebar_border)
                     .child(Input::new(&self.search_input).small().cleanable(true)),
             )
             .when_some(self.core_err.as_ref(), |this, error| {
@@ -53,9 +53,9 @@ impl SessionComponent {
                         .m_2()
                         .p_2()
                         .rounded_md()
-                        .bg(colors.danger)
+                        .bg(component_colors.danger)
                         .text_xs()
-                        .text_color(colors.danger_foreground)
+                        .text_color(component_colors.danger_foreground)
                         .child(error.to_string()),
                 )
             })
@@ -68,14 +68,14 @@ impl SessionComponent {
     }
 
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
-        let styles = theme::styles(cx);
+        let colors = theme::CustomerUiTheme::colors(cx);
         let mut list = DraggableList::new();
         let session = cx.weak_entity();
 
         list.set_item_height(px(58.))
             .set_item_bg(Hsla::transparent_black().into())
-            .set_item_selected_bg(styles.selected.into())
-            .set_item_hover_bg(styles.hover.into())
+            .set_item_selected_bg(colors.select_background.into())
+            .set_item_hover_bg(colors.hover_background.into())
             .set_context_menu(
                 |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();
@@ -135,7 +135,7 @@ impl SessionComponent {
             .collect::<Vec<_>>();
         let sidebar_accent = cx.theme().sidebar_accent;
         let sidebar_accent_foreground = cx.theme().sidebar_accent_foreground;
-        let sidebar_foreground = theme::styles(cx).foreground;
+        let sidebar_foreground = theme::CustomerUiTheme::colors(cx).text_color;
         let muted_foreground = cx.theme().muted_foreground;
 
         self.draggable_list.update(cx, move |this, list_cx| {
@@ -144,7 +144,7 @@ impl SessionComponent {
                 this.child(session.id.clone(), move || {
                     let session_id = session.id.clone();
                     h_flex()
-                        .id(format!("session-row-{session_id}"))
+                        .id(format!("top_session-row-{session_id}"))
                         .h(px(58.))
                         .w_full()
                         .px_3()

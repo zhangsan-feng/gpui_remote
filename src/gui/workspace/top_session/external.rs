@@ -16,7 +16,7 @@ impl WorkspaceSession {
             GlobalEvent::OpenWorkspaceSession(workspace_id, profile) => {
                 this.open(workspace_id.clone(), profile.clone(), cx);
             }
-            GlobalEvent::ThemeChanged => {
+            GlobalEvent::ThemeColorChanged => {
                 this.reset_tab_style(cx);
                 this.rebuild_tabs(cx);
                 cx.notify();

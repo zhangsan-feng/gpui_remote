@@ -3,16 +3,16 @@ mod terminal_render {
 
     use gpui::prelude::FluentBuilder;
     use gpui::*;
-    use gpui_component::{h_flex, menu::ContextMenuExt, ElementExt};
+    use gpui_component::{ElementExt, h_flex, menu::ContextMenuExt};
 
     use crate::{
-        component::{color::rgb_to_u32, theme},
-        domain::terminal::{TerminalFrame, TerminalLine, TerminalRgb},
+        component::theme,
+        domain::terminal::{TerminalFrame, TerminalLine},
     };
 
     use super::super::{
-        internal::{buffer_row, nearest_character_column, selected_fragments, TerminalPoint},
-        CopyTerminal, TerminalView, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE,
+        CopyTerminal, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TerminalView,
+        internal::{TerminalPoint, buffer_row, nearest_character_column, selected_fragments},
     };
 
     pub(super) const GUTTER_WIDTH: f32 = 116.0;
@@ -25,11 +25,11 @@ mod terminal_render {
             cell_width: Pixels,
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
-            let styles = theme::styles(cx);
-            let terminal_background = theme::terminal_background(cx);
-            let terminal_foreground = styles.foreground;
-            let selection_background = styles.selected;
-            let default_foreground = theme::terminal_foreground(cx);
+            let colors = theme::CustomerUiTheme::colors(cx);
+            let terminal_background = colors.workspace_background;
+            let terminal_foreground = colors.workspace_text_color;
+            let selection_background = theme::CustomerUiTheme::terminal_selection_background(cx);
+            let selection_foreground = theme::CustomerUiTheme::terminal_selection_foreground(cx);
             let selection = self.selection.clone();
             let terminal_view = cx.weak_entity();
             let resize_view = terminal_view.clone();
@@ -64,6 +64,32 @@ mod terminal_render {
                     .text_size(px(TERMINAL_FONT_SIZE))
                     .line_height(px(19.))
                     .whitespace_nowrap()
+                    .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                        let point = terminal_point(
+                            index,
+                            &select_line,
+                            event.position,
+                            select_bounds.get(),
+                            cell_width,
+                        );
+                        let _ = select_view.update(cx, |this, cx| {
+                            this.begin_text_selection(select_workspace_id.clone(), point, cx);
+                        });
+                    })
+                    .on_mouse_move(move |event, _, cx| {
+                        if event.dragging() {
+                            let point = terminal_point(
+                                index,
+                                &extend_line,
+                                event.position,
+                                extend_bounds.get(),
+                                cell_width,
+                            );
+                            let _ = extend_view.update(cx, |this, cx| {
+                                this.extend_selection(&extend_workspace_id, point, cx);
+                            });
+                        }
+                    })
                     .child(render_gutter(
                         timestamp,
                         line_number,
@@ -80,41 +106,12 @@ mod terminal_render {
                             .cursor_text()
                             .overflow_hidden()
                             .on_prepaint(move |bounds, _, _| text_bounds_writer.set(bounds))
-                            .on_mouse_down(MouseButton::Left, move |event, _, cx| {
-                                let point = terminal_point(
-                                    index,
-                                    &select_line,
-                                    event.position,
-                                    select_bounds.get(),
-                                    cell_width,
-                                );
-                                let _ = select_view.update(cx, |this, cx| {
-                                    this.begin_text_selection(
-                                        select_workspace_id.clone(),
-                                        point,
-                                        cx,
-                                    );
-                                });
-                            })
-                            .on_mouse_move(move |event, _, cx| {
-                                if event.dragging() {
-                                    let point = terminal_point(
-                                        index,
-                                        &extend_line,
-                                        event.position,
-                                        extend_bounds.get(),
-                                        cell_width,
-                                    );
-                                    let _ = extend_view.update(cx, |this, cx| {
-                                        this.extend_selection(&extend_workspace_id, point, cx);
-                                    });
-                                }
-                            })
                             .child(render_terminal_text(
                                 fragments,
                                 terminal_background,
                                 selection_background,
-                                default_foreground,
+                                selection_foreground,
+                                terminal_foreground,
                             )),
                     )
                     .into_any_element()
@@ -195,15 +192,16 @@ mod terminal_render {
         }
     }
 
-    fn terminal_color(color: TerminalRgb) -> Rgba {
-        rgb_to_u32(color.red, color.green, color.blue)
+    fn has_selection_contrast(foreground: Hsla, background: Hsla) -> bool {
+        (foreground.l - background.l).abs() >= 0.35
     }
 
     fn render_terminal_text(
         fragments: Vec<super::super::internal::SelectedFragment>,
         terminal_background: Hsla,
         selection_background: Hsla,
-        default_foreground: Option<Hsla>,
+        selection_foreground: Hsla,
+        terminal_foreground: Hsla,
     ) -> StyledText {
         let mut text = String::new();
         let mut runs = Vec::with_capacity(fragments.len());
@@ -211,19 +209,17 @@ mod terminal_render {
             if fragment.text.is_empty() {
                 continue;
             }
-            let foreground: Hsla =
-                if fragment.style.foreground == super::super::core::default_foreground() {
-                    default_foreground
-                        .unwrap_or_else(|| terminal_color(fragment.style.foreground).into())
+            let foreground = terminal_foreground;
+            let foreground =
+                if fragment.selected && !has_selection_contrast(foreground, selection_background) {
+                    selection_foreground
                 } else {
-                    terminal_color(fragment.style.foreground).into()
+                    foreground
                 };
-            let background: Hsla = if fragment.selected {
+            let background = if fragment.selected {
                 selection_background
-            } else if fragment.style.background == super::super::core::default_background() {
-                terminal_background
             } else {
-                terminal_color(fragment.style.background).into()
+                terminal_background
             };
             let len = fragment.text.len();
             text.push_str(&fragment.text);
@@ -281,11 +277,7 @@ fn terminal_cell_width(window: &Window) -> Pixels {
         .text_system()
         .layout_line("0", px(TERMINAL_FONT_SIZE), &[run], None)
         .width;
-    if width > Pixels::ZERO {
-        width
-    } else {
-        px(8.)
-    }
+    if width > Pixels::ZERO { width } else { px(8.) }
 }
 
 impl TerminalView {
@@ -348,8 +340,8 @@ impl TerminalView {
                     cx.stop_propagation();
                 }
             })
-            .bg(theme::terminal_background(cx))
-            .text_color(theme::styles(cx).foreground)
+            .bg(theme::CustomerUiTheme::workspace_background(cx))
+            .text_color(theme::CustomerUiTheme::colors(cx).workspace_text_color)
             .child(content)
             .into_any_element()
     }

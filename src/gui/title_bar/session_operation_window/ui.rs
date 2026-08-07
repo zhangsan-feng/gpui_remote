@@ -1,10 +1,11 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, Icon, IconName, Sizable, ThemeColor,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
-    v_flex, ActiveTheme, Icon, IconName, Sizable, ThemeColor,
+    v_flex,
 };
 
 use crate::component::theme;
@@ -57,7 +58,7 @@ impl FormSection {
 impl SessionOperationWindow {
     fn protocol_option(&self, protocol: ConnectionProtocol, cx: &Context<Self>) -> AnyElement {
         let colors = cx.theme().colors;
-        let styles = theme::styles(cx);
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         let selected = self.protocol == protocol;
         let icon_color = if selected {
             colors.accent
@@ -75,15 +76,15 @@ impl SessionOperationWindow {
             .border_color(if selected {
                 colors.primary
             } else {
-                theme::border_color(cx)
+                theme::CustomerUiTheme::border_color(cx)
             })
             .bg(if selected {
-                styles.selected
+                ui_colors.select_background
             } else {
-                theme::panel_background(cx)
+                theme::CustomerUiTheme::panel_background(cx)
             })
             .cursor_pointer()
-            .hover(|style| style.bg(styles.hover))
+            .hover(|style| style.bg(ui_colors.hover_background))
             .child(
                 h_flex()
                     .gap_2()
@@ -98,7 +99,7 @@ impl SessionOperationWindow {
                             .bg(if selected {
                                 colors.accent
                             } else {
-                                styles.hover
+                                ui_colors.hover_background
                             })
                             .child(Icon::new(protocol.icon()).small().text_color(icon_color)),
                     )
@@ -153,8 +154,8 @@ impl SessionOperationWindow {
             .gap_2()
             .rounded_xl()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::SquareTerminal,
                 "连接信息",
@@ -177,8 +178,8 @@ impl SessionOperationWindow {
             .gap_2()
             .rounded_xl()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::Settings2,
                 "代理",
@@ -232,29 +233,29 @@ impl SessionOperationWindow {
 
     fn section_option(&self, section: FormSection, cx: &Context<Self>) -> AnyElement {
         let colors = cx.theme();
-        let styles = theme::styles(cx);
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         let selected = self.section == section;
         let label = section.label();
 
         div()
-            .id(format!("session-section-{label}"))
+            .id(format!("top_session-section-{label}"))
             .w_full()
             .px_3()
             .py_2()
             .rounded_lg()
             .cursor_pointer()
             .bg(if selected {
-                styles.selected
+                ui_colors.select_background
             } else {
-                theme::panel_background(cx)
+                theme::CustomerUiTheme::panel_background(cx)
             })
             .border_1()
             .border_color(if selected {
                 colors.primary
             } else {
-                theme::border_color(cx)
+                theme::CustomerUiTheme::border_color(cx)
             })
-            .hover(|style| style.bg(styles.hover))
+            .hover(|style| style.bg(ui_colors.hover_background))
             .child(
                 h_flex()
                     .gap_2()
@@ -294,12 +295,12 @@ impl SessionOperationWindow {
 
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
-        let styles = theme::styles(cx);
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         v_flex()
             .gap_2()
             .p_2()
             .size_full()
-            .bg(styles.window_background)
+            .bg(ui_colors.background)
             // .child(v_flex().p_2().gap_2().child(h_flex().gap_2().children(
             //     ConnectionProtocol::ALL.map(|protocol| self.protocol_option(protocol, cx)),
             // )))
@@ -317,8 +318,8 @@ impl SessionOperationWindow {
                             .gap_2()
                             .rounded_xl()
                             .border_1()
-                            .border_color(theme::border_color(cx))
-                            .bg(theme::panel_background(cx))
+                            .border_color(theme::CustomerUiTheme::border_color(cx))
+                            .bg(theme::CustomerUiTheme::panel_background(cx))
                             .children(
                                 FormSection::ALL.map(|section| self.section_option(section, cx)),
                             ),
@@ -351,16 +352,16 @@ impl SessionOperationWindow {
                     .items_center()
                     .justify_end()
                     .border_t_1()
-                    .border_color(theme::border_color(cx))
-                    .bg(theme::panel_background(cx))
+                    .border_color(theme::CustomerUiTheme::border_color(cx))
+                    .bg(theme::CustomerUiTheme::panel_background(cx))
                     .child(
-                        Button::new("cancel-session-operation")
+                        Button::new("cancel-top_session-operation")
                             .outline()
                             .label("取消")
                             .on_click(cx.listener(Self::cancel)),
                     )
                     .child(
-                        Button::new("save-session-operation")
+                        Button::new("save-top_session-operation")
                             .primary()
                             .label(match &self.mode {
                                 SessionFormMode::Create => "保存会话",

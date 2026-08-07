@@ -3,7 +3,7 @@ use gpui_component::ActiveTheme;
 
 use crate::{component::theme, domain::terminal::TerminalStatus};
 
-use super::{ui::workspace_tab, WorkspaceSession};
+use super::{WorkspaceSession, ui::workspace_tab};
 
 impl WorkspaceSession {
     pub(super) fn rebuild_tabs(&mut self, cx: &mut Context<Self>) {
@@ -38,10 +38,10 @@ impl WorkspaceSession {
     }
 
     pub(super) fn reset_tab_style(&mut self, cx: &mut Context<Self>) {
-        let styles = theme::styles(cx);
-        let tab_bar = theme::tab_background(cx).into();
-        let selected_background = styles.selected.into();
-        let list_hover = styles.hover.into();
+        let colors = theme::CustomerUiTheme::colors(cx);
+        let tab_bar = theme::CustomerUiTheme::tab_background(cx).into();
+        let selected_background = colors.workspace_select_color.into();
+        let list_hover = colors.hover_background.into();
         self.tabs.update(cx, move |tabs, tabs_cx| {
             tabs.set_item_bg(tab_bar);
             tabs.set_item_selected_bg(selected_background);

@@ -196,8 +196,8 @@ impl Render for DragPreviewLocalToRemoteItem {
             .items_center()
             .rounded_md()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .shadow_lg()
             .child(
                 Icon::new(IconName::ArrowUp)
@@ -279,8 +279,8 @@ impl Render for DragPreviewRemoteToLocalItem {
             .items_center()
             .rounded_md()
             .border_1()
-            .border_color(theme::border_color(cx))
-            .bg(theme::panel_background(cx))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .shadow_lg()
             .child(
                 Icon::new(IconName::ArrowDown)

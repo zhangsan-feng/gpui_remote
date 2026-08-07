@@ -1,8 +1,8 @@
 use gpui::*;
 use gpui_component::{
+    ActiveTheme,
     color_picker::{ColorPickerEvent, ColorPickerState},
     slider::{SliderEvent, SliderState},
-    ActiveTheme,
 };
 
 use crate::component::theme;
@@ -35,27 +35,34 @@ impl SettingsOperationWindow {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let color_picker = cx.new(|cx| {
             ColorPickerState::new(window, cx)
-                .default_value(crate::component::theme::custom_accent(cx))
+                .default_value(crate::component::theme::CustomerUiColor::custom_accent(cx))
         });
         let font_color_picker = cx.new(|cx| {
             ColorPickerState::new(window, cx).default_value(
-                crate::component::theme::font_color(cx).unwrap_or(cx.theme().foreground),
+                crate::component::theme::CustomerUiColor::font_color(cx)
+                    .unwrap_or(cx.theme().foreground),
             )
         });
         let background_color_picker = cx.new(|cx| {
             ColorPickerState::new(window, cx).default_value(
-                crate::component::theme::background_color(cx).unwrap_or(cx.theme().background),
+                crate::component::theme::CustomerUiColor::background_color(cx)
+                    .unwrap_or(cx.theme().background),
             )
         });
         let hover_color_picker = cx.new(|cx| {
-            ColorPickerState::new(window, cx)
-                .default_value(theme::hover_color(cx).unwrap_or(theme::styles(cx).hover))
+            ColorPickerState::new(window, cx).default_value(
+                theme::CustomerUiColor::hover_color(cx)
+                    .unwrap_or(theme::CustomerUiTheme::colors(cx).hover_background),
+            )
         });
         let selected_color_picker = cx.new(|cx| {
-            ColorPickerState::new(window, cx)
-                .default_value(theme::selected_color(cx).unwrap_or(theme::styles(cx).selected))
+            ColorPickerState::new(window, cx).default_value(
+                theme::CustomerUiColor::selected_color(cx)
+                    .unwrap_or(theme::CustomerUiTheme::colors(cx).select_background),
+            )
         });
-        let wallpaper_opacity_value = crate::component::theme::wallpaper_opacity(cx) * 100.;
+        let wallpaper_opacity_value =
+            crate::component::theme::CustomerUiColor::wallpaper_opacity(cx) * 100.;
         let wallpaper_opacity = cx.new(move |_| {
             SliderState::new()
                 .min(0.)
@@ -67,7 +74,7 @@ impl SettingsOperationWindow {
             &color_picker,
             |_, _, event: &ColorPickerEvent, cx| match event {
                 ColorPickerEvent::Change(Some(color)) => {
-                    crate::component::theme::select_custom(*color, cx);
+                    crate::component::theme::CustomerTheme::select_custom(*color, cx);
                 }
                 ColorPickerEvent::Change(None) => {}
             },
@@ -75,7 +82,7 @@ impl SettingsOperationWindow {
         .detach();
         cx.subscribe(&font_color_picker, |_, _, event: &ColorPickerEvent, cx| {
             if let ColorPickerEvent::Change(Some(color)) = event {
-                crate::component::theme::set_font_color(*color, cx);
+                crate::component::theme::CustomerUiColor::set_font_color(*color, cx);
             }
         })
         .detach();
@@ -83,14 +90,14 @@ impl SettingsOperationWindow {
             &background_color_picker,
             |_, _, event: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
-                    crate::component::theme::set_background_color(*color, cx);
+                    crate::component::theme::CustomerUiColor::set_background_color(*color, cx);
                 }
             },
         )
         .detach();
         cx.subscribe(&hover_color_picker, |_, _, event: &ColorPickerEvent, cx| {
             if let ColorPickerEvent::Change(Some(color)) = event {
-                theme::set_hover_color(*color, cx);
+                theme::CustomerUiColor::set_hover_color(*color, cx);
             }
         })
         .detach();
@@ -98,14 +105,17 @@ impl SettingsOperationWindow {
             &selected_color_picker,
             |_, _, event: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
-                    theme::set_selected_color(*color, cx);
+                    theme::CustomerUiColor::set_selected_color(*color, cx);
                 }
             },
         )
         .detach();
         cx.subscribe(&wallpaper_opacity, |_, _, event: &SliderEvent, cx| {
             if let SliderEvent::Change(value) = event {
-                crate::component::theme::set_wallpaper_opacity(value.start() / 100., cx);
+                crate::component::theme::CustomerUiColor::set_wallpaper_opacity(
+                    value.start() / 100.,
+                    cx,
+                );
             }
         })
         .detach();
@@ -122,28 +132,28 @@ impl SettingsOperationWindow {
     }
 
     pub(super) fn sync_color_pickers(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let styles = theme::styles(cx);
+        let colors = theme::CustomerUiTheme::colors(cx);
         Self::sync_picker(
             &self.font_color_picker,
-            theme::font_color(cx).unwrap_or(styles.foreground),
+            theme::CustomerUiColor::font_color(cx).unwrap_or(colors.text_color),
             window,
             cx,
         );
         Self::sync_picker(
             &self.background_color_picker,
-            theme::background_color(cx).unwrap_or(styles.background),
+            theme::CustomerUiColor::background_color(cx).unwrap_or(colors.background),
             window,
             cx,
         );
         Self::sync_picker(
             &self.hover_color_picker,
-            theme::hover_color(cx).unwrap_or(styles.hover),
+            theme::CustomerUiColor::hover_color(cx).unwrap_or(colors.hover_background),
             window,
             cx,
         );
         Self::sync_picker(
             &self.selected_color_picker,
-            theme::selected_color(cx).unwrap_or(styles.selected),
+            theme::CustomerUiColor::selected_color(cx).unwrap_or(colors.select_background),
             window,
             cx,
         );

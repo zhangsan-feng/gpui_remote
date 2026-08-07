@@ -9,7 +9,7 @@ impl SettingsOperationWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::component::theme::clear_font_color(cx);
+        crate::component::theme::CustomerUiColor::clear_font_color(cx);
         self.sync_color_pickers(window, cx);
         cx.notify();
     }
@@ -20,7 +20,7 @@ impl SettingsOperationWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::component::theme::clear_background_color(cx);
+        crate::component::theme::CustomerUiColor::clear_background_color(cx);
         self.sync_color_pickers(window, cx);
         cx.notify();
     }
@@ -31,7 +31,7 @@ impl SettingsOperationWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::component::theme::clear_hover_color(cx);
+        crate::component::theme::CustomerUiColor::clear_hover_color(cx);
         self.sync_color_pickers(window, cx);
         cx.notify();
     }
@@ -42,7 +42,7 @@ impl SettingsOperationWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::component::theme::clear_selected_color(cx);
+        crate::component::theme::CustomerUiColor::clear_selected_color(cx);
         self.sync_color_pickers(window, cx);
         cx.notify();
     }
@@ -71,7 +71,7 @@ impl SettingsOperationWindow {
                     return Ok(());
                 };
                 cx.update(|_, cx| {
-                    let result = crate::component::theme::set_wallpaper(&path, cx);
+                    let result = crate::component::theme::CustomerUiColor::set_wallpaper(&path, cx);
                     let _ = this.update(cx, |this, cx| {
                         this.wallpaper_error = result.err();
                         cx.notify();
@@ -89,7 +89,7 @@ impl SettingsOperationWindow {
         cx: &mut Context<Self>,
     ) {
         self.wallpaper_error = None;
-        crate::component::theme::clear_wallpaper(cx);
+        crate::component::theme::CustomerUiColor::clear_wallpaper(cx);
         cx.notify();
     }
 }

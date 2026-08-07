@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{h_flex, ThemeColor};
+use gpui_component::{ThemeColor, h_flex};
 
 use crate::{
     component::{color::rgb_to_u32, draggable_list::DraggableList, theme},
@@ -9,16 +9,16 @@ use crate::{
 use super::WorkspaceSession;
 
 pub(super) fn new_workspace_tabs(cx: &App) -> DraggableList {
-    let styles = theme::styles(cx);
-    let item_bg = theme::tab_background(cx).into();
-    let selected_bg = styles.selected.into();
+    let colors = theme::CustomerUiTheme::colors(cx);
+    let item_bg = theme::CustomerUiTheme::tab_background(cx).into();
+    let selected_bg = colors.workspace_select_color.into();
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)
         .set_item_width(px(240.))
         .set_item_height(px(34.))
         .set_item_bg(item_bg)
         .set_item_selected_bg(selected_bg)
-        .set_item_hover_bg(styles.hover.into());
+        .set_item_hover_bg(colors.hover_background.into());
     tabs
 }
 
@@ -79,7 +79,7 @@ pub(in crate::gui::workspace) fn workspace_tab(
         )
         .child(
             div()
-                .id(format!("close-workspace-session-{close_id}"))
+                .id(format!("close-workspace-top_session-{close_id}"))
                 .size(px(22.))
                 .rounded_md()
                 .flex()

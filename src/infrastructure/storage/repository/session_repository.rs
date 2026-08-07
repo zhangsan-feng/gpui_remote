@@ -42,7 +42,7 @@ impl SessionStorageRepository {
                 map_session,
             )
             .optional()
-            .context("find session in SQLite")
+            .context("find top_session in SQLite")
     }
 
     pub fn insert(&self, draft: NewSession) -> Result<SessionProfile> {
@@ -90,7 +90,7 @@ impl SessionStorageRepository {
                 [id],
                 |row| row.get(0),
             )
-            .context("find session to update")?;
+            .context("find top_session to update")?;
         let profile = SessionProfile {
             id: id.to_owned(),
             protocol: draft.protocol,
@@ -130,7 +130,7 @@ impl SessionStorageRepository {
         self.drive
             .connection
             .execute("DELETE FROM sessions WHERE id = ?1", [id])
-            .context("delete session from SQLite")?;
+            .context("delete top_session from SQLite")?;
         Ok(())
     }
 }

@@ -155,7 +155,7 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Open a new workspace session using a saved profile id and the requested protocol."
+        description = "Open a new workspace top_session using a saved profile id and the requested protocol."
     )]
     async fn open_session(
         &self,
@@ -217,7 +217,7 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "List open terminal sessions and identify the selected session.")]
+    #[tool(description = "List open terminal sessions and identify the selected top_session.")]
     async fn list_terminals(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.client
             .list_terminals()
@@ -226,7 +226,7 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "Switch the GUI to an open terminal session.")]
+    #[tool(description = "Switch the GUI to an open terminal top_session.")]
     async fn select_terminal(
         &self,
         Parameters(input): Parameters<SelectTerminalInput>,
@@ -252,7 +252,7 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "Send UTF-8 text to a terminal session.")]
+    #[tool(description = "Send UTF-8 text to a terminal top_session.")]
     async fn send_text(
         &self,
         Parameters(input): Parameters<SendTextInput>,

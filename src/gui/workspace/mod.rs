@@ -2,17 +2,17 @@ mod agent_mcp;
 mod core;
 mod external;
 mod internal;
-mod top_session;
 mod sftp;
-mod terminal;
+mod ssh;
+mod top_session;
 mod ui;
 
 use gpui::*;
 
 use crate::domain::session::Protocol;
-use top_session::WorkspaceSession;
 use sftp::SftpView;
-use terminal::TerminalView;
+use ssh::TerminalView;
+use top_session::WorkspaceSession;
 
 pub struct Workspace {
     workspace: Entity<WorkspaceSession>,
@@ -23,7 +23,7 @@ pub struct Workspace {
 
 impl Workspace {
     pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
-        terminal::init(cx);
+        ssh::init(cx);
 
         let (agent_mcp_client, agent_mcp_receiver) =
             crate::application::agent_mcp::agent_mcp_channel();

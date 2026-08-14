@@ -12,7 +12,7 @@ use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable, h_flex,
     menu::ContextMenuExt,
-    scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow},
+    scroll::{Scrollbar, ScrollbarAxis, ScrollbarMode},
     v_flex,
 };
 
@@ -220,7 +220,7 @@ impl SftpView {
                     .child(
                         div().h_full().w(px(12.)).child(
                             Scrollbar::vertical(&self.transfer_list_state)
-                                .scrollbar_show(ScrollbarShow::Always)
+                                .mode(ScrollbarMode::Always)
                                 .axis(ScrollbarAxis::Vertical),
                         ),
                     ),

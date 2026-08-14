@@ -15,7 +15,7 @@ use crate::{
     infrastructure::storage::Storage,
 };
 
-use super::{Workspace, terminal::encode_agent_key};
+use super::{Workspace, ssh::encode_agent_key};
 
 const DEFAULT_READ_LIMIT: usize = 200;
 const MAX_READ_LIMIT: usize = 2_000;
@@ -120,6 +120,13 @@ impl Workspace {
                         sftp.mcp_download(&workspace_id, remote_paths, cx)
                     })
                     .map_err(|_| "工作区已关闭".to_owned());
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListTransfers {
+                workspace_id,
+                reply,
+            }) => {
+                let result = self.sftp.read(cx).mcp_transfers(&workspace_id);
                 let _ = reply.send(result);
             }
             AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }) => {

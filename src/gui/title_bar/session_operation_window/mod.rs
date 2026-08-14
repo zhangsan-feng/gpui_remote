@@ -37,6 +37,7 @@ pub struct SessionOperationWindow {
     port: Entity<InputState>,
     username: Entity<InputState>,
     password: Entity<InputState>,
+    private_key_path: Option<String>,
     proxy_host: Entity<InputState>,
     proxy_port: Entity<InputState>,
     proxy_username: Entity<InputState>,
@@ -123,6 +124,7 @@ impl SessionOperationWindow {
                     )
                     .masked(true)
             }),
+            private_key_path: profile.as_ref().and_then(|p| p.private_key_path.clone()),
             proxy_host: Self::input_with_value(
                 proxy.map(|p| p.host.clone()).unwrap_or_default(),
                 "留空表示直连",

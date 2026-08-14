@@ -30,7 +30,7 @@ pub(super) fn build(cx: &App) -> GuiColor {
     let theme = cx.theme();
     let wallpaper = has_wallpaper(cx);
     let workspace_base = if state.theme == AppTheme::Wisteria {
-        rgb_to_u32(0, 0, 0).into()
+        rgb_to_u32(248, 247, 250).into()
     } else {
         theme.background
     };

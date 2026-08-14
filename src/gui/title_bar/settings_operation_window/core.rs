@@ -1,5 +1,7 @@
 use gpui::*;
 
+use crate::infrastructure::agent_mcp::{self, McpSettings};
+
 use super::SettingsOperationWindow;
 
 impl SettingsOperationWindow {
@@ -90,6 +92,64 @@ impl SettingsOperationWindow {
     ) {
         self.wallpaper_error = None;
         crate::component::theme::CustomerUiColor::clear_wallpaper(cx);
+        cx.notify();
+    }
+
+    pub(super) fn toggle_mcp_enabled(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mcp_enabled = !self.mcp_enabled;
+        cx.notify();
+    }
+
+    pub(super) fn copy_mcp_token(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.mcp_token.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(self.mcp_token.clone()));
+        }
+    }
+
+    pub(super) fn apply_mcp_settings(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let host = self.mcp_host.read(cx).value().trim().to_owned();
+        let port = self.mcp_port.read(cx).value().trim().parse::<u16>();
+        let token = self.mcp_token.clone();
+
+        let result = if host.is_empty() {
+            Err("MCP Host 不能为空".to_owned())
+        } else if port.as_ref().is_err() || port == Ok(0) {
+            Err("MCP Port 必须是 1-65535 的数字".to_owned())
+        } else if token.is_empty() {
+            Err("MCP Token 不能为空".to_owned())
+        } else {
+            agent_mcp::apply_settings(McpSettings {
+                enabled: self.mcp_enabled,
+                host,
+                port: port.expect("MCP 端口已校验"),
+                token,
+            })
+        };
+
+        match result {
+            Ok(settings) => {
+                self.mcp_token = settings.token;
+                self.mcp_error = None;
+            }
+            Err(error) => {
+                self.mcp_error = Some(error);
+            }
+        }
         cx.notify();
     }
 }

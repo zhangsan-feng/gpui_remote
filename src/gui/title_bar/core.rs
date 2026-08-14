@@ -1,10 +1,6 @@
 use super::{
-    session_operation_window::open_new_session_window,
+    AppTitleBar, CreateSession, OpenSettings, session_operation_window::open_new_session_window,
     settings_operation_window::open_settings_window,
-    AppTitleBar,
-    CreateSession,
-    OpenSettings,
-    OpenTools,
 };
 use gpui::*;
 
@@ -26,5 +22,4 @@ impl AppTitleBar {
     ) {
         open_settings_window(window, cx);
     }
-
 }

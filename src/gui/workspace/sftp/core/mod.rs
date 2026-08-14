@@ -103,6 +103,7 @@ impl SftpModel {
         transfer_id: u64,
         progress: f32,
         transferred: u64,
+        total: u64,
         status: impl Into<String>,
     ) {
         let status = status.into();
@@ -118,9 +119,14 @@ impl SftpModel {
             transfer.progress = progress.clamp(0., 1.);
             if status == "扫描中" {
                 transfer.speed = 0;
+                transfer.transferred_bytes = 0;
+                transfer.total_bytes = 0;
+                transfer.error = None;
                 transfer.started_at = None;
                 transfer.speed_updated_at = None;
             } else if transferred > 0 {
+                transfer.transferred_bytes = transferred;
+                transfer.total_bytes = total;
                 let started_at = transfer.started_at.get_or_insert(now);
                 let elapsed = now.duration_since(*started_at).as_secs_f64();
                 let should_update = transfer.speed_updated_at.is_none_or(|updated_at| {
@@ -171,6 +177,21 @@ impl SftpModel {
             if status == "已取消" {
                 transfer.speed = 0;
             }
+        }
+        self.updates.notify_waiters();
+    }
+
+    pub(super) fn set_transfer_error(&self, transfer_id: u64, error: String) {
+        if let Some(transfer) = self
+            .transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter_mut()
+            .find(|transfer| transfer.id == transfer_id)
+        {
+            transfer.status = "失败".to_owned();
+            transfer.error = Some(error);
+            transfer.speed = 0;
         }
         self.updates.notify_waiters();
     }
@@ -278,9 +299,9 @@ impl SftpView {
         workspace_id: &str,
         local_path: PathBuf,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) -> Option<u64> {
         let Some(runtime) = self.runtimes.get(workspace_id) else {
-            return false;
+            return None;
         };
         let snapshot = runtime.model.snapshot();
         let commands = runtime.commands.clone();
@@ -288,18 +309,19 @@ impl SftpView {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
         else {
-            return false;
+            return None;
         };
         let Ok(metadata) = fs::metadata(&local_path) else {
-            return false;
+            return None;
         };
         if !metadata.is_file() && !metadata.is_dir() {
-            return false;
+            return None;
         }
         let remote_path = remote::join_remote_path(&snapshot.path, &file_name);
         let request = TransferRequest::Upload {
             workspace_id: workspace_id.to_owned(),
             local_path: local_path.clone(),
+            is_directory: metadata.is_dir(),
         };
         let transfer_id = self.push_transfer(file_name, "上传", remote_path.clone(), request, cx);
         if commands
@@ -312,9 +334,9 @@ impl SftpView {
             .is_err()
         {
             self.fail_queued_transfer(transfer_id, cx);
-            return false;
+            return None;
         }
-        true
+        Some(transfer_id)
     }
 
     pub(super) fn download_file(
@@ -346,9 +368,9 @@ impl SftpView {
         total_size: u64,
         is_directory: bool,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) -> Option<u64> {
         let Some(runtime) = self.runtimes.get(workspace_id) else {
-            return false;
+            return None;
         };
         let commands = runtime.commands.clone();
         let local_directory = self.local.path.clone();
@@ -380,7 +402,7 @@ impl SftpView {
             .is_err()
         {
             self.fail_queued_transfer(transfer_id, cx);
-            return false;
+            return None;
         }
         cx.spawn(async move |this, cx| {
             if completion.await.unwrap_or(false) {
@@ -392,7 +414,7 @@ impl SftpView {
             }
         })
         .detach();
-        true
+        Some(transfer_id)
     }
 
     fn push_transfer(
@@ -415,10 +437,13 @@ impl SftpView {
                 target,
                 request,
                 progress: 0.,
+                transferred_bytes: 0,
+                total_bytes: 0,
                 speed: 0,
                 started_at: None,
                 speed_updated_at: None,
                 status: "等待中".to_owned(),
+                error: None,
             });
         cx.notify();
         transfer_id
@@ -433,6 +458,7 @@ impl SftpView {
             .find(|transfer| transfer.id == transfer_id)
         {
             transfer.status = "失败".to_owned();
+            transfer.error = Some("传输任务未能加入 SFTP 队列".to_owned());
         }
         cx.notify();
     }
@@ -486,6 +512,7 @@ impl SftpView {
             TransferRequest::Upload {
                 workspace_id,
                 local_path,
+                ..
             } => {
                 self.upload_file_for_workspace(&workspace_id, local_path, cx);
             }
@@ -603,9 +630,5 @@ pub(super) fn default_desktop_path() -> PathBuf {
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));
     let desktop = profile.join("Desktop");
-    if desktop.is_dir() {
-        desktop
-    } else {
-        profile
-    }
+    if desktop.is_dir() { desktop } else { profile }
 }

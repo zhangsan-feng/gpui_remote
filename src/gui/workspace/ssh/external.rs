@@ -80,7 +80,7 @@ mod lifecycle {
     use super::super::{TerminalView, core::supports_terminal_protocol};
 
     impl TerminalView {
-        pub(in crate::gui::workspace::terminal) fn start_subscribe(&self, cx: &mut Context<Self>) {
+        pub(in crate::gui::workspace::ssh) fn start_subscribe(&self, cx: &mut Context<Self>) {
             let global_state = read_global_state(cx);
             cx.subscribe(&global_state, |this, _, event, cx| {
                 match event {

@@ -50,6 +50,7 @@ pub struct SessionProfile {
     pub port: u16,
     pub username: String,
     pub password: String,
+    pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
     pub created_at: String,
 }
@@ -62,6 +63,7 @@ pub struct NewSession {
     pub port: u16,
     pub username: String,
     pub password: String,
+    pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
 }
 

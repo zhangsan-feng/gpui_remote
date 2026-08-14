@@ -1,13 +1,34 @@
 mod auth;
+mod core;
+mod external;
 mod server;
 mod tools;
 
-use crate::application::agent_mcp::AgentMcpClient;
+pub use external::{apply_settings, settings, start};
 
-pub(crate) fn start(client: AgentMcpClient) {
-    tokio::spawn(async move {
-        if let Err(error) = server::run(client).await {
-            log::error!("Agent MCP server stopped: {error:#}");
+use serde::{Deserialize, Serialize};
+
+const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_PORT: u16 = 37_666;
+const SETTINGS_PATH: &str = "data/mcp.json";
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpSettings {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    #[serde(skip)]
+    pub token: String,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            host: DEFAULT_HOST.to_owned(),
+            port: DEFAULT_PORT,
+            token: String::new(),
         }
-    });
+    }
 }

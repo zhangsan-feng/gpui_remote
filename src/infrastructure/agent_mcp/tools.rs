@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     application::agent_mcp::{
-        AgentMcpClient, ProfileSummary, SftpDirectorySummary, SftpEntrySummary,
+        AgentMcpClient, ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
         SftpTransferSummary, TerminalReadPage, TerminalSummary,
     },
     domain::session::Protocol,
@@ -136,6 +136,24 @@ struct SftpDirectoryOutput {
 #[derive(Serialize, JsonSchema)]
 struct SftpTransferOutput {
     queued: usize,
+    transfers: Vec<SftpTransferInfoOutput>,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct SftpTransferInfoOutput {
+    id: u64,
+    workspace_id: String,
+    name: String,
+    direction: String,
+    source: String,
+    target: String,
+    is_directory: bool,
+    progress: f32,
+    transferred_bytes: u64,
+    total_bytes: u64,
+    speed_bytes_per_second: u64,
+    status: String,
+    error: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -214,6 +232,20 @@ impl AgentTerminalMcp {
             .download_sftp(input.workspace_id, input.remote_paths)
             .await
             .map(|transfer| Json(transfer.into()))
+            .map_err(mcp_error)
+    }
+
+    #[tool(
+        description = "List complete upload and download details for an SFTP workspace, including source, target, status, progress, byte counts, speed, and errors."
+    )]
+    async fn list_sftp_transfers(
+        &self,
+        Parameters(input): Parameters<SftpWorkspaceInput>,
+    ) -> Result<Json<Vec<SftpTransferInfoOutput>>, ErrorData> {
+        self.client
+            .list_sftp_transfers(input.workspace_id)
+            .await
+            .map(|transfers| Json(transfers.into_iter().map(Into::into).collect()))
             .map_err(mcp_error)
     }
 
@@ -354,6 +386,27 @@ impl From<SftpTransferSummary> for SftpTransferOutput {
     fn from(transfer: SftpTransferSummary) -> Self {
         Self {
             queued: transfer.queued,
+            transfers: transfer.transfers.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<SftpTransferInfo> for SftpTransferInfoOutput {
+    fn from(transfer: SftpTransferInfo) -> Self {
+        Self {
+            id: transfer.id,
+            workspace_id: transfer.workspace_id,
+            name: transfer.name,
+            direction: transfer.direction,
+            source: transfer.source,
+            target: transfer.target,
+            is_directory: transfer.is_directory,
+            progress: transfer.progress,
+            transferred_bytes: transfer.transferred_bytes,
+            total_bytes: transfer.total_bytes,
+            speed_bytes_per_second: transfer.speed_bytes_per_second,
+            status: transfer.status,
+            error: transfer.error,
         }
     }
 }

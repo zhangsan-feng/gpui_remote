@@ -1,4 +1,4 @@
-pub(in crate::gui::workspace::terminal) fn encode_control_key(key: &str) -> Option<u8> {
+pub(in crate::gui::workspace::ssh) fn encode_control_key(key: &str) -> Option<u8> {
     match key.as_bytes() {
         [letter] if letter.is_ascii_alphabetic() => Some(letter.to_ascii_lowercase() & 0x1f),
         [b' '] | [b'@'] => Some(0),
@@ -11,7 +11,7 @@ pub(in crate::gui::workspace::terminal) fn encode_control_key(key: &str) -> Opti
     }
 }
 
-pub(in crate::gui::workspace::terminal) fn encode_special_key(
+pub(in crate::gui::workspace::ssh) fn encode_special_key(
     key: &str,
     application_cursor: bool,
 ) -> Option<&'static str> {

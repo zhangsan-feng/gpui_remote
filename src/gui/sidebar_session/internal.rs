@@ -49,7 +49,7 @@ impl SessionComponent {
         cx: &mut Context<Self>,
     ) {
         match self.query_session(&action.0, cx) {
-            Ok(profile) => open_edit_session_window(profile, cx.entity(),window, cx),
+            Ok(profile) => open_edit_session_window(profile, cx.entity(), window, cx),
             Err(error) => self.set_error(error, cx),
         }
     }

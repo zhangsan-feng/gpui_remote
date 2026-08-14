@@ -4,7 +4,8 @@ use crate::domain::session::Protocol;
 
 use super::{
     AgentMcpCommand, AgentSftpCommand, AgentSshCommand, ProfileSummary, SftpDirectorySummary,
-    SftpTransferSummary, TerminalReadPage, TerminalSummary, command::AgentMcpResult,
+    SftpTransferInfo, SftpTransferSummary, TerminalReadPage, TerminalSummary,
+    command::AgentMcpResult,
 };
 
 const CHANNEL_CAPACITY: usize = 64;
@@ -92,6 +93,19 @@ impl AgentMcpClient {
             AgentMcpCommand::Sftp(AgentSftpCommand::Download {
                 workspace_id,
                 remote_paths,
+                reply,
+            })
+        })
+        .await
+    }
+
+    pub async fn list_sftp_transfers(
+        &self,
+        workspace_id: String,
+    ) -> AgentMcpResult<Vec<SftpTransferInfo>> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListTransfers {
+                workspace_id,
                 reply,
             })
         })

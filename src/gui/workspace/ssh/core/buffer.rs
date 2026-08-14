@@ -46,7 +46,7 @@ mod color {
         }
     }
 
-    pub(in crate::gui::workspace::terminal) fn default_foreground() -> TerminalRgb {
+    pub(in crate::gui::workspace::ssh) fn default_foreground() -> TerminalRgb {
         TerminalRgb {
             red: 226,
             green: 232,
@@ -54,7 +54,7 @@ mod color {
         }
     }
 
-    pub(in crate::gui::workspace::terminal) fn default_background() -> TerminalRgb {
+    pub(in crate::gui::workspace::ssh) fn default_background() -> TerminalRgb {
         TerminalRgb {
             red: 20,
             green: 18,
@@ -168,7 +168,7 @@ mod core {
     };
 
     impl TerminalBuffer {
-        pub(in crate::gui::workspace::terminal) fn new(
+        pub(in crate::gui::workspace::ssh) fn new(
             commands: tokio::sync::mpsc::UnboundedSender<TerminalSessionCommand>,
         ) -> Self {
             Self::with_event_proxy(TerminalPtyProxy {
@@ -198,7 +198,7 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn process(&mut self, bytes: &[u8]) {
+        pub(in crate::gui::workspace::ssh) fn process(&mut self, bytes: &[u8]) {
             if bytes.is_empty() {
                 return;
             }
@@ -224,20 +224,20 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn resize(&mut self, columns: u32, rows: u32) {
+        pub(in crate::gui::workspace::ssh) fn resize(&mut self, columns: u32, rows: u32) {
             self.terminal.resize(TerminalSize {
                 columns: columns.max(2) as usize,
                 rows: rows.max(1) as usize,
             });
         }
 
-        pub(in crate::gui::workspace::terminal) fn scroll(&mut self, lines: i32) {
+        pub(in crate::gui::workspace::ssh) fn scroll(&mut self, lines: i32) {
             if lines != 0 {
                 self.terminal.scroll_display(Scroll::Delta(lines));
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn scroll_to(&mut self, offset: usize) {
+        pub(in crate::gui::workspace::ssh) fn scroll_to(&mut self, offset: usize) {
             let current_offset = self.terminal.grid().display_offset();
             let delta = offset as i64 - current_offset as i64;
             if delta != 0 {
@@ -247,7 +247,7 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn frame_reusing(
+        pub(in crate::gui::workspace::ssh) fn frame_reusing(
             &mut self,
             previous: Option<&TerminalFrame>,
         ) -> TerminalFrame {
@@ -303,7 +303,7 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn read_text(
+        pub(in crate::gui::workspace::ssh) fn read_text(
             &self,
             offset: usize,
             limit: usize,

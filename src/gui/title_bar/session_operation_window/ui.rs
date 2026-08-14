@@ -167,6 +167,59 @@ impl SessionOperationWindow {
             .child(Self::field("端口", &self.port, colors))
             .child(Self::field("用户名", &self.username, colors))
             .child(Self::field("密码", &self.password, colors))
+            .child(self.private_key_field(cx))
+    }
+
+    fn private_key_field(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        let path = self
+            .private_key_path
+            .as_deref()
+            .unwrap_or("未选择私钥，使用密码认证")
+            .to_owned();
+        h_flex()
+            .w_full()
+            .h(px(34.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(80.))
+                    .flex_shrink_0()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child("秘钥"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_xs()
+                    .text_color(if self.private_key_path.is_some() {
+                        colors.foreground
+                    } else {
+                        colors.muted_foreground
+                    })
+                    .truncate()
+                    .child(path),
+            )
+            .child(
+                Button::new("choose-private-key")
+                    .outline()
+                    .small()
+                    .label("选择文件")
+                    .on_click(cx.listener(Self::choose_private_key)),
+            )
+            .when(self.private_key_path.is_some(), |this| {
+                this.child(
+                    Button::new("clear-private-key")
+                        .ghost()
+                        .small()
+                        .label("清除")
+                        .on_click(cx.listener(Self::clear_private_key)),
+                )
+            })
     }
 
     fn proxy_panel(&self, cx: &Context<Self>) -> Div {

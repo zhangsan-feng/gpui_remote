@@ -3,21 +3,22 @@ mod core {
 
     use anyhow::{Context as _, Result, bail};
     use russh::{Disconnect, client};
-    use tokio::net::TcpStream;
     use tokio::sync::mpsc;
-    use tokio_socks::tcp::Socks5Stream;
 
-    use crate::domain::{
-        session::SessionProfile,
-        terminal::{TerminalSessionCommand, TerminalStatus},
+    use crate::{
+        domain::{
+            session::SessionProfile,
+            terminal::{TerminalSessionCommand, TerminalStatus},
+        },
+        infrastructure::proxy::{ProxySettings, connect},
     };
 
     use super::{
-        super::pty::TerminalModel, ClientHandler, DEFAULT_COLUMNS, DEFAULT_ROWS, SshStream,
+        super::pty::TerminalModel, ClientHandler, DEFAULT_COLUMNS, DEFAULT_ROWS,
         runtime::run_connected_terminal_session,
     };
 
-    pub(in crate::gui::workspace::terminal) async fn run_ssh_session(
+    pub(in crate::gui::workspace::ssh) async fn run_ssh_session(
         profile: SessionProfile,
         command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
@@ -34,7 +35,13 @@ mod core {
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         model: Arc<TerminalModel>,
     ) -> Result<()> {
-        let stream = connect_transport(profile).await?;
+        let proxy = profile.proxy.as_ref().map(|proxy| ProxySettings {
+            host: proxy.host.clone(),
+            port: proxy.port,
+            username: proxy.username.clone(),
+            password: proxy.password.clone(),
+        });
+        let stream = connect((profile.host.as_str(), profile.port), proxy.as_ref()).await?;
         let config = Arc::new(client::Config {
             inactivity_timeout: Some(Duration::from_secs(30)),
             keepalive_interval: Some(Duration::from_secs(15)),
@@ -50,11 +57,26 @@ mod core {
         )
         .await
         .context("SSH 握手或主机密钥校验失败")?;
-        let authentication = session
-            .authenticate_password(profile.username.clone(), profile.password.clone())
-            .await
-            .context("SSH 密码认证失败")?;
+        let authentication = if let Some(path) = profile.private_key_path.as_deref() {
+            let key = russh::keys::load_secret_key(path, None)
+                .with_context(|| format!("加载 SSH 私钥失败: {path}"))?;
+            session
+                .authenticate_publickey(
+                    profile.username.clone(),
+                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                )
+                .await
+                .context("SSH 私钥认证失败")?
+        } else {
+            session
+                .authenticate_password(profile.username.clone(), profile.password.clone())
+                .await
+                .context("SSH 密码认证失败")?
+        };
         if !authentication.success() {
+            if profile.private_key_path.is_some() {
+                bail!("SSH 用户名或私钥错误");
+            }
             bail!("SSH 用户名或密码错误");
         }
 
@@ -93,31 +115,6 @@ mod core {
             exit_message.or_else(|| Some("SSH 连接已断开".into())),
         );
         Ok(())
-    }
-
-    async fn connect_transport(profile: &SessionProfile) -> Result<Box<dyn SshStream>> {
-        let target = (profile.host.as_str(), profile.port);
-        if let Some(proxy) = &profile.proxy {
-            let proxy_address = (proxy.host.as_str(), proxy.port);
-            let stream = if proxy.username.is_empty() {
-                Socks5Stream::connect(proxy_address, target).await
-            } else {
-                Socks5Stream::connect_with_password(
-                    proxy_address,
-                    target,
-                    &proxy.username,
-                    &proxy.password,
-                )
-                .await
-            }
-            .with_context(|| format!("连接 SOCKS5 代理 {}:{} 失败", proxy.host, proxy.port))?;
-            Ok(Box::new(stream))
-        } else {
-            let stream = TcpStream::connect(target)
-                .await
-                .with_context(|| format!("连接 SSH 主机 {}:{} 失败", profile.host, profile.port))?;
-            Ok(Box::new(stream))
-        }
     }
 }
 
@@ -274,18 +271,12 @@ mod runtime {
     }
 }
 
-use tokio::io::{AsyncRead, AsyncWrite};
-
 use crate::infrastructure::storage::verify_host_key;
 
 pub(super) use core::run_ssh_session;
 
 const DEFAULT_COLUMNS: u32 = 120;
 const DEFAULT_ROWS: u32 = 36;
-
-trait SshStream: AsyncRead + AsyncWrite + Unpin + Send {}
-
-impl<T> SshStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
 struct ClientHandler {
     endpoint: String,

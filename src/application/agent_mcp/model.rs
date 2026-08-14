@@ -44,4 +44,22 @@ pub struct SftpDirectorySummary {
 #[derive(Clone, Debug, Serialize)]
 pub struct SftpTransferSummary {
     pub queued: usize,
+    pub transfers: Vec<SftpTransferInfo>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SftpTransferInfo {
+    pub id: u64,
+    pub workspace_id: String,
+    pub name: String,
+    pub direction: String,
+    pub source: String,
+    pub target: String,
+    pub is_directory: bool,
+    pub progress: f32,
+    pub transferred_bytes: u64,
+    pub total_bytes: u64,
+    pub speed_bytes_per_second: u64,
+    pub status: String,
+    pub error: Option<String>,
 }

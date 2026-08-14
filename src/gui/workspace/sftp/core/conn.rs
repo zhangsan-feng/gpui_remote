@@ -1,18 +1,8 @@
 use std::time::Duration;
 
-use anyhow::{Context as _, Result};
+use crate::infrastructure::storage::verify_host_key;
+use anyhow::Result;
 use russh::client;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
-use tokio_socks::tcp::Socks5Stream;
-
-use crate::{domain::session::SessionProfile, infrastructure::storage::verify_host_key};
-
-pub(super) trait SshStream: AsyncRead + AsyncWrite + Unpin + Send {}
-
-impl<T> SshStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
 pub(super) struct SftpClientHandler {
     pub(super) endpoint: String,
@@ -32,31 +22,6 @@ impl client::Handler for SftpClientHandler {
                 Ok(false)
             }
         }
-    }
-}
-
-pub(super) async fn connect_transport(profile: &SessionProfile) -> Result<Box<dyn SshStream>> {
-    let target = (profile.host.as_str(), profile.port);
-    if let Some(proxy) = &profile.proxy {
-        let proxy_address = (proxy.host.as_str(), proxy.port);
-        let stream = if proxy.username.is_empty() {
-            Socks5Stream::connect(proxy_address, target).await
-        } else {
-            Socks5Stream::connect_with_password(
-                proxy_address,
-                target,
-                &proxy.username,
-                &proxy.password,
-            )
-            .await
-        }
-        .with_context(|| format!("连接 SOCKS5 代理 {}:{} 失败", proxy.host, proxy.port))?;
-        Ok(Box::new(stream))
-    } else {
-        let stream = TcpStream::connect(target)
-            .await
-            .with_context(|| format!("连接 SFTP 主机 {}:{} 失败", profile.host, profile.port))?;
-        Ok(Box::new(stream))
     }
 }
 

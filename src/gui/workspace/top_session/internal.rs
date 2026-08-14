@@ -1,7 +1,5 @@
+use crate::domain::terminal::TerminalStatus;
 use gpui::{Context, ElementId};
-use gpui_component::ActiveTheme;
-
-use crate::{component::theme, domain::terminal::TerminalStatus};
 
 use super::{WorkspaceSession, ui::workspace_tab};
 
@@ -11,7 +9,6 @@ impl WorkspaceSession {
         let statuses = self.statuses.clone();
         let selected_id = self.selected_id.clone();
         let workspace = cx.entity();
-        let colors = cx.theme().colors;
         self.tabs.update(cx, move |tabs, tabs_cx| {
             tabs.clear(tabs_cx);
             for opened_session in sessions {
@@ -20,13 +17,13 @@ impl WorkspaceSession {
                     .get(&opened_session.id)
                     .cloned()
                     .unwrap_or(TerminalStatus::Connecting);
-                tabs.child(opened_session.id.clone(), move || {
+                tabs.child_with_context(opened_session.id.clone(), move |cx| {
                     workspace_tab(
                         opened_session.id.clone(),
                         opened_session.profile.clone(),
                         status.clone(),
                         workspace.clone(),
-                        colors,
+                        cx,
                     )
                 });
             }
@@ -34,19 +31,6 @@ impl WorkspaceSession {
                 let selected_id = ElementId::from(selected_id);
                 tabs.set_selected_id(&selected_id, tabs_cx);
             }
-        });
-    }
-
-    pub(super) fn reset_tab_style(&mut self, cx: &mut Context<Self>) {
-        let colors = theme::CustomerUiTheme::colors(cx);
-        let tab_bar = theme::CustomerUiTheme::tab_background(cx).into();
-        let selected_background = colors.workspace_select_color.into();
-        let list_hover = colors.hover_background.into();
-        self.tabs.update(cx, move |tabs, tabs_cx| {
-            tabs.set_item_bg(tab_bar);
-            tabs.set_item_selected_bg(selected_background);
-            tabs.set_item_hover_bg(list_hover);
-            tabs_cx.notify();
         });
     }
 

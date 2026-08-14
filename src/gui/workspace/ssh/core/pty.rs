@@ -19,9 +19,9 @@ pub(in crate::gui::workspace) struct TerminalModel {
     status_updates: Arc<Notify>,
 }
 
-pub(in crate::gui::workspace::terminal) struct TerminalRuntime {
-    pub(in crate::gui::workspace::terminal) model: Arc<TerminalModel>,
-    pub(in crate::gui::workspace::terminal) commands: mpsc::UnboundedSender<TerminalSessionCommand>,
+pub(in crate::gui::workspace::ssh) struct TerminalRuntime {
+    pub(in crate::gui::workspace::ssh) model: Arc<TerminalModel>,
+    pub(in crate::gui::workspace::ssh) commands: mpsc::UnboundedSender<TerminalSessionCommand>,
     task: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -55,7 +55,7 @@ impl TerminalModel {
         revision
     }
 
-    pub(in crate::gui::workspace::terminal) fn revision(&self) -> u64 {
+    pub(in crate::gui::workspace::ssh) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
     }
 
@@ -75,7 +75,7 @@ impl TerminalModel {
 }
 
 impl TerminalView {
-    pub(in crate::gui::workspace::terminal) fn connect(
+    pub(in crate::gui::workspace::ssh) fn connect(
         &mut self,
         workspace_id: String,
         profile: SessionProfile,
@@ -123,13 +123,13 @@ impl TerminalView {
         );
     }
 
-    pub(in crate::gui::workspace::terminal) fn close(&mut self, workspace_id: &str) {
+    pub(in crate::gui::workspace::ssh) fn close(&mut self, workspace_id: &str) {
         if let Some(terminal) = self.terminals.remove(workspace_id) {
             disconnect(terminal);
         }
     }
 
-    pub(in crate::gui::workspace::terminal) fn resize(
+    pub(in crate::gui::workspace::ssh) fn resize(
         &self,
         workspace_id: &str,
         columns: u32,
@@ -158,6 +158,6 @@ fn disconnect(terminal: TerminalRuntime) {
     }
 }
 
-pub(in crate::gui::workspace::terminal) fn supports_terminal_protocol(protocol: &Protocol) -> bool {
+pub(in crate::gui::workspace::ssh) fn supports_terminal_protocol(protocol: &Protocol) -> bool {
     matches!(protocol, Protocol::Ssh)
 }

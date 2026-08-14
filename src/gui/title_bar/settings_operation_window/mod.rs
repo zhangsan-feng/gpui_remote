@@ -2,10 +2,11 @@ use gpui::*;
 use gpui_component::{
     ActiveTheme,
     color_picker::{ColorPickerEvent, ColorPickerState},
+    input::InputState,
     slider::{SliderEvent, SliderState},
 };
 
-use crate::component::theme;
+use crate::{component::theme, infrastructure::agent_mcp};
 
 mod core;
 mod external;
@@ -18,6 +19,7 @@ pub(crate) use external::open_settings_window;
 enum SettingsSection {
     Theme,
     Wallpaper,
+    Mcp,
 }
 
 pub struct SettingsOperationWindow {
@@ -28,6 +30,11 @@ pub struct SettingsOperationWindow {
     selected_color_picker: Entity<ColorPickerState>,
     wallpaper_opacity: Entity<SliderState>,
     wallpaper_error: Option<String>,
+    mcp_enabled: bool,
+    mcp_host: Entity<InputState>,
+    mcp_port: Entity<InputState>,
+    mcp_token: String,
+    mcp_error: Option<String>,
     active_section: SettingsSection,
 }
 
@@ -70,6 +77,7 @@ impl SettingsOperationWindow {
                 .step(1.)
                 .default_value(wallpaper_opacity_value)
         });
+        let mcp_settings = agent_mcp::settings();
         cx.subscribe(
             &color_picker,
             |_, _, event: &ColorPickerEvent, cx| match event {
@@ -127,8 +135,26 @@ impl SettingsOperationWindow {
             selected_color_picker,
             wallpaper_opacity,
             wallpaper_error: None,
+            mcp_enabled: mcp_settings.enabled,
+            mcp_host: Self::input_with_value(mcp_settings.host, "监听地址", window, cx),
+            mcp_port: Self::input_with_value(mcp_settings.port.to_string(), "监听端口", window, cx),
+            mcp_token: mcp_settings.token,
+            mcp_error: None,
             active_section: SettingsSection::Theme,
         }
+    }
+
+    fn input_with_value(
+        value: String,
+        placeholder: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<InputState> {
+        cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(placeholder)
+                .default_value(value)
+        })
     }
 
     pub(super) fn sync_color_pickers(&self, window: &mut Window, cx: &mut Context<Self>) {

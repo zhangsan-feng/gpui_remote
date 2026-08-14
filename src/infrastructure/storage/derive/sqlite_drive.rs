@@ -34,6 +34,7 @@ impl SqliteDrive {
                     port INTEGER NOT NULL,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL DEFAULT '',
+                    private_key_path TEXT,
                     proxy_host TEXT,
                     proxy_port INTEGER,
                     proxy_username TEXT,
@@ -49,6 +50,9 @@ impl SqliteDrive {
             "ALTER TABLE sessions ADD COLUMN protocol TEXT NOT NULL DEFAULT 'SSH'",
             [],
         );
+        let _ = self
+            .connection
+            .execute("ALTER TABLE sessions ADD COLUMN private_key_path TEXT", []);
         Ok(())
     }
 }

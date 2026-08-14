@@ -4,9 +4,11 @@ use gpui::*;
 use tokio::sync::Notify;
 
 use crate::{
-    application::agent_mcp::{SftpDirectorySummary, SftpEntrySummary, SftpTransferSummary},
+    application::agent_mcp::{
+        SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo, SftpTransferSummary,
+    },
     domain::{session::Protocol, terminal::TerminalStatus},
-    global_state::{read_global_state, GlobalEvent},
+    global_state::{GlobalEvent, read_global_state},
 };
 
 use super::{SftpStatus, SftpView};
@@ -70,14 +72,19 @@ impl SftpView {
             return Err(format!("SFTP 会话不存在: {workspace_id}"));
         }
 
-        let queued = local_paths
+        let transfer_ids = local_paths
             .into_iter()
-            .filter(|path| self.upload_file_for_workspace(workspace_id, PathBuf::from(path), cx))
-            .count();
-        if queued == 0 {
+            .filter_map(|path| {
+                self.upload_file_for_workspace(workspace_id, PathBuf::from(path), cx)
+            })
+            .collect::<Vec<_>>();
+        if transfer_ids.is_empty() {
             return Err("没有可加入队列的本地文件或目录".to_owned());
         }
-        Ok(SftpTransferSummary { queued })
+        Ok(SftpTransferSummary {
+            queued: transfer_ids.len(),
+            transfers: self.mcp_transfer_infos(&transfer_ids),
+        })
     }
 
     pub(in crate::gui::workspace) fn mcp_download(
@@ -106,9 +113,9 @@ impl SftpView {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let queued = entries
+        let transfer_ids = entries
             .into_iter()
-            .filter(|entry| {
+            .filter_map(|entry| {
                 self.download_file_for_workspace(
                     workspace_id,
                     entry.path.clone(),
@@ -118,11 +125,44 @@ impl SftpView {
                     cx,
                 )
             })
-            .count();
-        if queued == 0 {
+            .collect::<Vec<_>>();
+        if transfer_ids.is_empty() {
             return Err("没有可加入队列的远程文件或目录".to_owned());
         }
-        Ok(SftpTransferSummary { queued })
+        Ok(SftpTransferSummary {
+            queued: transfer_ids.len(),
+            transfers: self.mcp_transfer_infos(&transfer_ids),
+        })
+    }
+
+    pub(in crate::gui::workspace) fn mcp_transfers(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<SftpTransferInfo>, String> {
+        if !self.runtimes.contains_key(workspace_id) {
+            return Err(format!("SFTP 会话不存在: {workspace_id}"));
+        }
+        let transfers = self
+            .transfers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Ok(transfers
+            .iter()
+            .filter(|transfer| transfer.request.workspace_id() == workspace_id)
+            .map(transfer_info)
+            .collect())
+    }
+
+    fn mcp_transfer_infos(&self, transfer_ids: &[u64]) -> Vec<SftpTransferInfo> {
+        let transfers = self
+            .transfers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        transfers
+            .iter()
+            .filter(|transfer| transfer_ids.contains(&transfer.id))
+            .map(transfer_info)
+            .collect()
     }
 
     pub(super) fn start_subscribe(&self, cx: &mut Context<Self>) {
@@ -166,5 +206,35 @@ impl SftpView {
             SftpStatus::Disconnected => TerminalStatus::Disconnected,
             SftpStatus::Failed => TerminalStatus::Failed,
         })
+    }
+}
+
+fn transfer_info(transfer: &super::TransferRecord) -> SftpTransferInfo {
+    let (source, is_directory) = match &transfer.request {
+        super::TransferRequest::Upload {
+            local_path,
+            is_directory,
+            ..
+        } => (local_path.display().to_string(), *is_directory),
+        super::TransferRequest::Download {
+            remote_path,
+            is_directory,
+            ..
+        } => (remote_path.clone(), *is_directory),
+    };
+    SftpTransferInfo {
+        id: transfer.id,
+        workspace_id: transfer.request.workspace_id().to_owned(),
+        name: transfer.name.clone(),
+        direction: transfer.direction.clone(),
+        source,
+        target: transfer.target.clone(),
+        is_directory,
+        progress: transfer.progress,
+        transferred_bytes: transfer.transferred_bytes,
+        total_bytes: transfer.total_bytes,
+        speed_bytes_per_second: transfer.speed,
+        status: transfer.status.clone(),
+        error: transfer.error.clone(),
     }
 }

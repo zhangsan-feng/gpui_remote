@@ -1,9 +1,10 @@
 use gpui::*;
 use gpui_component::{
+    ActiveTheme, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
-    v_flex, ActiveTheme, Sizable,
+    v_flex,
 };
 
 use super::super::SftpView;
@@ -30,8 +31,7 @@ impl PathInputDialog {
     ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).default_value(path));
         input.update(cx, |input, cx| {
-            let length = input.text().len();
-            input.set_selected_range(0..length, cx);
+            input.select_all(window, cx);
             input.focus(window, cx);
         });
         Self {
@@ -89,7 +89,7 @@ impl SftpView {
         let parent = cx.weak_entity();
         let _ = cx.open_window(options, move |window, cx| {
             let dialog = cx.new(|cx| PathInputDialog::new(parent, target, path, window, cx));
-            cx.new(|cx| { gpui_component::Root::new(dialog, window, cx) })
+            cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
         });
     }
 }

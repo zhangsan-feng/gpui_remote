@@ -30,24 +30,24 @@ impl ListTransition {
 
 #[derive(Clone, Debug, Default)]
 struct DraggableListState {
-    dragging_index: Option<usize>,
+    dragging_id: Option<ElementId>,
     transition: Option<ListTransition>,
     transition_epoch: u64,
 }
 
 struct DraggableListItem {
     id: ElementId,
-    render: Rc<dyn Fn() -> AnyElement>,
+    render: Rc<dyn Fn(&App) -> AnyElement>,
 }
 
 struct DraggableListDragPreview {
-    render: Rc<dyn Fn() -> AnyElement>,
+    render: Rc<dyn Fn(&App) -> AnyElement>,
     width: Option<Pixels>,
     height: Option<Pixels>,
 }
 
 impl Render for DraggableListDragPreview {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let preview = div()
             .relative()
             .rounded_md()
@@ -65,13 +65,14 @@ impl Render for DraggableListDragPreview {
             preview
         };
 
-        preview.child((self.render)())
+        preview.child((self.render)(cx))
     }
 }
 
 type MouseDownHandler = Rc<dyn Fn(ElementId, &MouseDownEvent, &mut Context<DraggableList>)>;
 type ActionIdChangeHandler = Rc<dyn Fn(Option<ElementId>, &mut Context<DraggableList>)>;
 type ContextMenuHandler = Rc<dyn Fn(ElementId, PopupMenu, &mut Context<PopupMenu>) -> PopupMenu>;
+type ColorProvider = Rc<dyn Fn(&App) -> Rgba>;
 
 pub struct DraggableList {
     axis: Axis,
@@ -87,6 +88,9 @@ pub struct DraggableList {
     item_bg: Rgba,
     item_selected_bg: Rgba,
     stem_hover_bg: Rgba,
+    item_bg_provider: Option<ColorProvider>,
+    item_selected_bg_provider: Option<ColorProvider>,
+    stem_hover_bg_provider: Option<ColorProvider>,
     transition_duration: Duration,
     on_mouse_down: Option<MouseDownHandler>,
     on_action_id_change: Option<ActionIdChangeHandler>,
@@ -124,6 +128,9 @@ impl DraggableList {
             item_bg: rgb(0xffffff),
             item_selected_bg: rgb(0xdbeafe),
             stem_hover_bg: rgb(0xf3f4f6),
+            item_bg_provider: None,
+            item_selected_bg_provider: None,
+            stem_hover_bg_provider: None,
             transition_duration: Duration::from_millis(180),
             on_mouse_down: None,
             on_action_id_change: None,
@@ -136,11 +143,19 @@ impl DraggableList {
         E: IntoElement,
         F: Fn() -> E + 'static,
     {
+        self.child_with_context(id, move |_| render())
+    }
+
+    pub fn child_with_context<E, F>(&mut self, id: impl Into<ElementId>, render: F) -> &mut Self
+    where
+        E: IntoElement,
+        F: Fn(&App) -> E + 'static,
+    {
         let id = id.into();
 
         self.items.push(DraggableListItem {
             id,
-            render: Rc::new(move || render().into_any_element()),
+            render: Rc::new(move |cx| render(cx).into_any_element()),
         });
         self.rebuild_item_sizes();
         self
@@ -243,16 +258,43 @@ impl DraggableList {
 
     pub fn set_item_bg(&mut self, color: Rgba) -> &mut Self {
         self.item_bg = color;
+        self.item_bg_provider = None;
         self
     }
 
     pub fn set_item_selected_bg(&mut self, color: Rgba) -> &mut Self {
         self.item_selected_bg = color;
+        self.item_selected_bg_provider = None;
         self
     }
 
     pub fn set_item_hover_bg(&mut self, color: Rgba) -> &mut Self {
         self.stem_hover_bg = color;
+        self.stem_hover_bg_provider = None;
+        self
+    }
+
+    pub fn set_item_bg_provider<F>(&mut self, provider: F) -> &mut Self
+    where
+        F: Fn(&App) -> Rgba + 'static,
+    {
+        self.item_bg_provider = Some(Rc::new(provider));
+        self
+    }
+
+    pub fn set_item_selected_bg_provider<F>(&mut self, provider: F) -> &mut Self
+    where
+        F: Fn(&App) -> Rgba + 'static,
+    {
+        self.item_selected_bg_provider = Some(Rc::new(provider));
+        self
+    }
+
+    pub fn set_item_hover_bg_provider<F>(&mut self, provider: F) -> &mut Self
+    where
+        F: Fn(&App) -> Rgba + 'static,
+    {
+        self.stem_hover_bg_provider = Some(Rc::new(provider));
         self
     }
 
@@ -303,7 +345,7 @@ impl DraggableList {
                 .child(
                     div().w_full().h(px(10.)).child(
                         Scrollbar::vertical(&self.scroll_handle)
-                            .scrollbar_show(ScrollbarShow::Always)
+                            .mode(ScrollbarMode::Always)
                             .axis(ScrollbarAxis::Horizontal),
                     ),
                 )
@@ -335,7 +377,7 @@ impl DraggableList {
                 .child(
                     div().w(px(10.)).h_full().child(
                         Scrollbar::vertical(&self.scroll_handle)
-                            .scrollbar_show(ScrollbarShow::Always)
+                            .mode(ScrollbarMode::Always)
                             .axis(ScrollbarAxis::Vertical),
                     ),
                 )
@@ -386,18 +428,31 @@ impl DraggableList {
         &mut self,
         visible_index: usize,
         id: ElementId,
-        render: Rc<dyn Fn() -> AnyElement>,
+        render: Rc<dyn Fn(&App) -> AnyElement>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected = self.selected_id.as_ref() == Some(&id);
-        let is_dragging = self.view_state.dragging_index == Some(visible_index);
+        let is_dragging = self.view_state.dragging_id.as_ref() == Some(&id);
         let transition = self.view_state.transition.and_then(|transition| {
             transition
                 .displacement_direction(visible_index)
                 .map(|direction| (transition, direction))
         });
-        let hover_bg = self.stem_hover_bg;
-        let selected_bg = self.item_selected_bg;
+        let item_bg = self
+            .item_bg_provider
+            .as_ref()
+            .map(|provider| provider(cx))
+            .unwrap_or(self.item_bg);
+        let selected_bg = self
+            .item_selected_bg_provider
+            .as_ref()
+            .map(|provider| provider(cx))
+            .unwrap_or(self.item_selected_bg);
+        let hover_bg = self
+            .stem_hover_bg_provider
+            .as_ref()
+            .map(|provider| provider(cx))
+            .unwrap_or(self.stem_hover_bg);
 
         let click_id = id.clone();
         let context_menu_id = id.clone();
@@ -429,7 +484,7 @@ impl DraggableList {
             } else if selected {
                 selected_bg
             } else {
-                self.item_bg
+                item_bg
             })
             .hover(move |this| this.bg(hover_bg))
             .on_mouse_down(
@@ -528,12 +583,13 @@ impl DraggableList {
                         visible_index + 1
                     };
 
-                    let from_index = state.read(cx).dragging_index.unwrap_or_else(|| {
-                        this.items
-                            .iter()
-                            .position(|item| item.id == dragged_item_id)
-                            .unwrap_or(visible_index)
-                    });
+                    let Some(from_index) = this
+                        .items
+                        .iter()
+                        .position(|item| item.id == dragged_item_id)
+                    else {
+                        return;
+                    };
                     if insertion_index == from_index || insertion_index == from_index + 1 {
                         // The pointer is still in the current slot. Avoid writing the same
                         // state on every drag-move event, which can restart/reconcile the
@@ -564,12 +620,12 @@ impl DraggableList {
                             to_index,
                             epoch: state.transition_epoch,
                         });
-                        state.dragging_index = Some(to_index);
+                        state.dragging_id = Some(dragged_item_id.clone());
                     });
                     cx.notify();
                 }),
             )
-            .child(render());
+            .child(render(cx));
 
         let child = match self.axis {
             Axis::Vertical => child.w_full(),
@@ -619,7 +675,7 @@ impl DraggableList {
 
 impl DraggableListState {
     fn clear_drag(&mut self) {
-        self.dragging_index = None;
+        self.dragging_id = None;
         self.transition = None;
     }
 }

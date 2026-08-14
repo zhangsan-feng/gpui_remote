@@ -7,7 +7,7 @@ mod keyboard {
     };
 
     impl TerminalView {
-        pub(in crate::gui::workspace::terminal) fn key_down(
+        pub(in crate::gui::workspace::ssh) fn key_down(
             &mut self,
             event: &KeyDownEvent,
             _: &mut Window,
@@ -26,7 +26,7 @@ mod keyboard {
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn send_tab(
+        pub(in crate::gui::workspace::ssh) fn send_tab(
             &mut self,
             _: &SendTab,
             _: &mut Window,
@@ -35,7 +35,7 @@ mod keyboard {
             self.send_action_input(b"\t");
         }
 
-        pub(in crate::gui::workspace::terminal) fn paste_terminal(
+        pub(in crate::gui::workspace::ssh) fn paste_terminal(
             &mut self,
             _: &PasteTerminal,
             _: &mut Window,
@@ -91,7 +91,7 @@ mod scroll {
 
     use super::super::TerminalView;
 
-    pub(in crate::gui::workspace::terminal) const SCROLLBAR_WIDTH: f32 = 16.0;
+    pub(in crate::gui::workspace::ssh) const SCROLLBAR_WIDTH: f32 = 16.0;
 
     #[derive(Default)]
     struct TerminalScrollState {
@@ -102,7 +102,7 @@ mod scroll {
     }
 
     #[derive(Clone, Default)]
-    pub(in crate::gui::workspace::terminal) struct TerminalScrollHandle(
+    pub(in crate::gui::workspace::ssh) struct TerminalScrollHandle(
         Rc<RefCell<TerminalScrollState>>,
     );
 
@@ -120,7 +120,7 @@ mod scroll {
     }
 
     impl TerminalScrollHandle {
-        pub(in crate::gui::workspace::terminal) fn sync(
+        pub(in crate::gui::workspace::ssh) fn sync(
             &self,
             frame: &TerminalFrame,
             commands: Option<mpsc::UnboundedSender<TerminalSessionCommand>>,
@@ -160,7 +160,7 @@ mod scroll {
     }
 
     impl TerminalView {
-        pub(in crate::gui::workspace::terminal) fn render_scrollbar(
+        pub(in crate::gui::workspace::ssh) fn render_scrollbar(
             &self,
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
@@ -252,23 +252,23 @@ mod selection {
     use super::super::{CopyTerminal, TerminalView};
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-    pub(in crate::gui::workspace::terminal) struct TerminalPoint {
-        pub(in crate::gui::workspace::terminal) row: usize,
-        pub(in crate::gui::workspace::terminal) column: usize,
+    pub(in crate::gui::workspace::ssh) struct TerminalPoint {
+        pub(in crate::gui::workspace::ssh) row: usize,
+        pub(in crate::gui::workspace::ssh) column: usize,
     }
 
     #[derive(Clone)]
-    pub(in crate::gui::workspace::terminal) struct TerminalSelection {
-        pub(in crate::gui::workspace::terminal) workspace_id: String,
+    pub(in crate::gui::workspace::ssh) struct TerminalSelection {
+        pub(in crate::gui::workspace::ssh) workspace_id: String,
         anchor: TerminalPoint,
         head: TerminalPoint,
         frame: Arc<TerminalFrame>,
     }
 
-    pub(in crate::gui::workspace::terminal) struct SelectedFragment {
-        pub(in crate::gui::workspace::terminal) text: String,
-        pub(in crate::gui::workspace::terminal) style: TerminalStyle,
-        pub(in crate::gui::workspace::terminal) selected: bool,
+    pub(in crate::gui::workspace::ssh) struct SelectedFragment {
+        pub(in crate::gui::workspace::ssh) text: String,
+        pub(in crate::gui::workspace::ssh) style: TerminalStyle,
+        pub(in crate::gui::workspace::ssh) selected: bool,
     }
 
     impl TerminalSelection {
@@ -293,7 +293,7 @@ mod selection {
     }
 
     impl TerminalView {
-        pub(in crate::gui::workspace::terminal) fn copy_terminal(
+        pub(in crate::gui::workspace::ssh) fn copy_terminal(
             &mut self,
             _: &CopyTerminal,
             _: &mut Window,
@@ -309,7 +309,7 @@ mod selection {
             cx.stop_propagation();
         }
 
-        pub(in crate::gui::workspace::terminal) fn begin_text_selection(
+        pub(in crate::gui::workspace::ssh) fn begin_text_selection(
             &mut self,
             workspace_id: String,
             viewport_point: TerminalPoint,
@@ -326,7 +326,7 @@ mod selection {
             cx.notify();
         }
 
-        pub(in crate::gui::workspace::terminal) fn extend_selection(
+        pub(in crate::gui::workspace::ssh) fn extend_selection(
             &mut self,
             workspace_id: &str,
             viewport_point: TerminalPoint,
@@ -374,7 +374,7 @@ mod selection {
             }
         }
 
-        pub(in crate::gui::workspace::terminal) fn finish_text_selection(
+        pub(in crate::gui::workspace::ssh) fn finish_text_selection(
             &mut self,
             _: &MouseUpEvent,
             _: &mut Window,
@@ -385,7 +385,7 @@ mod selection {
         }
     }
 
-    pub(in crate::gui::workspace::terminal) fn selected_fragments(
+    pub(in crate::gui::workspace::ssh) fn selected_fragments(
         line: &TerminalLine,
         row: usize,
         selection: Option<&TerminalSelection>,
@@ -429,7 +429,7 @@ mod selection {
         fragments
     }
 
-    pub(in crate::gui::workspace::terminal) fn nearest_character_column(
+    pub(in crate::gui::workspace::ssh) fn nearest_character_column(
         line: &TerminalLine,
         target: usize,
     ) -> usize {
@@ -472,7 +472,7 @@ mod selection {
         text
     }
 
-    pub(in crate::gui::workspace::terminal) fn buffer_row(
+    pub(in crate::gui::workspace::ssh) fn buffer_row(
         frame: &TerminalFrame,
         viewport_row: usize,
     ) -> usize {
@@ -500,10 +500,7 @@ mod watcher {
     use super::super::TerminalView;
 
     impl TerminalView {
-        pub(in crate::gui::workspace::terminal) fn start_model_watcher(
-            &self,
-            cx: &mut Context<Self>,
-        ) {
+        pub(in crate::gui::workspace::ssh) fn start_model_watcher(&self, cx: &mut Context<Self>) {
             let terminal_updates = self.updates.clone();
             cx.spawn(async move |this, cx| {
                 loop {

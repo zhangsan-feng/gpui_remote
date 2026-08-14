@@ -14,7 +14,7 @@ mod infrastructure;
 use crate::global_state::{GlobalState, GlobalStateHandle};
 use gpui::*;
 use gpui_component::*;
-use log::{Level, info};
+use log::info;
 use reqwest_client::ReqwestClient;
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
@@ -44,7 +44,6 @@ pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) {
         // .filter(|metadata| {
         //     metadata.level() == Level::Info && !metadata.target().starts_with("symphonia")
         // })
-
         .level(log::LevelFilter::Info)
         // .level_for("gstreamer", log::LevelFilter::Debug)
         // .level(log::LevelFilter::Debug)

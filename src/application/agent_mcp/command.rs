@@ -1,7 +1,8 @@
 use tokio::sync::oneshot;
 
 use super::{
-    ProfileSummary, SftpDirectorySummary, SftpTransferSummary, TerminalReadPage, TerminalSummary,
+    ProfileSummary, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary, TerminalReadPage,
+    TerminalSummary,
 };
 
 pub type AgentMcpResult<T> = Result<T, String>;
@@ -68,5 +69,9 @@ pub enum AgentSftpCommand {
         workspace_id: String,
         remote_paths: Vec<String>,
         reply: oneshot::Sender<AgentMcpResult<SftpTransferSummary>>,
+    },
+    ListTransfers {
+        workspace_id: String,
+        reply: oneshot::Sender<AgentMcpResult<Vec<SftpTransferInfo>>>,
     },
 }

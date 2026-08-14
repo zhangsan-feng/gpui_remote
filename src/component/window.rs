@@ -1,6 +1,6 @@
 use gpui::*;
 
-pub fn window_center_options( window: &mut Window, w:f32, h:f32) -> WindowOptions {
+pub fn window_center_options(window: &mut Window, w: f32, h: f32) -> WindowOptions {
     let parent_bounds = window.bounds();
     let parent_x = parent_bounds.origin.x;
     let parent_y = parent_bounds.origin.y;
@@ -14,8 +14,11 @@ pub fn window_center_options( window: &mut Window, w:f32, h:f32) -> WindowOption
     let window_size = size(px(w), px(h));
 
     let bounds = Bounds {
-        origin: Point { x: child_x, y:child_y },
-        size:window_size,
+        origin: Point {
+            x: child_x,
+            y: child_y,
+        },
+        size: window_size,
     };
     window_options.window_bounds = Some(WindowBounds::Windowed(bounds));
     window_options.window_min_size = Some(window_size);

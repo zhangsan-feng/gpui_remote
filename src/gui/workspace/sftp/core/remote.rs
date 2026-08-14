@@ -3,18 +3,21 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Context as _, Result};
-use russh::{client, Disconnect};
+use anyhow::{Context as _, Result, bail};
+use russh::{Disconnect, client};
 use russh_sftp::client::SftpSession;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::mpsc,
 };
 
-use crate::domain::session::SessionProfile;
+use crate::{
+    domain::session::SessionProfile,
+    infrastructure::proxy::{ProxySettings, connect},
+};
 
 use super::super::{SftpCommand, SftpEntry, SftpModel, SftpStatus};
-use super::conn::{connect_transport, ssh_config, SftpClientHandler};
+use super::conn::{SftpClientHandler, ssh_config};
 
 const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -23,7 +26,13 @@ pub(super) async fn run_sftp(
     mut commands: mpsc::UnboundedReceiver<SftpCommand>,
     model: Arc<SftpModel>,
 ) -> Result<()> {
-    let stream = connect_transport(&profile).await?;
+    let proxy = profile.proxy.as_ref().map(|proxy| ProxySettings {
+        host: proxy.host.clone(),
+        port: proxy.port,
+        username: proxy.username.clone(),
+        password: proxy.password.clone(),
+    });
+    let stream = connect((profile.host.as_str(), profile.port), proxy.as_ref()).await?;
     let config = Arc::new(ssh_config());
     let mut session = client::connect_stream(
         config,
@@ -34,11 +43,26 @@ pub(super) async fn run_sftp(
     )
     .await
     .context("SFTP SSH 握手或主机密钥校验失败")?;
-    let authentication = session
-        .authenticate_password(profile.username.clone(), profile.password.clone())
-        .await
-        .context("SFTP SSH 密码认证失败")?;
+    let authentication = if let Some(path) = profile.private_key_path.as_deref() {
+        let key = russh::keys::load_secret_key(path, None)
+            .with_context(|| format!("加载 SFTP SSH 私钥失败: {path}"))?;
+        session
+            .authenticate_publickey(
+                profile.username.clone(),
+                russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
+            )
+            .await
+            .context("SFTP SSH 私钥认证失败")?
+    } else {
+        session
+            .authenticate_password(profile.username.clone(), profile.password.clone())
+            .await
+            .context("SFTP SSH 密码认证失败")?
+    };
     if !authentication.success() {
+        if profile.private_key_path.is_some() {
+            bail!("SFTP 用户名或私钥错误");
+        }
         bail!("SFTP 用户名或密码错误");
     }
 
@@ -82,10 +106,10 @@ pub(super) async fn run_sftp(
                 refresh_path,
             } => {
                 if model.is_cancelled(transfer_id) {
-                    model.update_transfer(transfer_id, 0., 0, "已取消");
+                    model.update_transfer(transfer_id, 0., 0, 0, "已取消");
                     continue;
                 }
-                model.update_transfer(transfer_id, 0., 0, "扫描中");
+                model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
                 let result = upload_path(
                     &sftp,
                     &local_path,
@@ -96,7 +120,7 @@ pub(super) async fn run_sftp(
                         } else {
                             transferred as f32 / total as f32
                         };
-                        model.update_transfer(transfer_id, progress, transferred, "传输中")
+                        model.update_transfer(transfer_id, progress, transferred, total, "传输中")
                     },
                     || model.is_cancelled(transfer_id),
                 )
@@ -104,9 +128,9 @@ pub(super) async fn run_sftp(
                 match result {
                     Ok(()) => {
                         if model.is_cancelled(transfer_id) {
-                            model.update_transfer(transfer_id, 0., 0, "已取消");
+                            model.update_transfer(transfer_id, 0., 0, 0, "已取消");
                         } else {
-                            model.update_transfer(transfer_id, 1., 0, "已完成");
+                            model.update_transfer(transfer_id, 1., 0, 0, "已完成");
                             if model.snapshot().path == refresh_path {
                                 match read_directory(&sftp, &refresh_path).await {
                                     Ok(entries) => model.set_directory(refresh_path, entries),
@@ -117,10 +141,10 @@ pub(super) async fn run_sftp(
                     }
                     Err(error) => {
                         if model.is_cancelled(transfer_id) {
-                            model.update_transfer(transfer_id, 0., 0, "已取消");
+                            model.update_transfer(transfer_id, 0., 0, 0, "已取消");
                         } else {
                             log::error!("上传文件失败: {error:#}");
-                            model.update_transfer(transfer_id, 0., 0, "失败");
+                            model.set_transfer_error(transfer_id, format!("{error:#}"));
                         }
                     }
                 }
@@ -134,11 +158,11 @@ pub(super) async fn run_sftp(
                 complete,
             } => {
                 if model.is_cancelled(transfer_id) {
-                    model.update_transfer(transfer_id, 0., 0, "已取消");
+                    model.update_transfer(transfer_id, 0., 0, 0, "已取消");
                     let _ = complete.send(false);
                     continue;
                 }
-                model.update_transfer(transfer_id, 0., 0, "扫描中");
+                model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
                 let result = download_path(
                     &sftp,
                     &remote_path,
@@ -151,19 +175,19 @@ pub(super) async fn run_sftp(
                         } else {
                             transferred as f32 / total as f32
                         };
-                        model.update_transfer(transfer_id, progress, transferred, "传输中")
+                        model.update_transfer(transfer_id, progress, transferred, total, "传输中")
                     },
                     || model.is_cancelled(transfer_id),
                 )
                 .await;
                 let succeeded = result.is_ok() && !model.is_cancelled(transfer_id);
                 if model.is_cancelled(transfer_id) {
-                    model.update_transfer(transfer_id, 0., 0, "已取消");
+                    model.update_transfer(transfer_id, 0., 0, 0, "已取消");
                 } else if let Err(error) = result {
                     log::error!("下载文件失败: {error:#}");
-                    model.update_transfer(transfer_id, 0., 0, "失败");
+                    model.set_transfer_error(transfer_id, format!("{error:#}"));
                 } else {
-                    model.update_transfer(transfer_id, 1., 0, "已完成");
+                    model.update_transfer(transfer_id, 1., 0, 0, "已完成");
                 }
                 let _ = complete.send(succeeded);
             }

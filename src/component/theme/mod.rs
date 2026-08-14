@@ -64,7 +64,7 @@ impl AppTheme {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Wisteria => "白色应用主题，黑色工作区。",
+            Self::Wisteria => "白色应用主题，柔和的浅色工作区。",
             Self::SeaSalt => "清爽的海蓝色交互配色。",
             Self::Moss => "柔和的绿色交互配色。",
             Self::WarmSand => "温暖的沙黄色交互配色。",

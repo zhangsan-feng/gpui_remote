@@ -1,4 +1,4 @@
-use gpui::App;
+use gpui::*;
 
 use crate::domain::session::{NewSession, Protocol, ProxyConfig};
 
@@ -41,11 +41,56 @@ impl SessionOperationWindow {
             port: parse_port(self.port.read(cx).value().as_ref(), "连接")?,
             username: self.username.read(cx).value().trim().to_owned(),
             password: self.password.read(cx).value().to_string(),
+            private_key_path: self.private_key_path.clone(),
             proxy,
         };
 
         draft.validate().map_err(str::to_owned)?;
         Ok(draft)
+    }
+
+    pub(super) fn choose_private_key(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("选择 SSH 私钥".into()),
+        });
+        let this = cx.weak_entity();
+        window
+            .spawn(cx, async move |cx| {
+                let paths = match receiver.await {
+                    Ok(Ok(Some(paths))) => paths,
+                    _ => return Ok::<(), anyhow::Error>(()),
+                };
+                let Some(path) = paths.into_iter().next() else {
+                    return Ok(());
+                };
+                let path = path.to_string_lossy().into_owned();
+                cx.update(|_, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.private_key_path = Some(path);
+                        cx.notify();
+                    });
+                })?;
+                Ok(())
+            })
+            .detach();
+    }
+
+    pub(super) fn clear_private_key(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.private_key_path = None;
+        cx.notify();
     }
 }
 

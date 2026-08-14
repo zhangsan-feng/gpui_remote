@@ -1,11 +1,15 @@
 use crate::component::theme::{self, AppTheme};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::color_picker::{ColorPicker, ColorPickerState};
 use gpui_component::slider::Slider;
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable, h_flex, scroll::ScrollableElement, v_flex,
+    ActiveTheme, Icon, IconName, Sizable, ThemeColor,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{Input, InputState},
+    scroll::ScrollableElement,
+    v_flex,
 };
 
 use super::{SettingsOperationWindow, SettingsSection};
@@ -20,6 +24,7 @@ impl SettingsOperationWindow {
         let content = match self.active_section {
             SettingsSection::Theme => self.theme_section(cx).into_any_element(),
             SettingsSection::Wallpaper => self.wallpaper_section(cx).into_any_element(),
+            SettingsSection::Mcp => self.mcp_section(cx).into_any_element(),
         };
 
         h_flex()
@@ -64,6 +69,7 @@ impl SettingsOperationWindow {
             )
             .child(self.sidebar_item(SettingsSection::Theme, IconName::Palette, "主题", cx))
             .child(self.sidebar_item(SettingsSection::Wallpaper, IconName::File, "背景图片", cx))
+            .child(self.sidebar_item(SettingsSection::Mcp, IconName::Settings2, "MCP 服务", cx))
     }
 
     fn sidebar_item(
@@ -79,6 +85,7 @@ impl SettingsOperationWindow {
             .id(match section {
                 SettingsSection::Theme => "settings-section-theme",
                 SettingsSection::Wallpaper => "settings-section-wallpaper",
+                SettingsSection::Mcp => "settings-section-mcp",
             })
             .h(px(38.))
             .px_3()
@@ -133,6 +140,138 @@ impl SettingsOperationWindow {
             .gap_5()
             .child(self.section_heading("背景图片", "设置应用背景图片和透明度。", cx))
             .child(self.wallpaper_panel(cx))
+    }
+
+    fn mcp_section(&self, cx: &Context<Self>) -> impl IntoElement {
+        v_flex()
+            .gap_5()
+            .child(self.section_heading("MCP 服务", "配置 MCP 服务监听地址和访问令牌。", cx))
+            .child(self.mcp_panel(cx))
+    }
+
+    fn mcp_panel(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        v_flex()
+            .p_4()
+            .gap_3()
+            .rounded_xl()
+            .border_1()
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
+            .child(
+                h_flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_4()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child("服务状态"),
+                            )
+                            .child(div().text_xs().text_color(colors.muted_foreground).child(
+                                if self.mcp_enabled {
+                                    "应用启动时自动运行，保存配置后会重启服务"
+                                } else {
+                                    "服务已关闭，保存配置后会停止 MCP 服务"
+                                },
+                            )),
+                    )
+                    .child(
+                        Button::new("toggle-mcp-enabled")
+                            .when(self.mcp_enabled, |this| this.primary())
+                            .when(!self.mcp_enabled, |this| this.outline())
+                            .label(if self.mcp_enabled {
+                                "已启动"
+                            } else {
+                                "已停止"
+                            })
+                            .on_click(cx.listener(Self::toggle_mcp_enabled)),
+                    ),
+            )
+            .child(Self::mcp_field("Host", &self.mcp_host, colors))
+            .child(Self::mcp_field("Port", &self.mcp_port, colors))
+            .child(self.mcp_token_field(cx))
+            .child(
+                h_flex().justify_end().pt_2().child(
+                    Button::new("apply-mcp-settings")
+                        .primary()
+                        .label("保存并重启")
+                        .on_click(cx.listener(Self::apply_mcp_settings)),
+                ),
+            )
+            .when_some(self.mcp_error.clone(), |this, error| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(colors.danger_foreground)
+                        .child(error),
+                )
+            })
+    }
+
+    fn mcp_field(label: &'static str, input: &Entity<InputState>, colors: ThemeColor) -> Div {
+        h_flex()
+            .w_full()
+            .h(px(34.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(80.))
+                    .flex_shrink_0()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child(label),
+            )
+            .child(div().flex_1().child(Input::new(input).small()))
+    }
+
+    fn mcp_token_field(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        h_flex()
+            .w_full()
+            .h(px(34.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(80.))
+                    .flex_shrink_0()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child("Token"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(30.))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme::CustomerUiTheme::border_color(cx))
+                    .bg(theme::CustomerUiTheme::panel_background(cx))
+                    .text_xs()
+                    .text_color(colors.foreground)
+                    .truncate()
+                    .child(self.mcp_token.clone()),
+            )
+            .child(
+                Button::new("copy-mcp-token")
+                    .outline()
+                    .small()
+                    .label("复制")
+                    .on_click(cx.listener(Self::copy_mcp_token)),
+            )
     }
 
     fn section_heading(

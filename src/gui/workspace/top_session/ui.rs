@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{ThemeColor, h_flex};
+use gpui_component::{ActiveTheme, h_flex};
 
 use crate::{
     component::{color::rgb_to_u32, draggable_list::DraggableList, theme},
@@ -8,17 +8,20 @@ use crate::{
 
 use super::WorkspaceSession;
 
-pub(super) fn new_workspace_tabs(cx: &App) -> DraggableList {
-    let colors = theme::CustomerUiTheme::colors(cx);
-    let item_bg = theme::CustomerUiTheme::tab_background(cx).into();
-    let selected_bg = colors.workspace_select_color.into();
+pub(super) fn new_workspace_tabs(_: &App) -> DraggableList {
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)
         .set_item_width(px(240.))
         .set_item_height(px(34.))
-        .set_item_bg(item_bg)
-        .set_item_selected_bg(selected_bg)
-        .set_item_hover_bg(colors.hover_background.into());
+        .set_item_bg_provider(|cx| theme::CustomerUiTheme::tab_background(cx).into())
+        .set_item_selected_bg_provider(|cx| {
+            theme::CustomerUiTheme::colors(cx)
+                .workspace_select_color
+                .into()
+        })
+        .set_item_hover_bg_provider(|cx| {
+            theme::CustomerUiTheme::colors(cx).hover_background.into()
+        });
     tabs
 }
 
@@ -27,8 +30,9 @@ pub(in crate::gui::workspace) fn workspace_tab(
     profile: SessionProfile,
     status: TerminalStatus,
     workspace: Entity<WorkspaceSession>,
-    colors: ThemeColor,
-) -> impl IntoElement {
+    cx: &App,
+) -> AnyElement {
+    let colors = cx.theme().colors;
     let session_id = workspace_id.clone();
     let close_id = workspace_id;
     let protocol = profile.protocol.as_str();
@@ -101,4 +105,5 @@ pub(in crate::gui::workspace) fn workspace_tab(
         .on_click(move |_, _, cx| {
             workspace.update(cx, |workspace, cx| workspace.activate(&session_id, cx));
         })
+        .into_any_element()
 }

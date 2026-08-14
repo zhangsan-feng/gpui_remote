@@ -13,10 +13,10 @@ use std::{
 };
 
 use gpui::*;
-use gpui_component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use serde::Deserialize;
 use tokio::{
-    sync::{mpsc, oneshot, Notify},
+    sync::{Notify, mpsc, oneshot},
     task::JoinHandle,
 };
 
@@ -64,10 +64,13 @@ struct TransferRecord {
     target: String,
     request: TransferRequest,
     progress: f32,
+    transferred_bytes: u64,
+    total_bytes: u64,
     speed: u64,
     started_at: Option<Instant>,
     speed_updated_at: Option<Instant>,
     status: String,
+    error: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +78,7 @@ enum TransferRequest {
     Upload {
         workspace_id: String,
         local_path: PathBuf,
+        is_directory: bool,
     },
     Download {
         workspace_id: String,
@@ -314,10 +318,12 @@ impl SftpView {
         let transfer_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let model_updates = updates.clone();
-        cx.spawn(async move |this, cx| loop {
-            model_updates.notified().await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
-                break;
+        cx.spawn(async move |this, cx| {
+            loop {
+                model_updates.notified().await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
             }
         })
         .detach();

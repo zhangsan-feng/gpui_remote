@@ -14,6 +14,7 @@ pub(crate) fn open_settings_window(window: &mut Window, cx: &mut App) {
     options.is_minimizable = false;
 
     let _ = cx.open_window(options, |window, cx| {
+        window.on_window_should_close(cx, |window, _| { window.remove_window();false });
         let settings = cx.new(|cx| SettingsOperationWindow::new(window, cx));
         cx.new(|cx| gpui_component::Root::new(settings, window, cx))
     });

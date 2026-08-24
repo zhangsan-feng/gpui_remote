@@ -65,6 +65,7 @@ fn open_session_window(profile: Option<SessionProfile>, window: &mut Window, cx:
     options.is_minimizable = false;
 
     let _ = cx.open_window(options, move |window, cx| {
+        window.on_window_should_close(cx, |window, _| { window.remove_window();false });
         let form = match profile {
             Some(profile) => cx.new(|cx| SessionOperationWindow::edit(profile, window, cx)),
             None => cx.new(|cx| SessionOperationWindow::new(window, cx)),

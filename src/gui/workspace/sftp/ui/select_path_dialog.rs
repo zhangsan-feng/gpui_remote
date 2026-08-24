@@ -88,6 +88,7 @@ impl SftpView {
         };
         let parent = cx.weak_entity();
         let _ = cx.open_window(options, move |window, cx| {
+            window.on_window_should_close(cx, |window, _| { window.remove_window();false });
             let dialog = cx.new(|cx| PathInputDialog::new(parent, target, path, window, cx));
             cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
         });

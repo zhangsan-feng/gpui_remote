@@ -136,15 +136,14 @@ async fn main() {
             // window_options.window_background = WindowBackgroundAppearance::Transparent;
             window_options.titlebar = Some(TitlebarOptions {
                 title: None,
-                // Hide the platform titlebar; HomeView renders the compatible custom one.
                 appears_transparent: true,
                 traffic_light_position: None,
             });
-            // Client decorations keep native resize/maximize hit testing available while
-            // allowing the titlebar content to be drawn by GPUI.
+
             window_options.window_decorations = Some(WindowDecorations::Client);
 
             cx.open_window(window_options, |window, app| {
+                window.on_window_should_close(app, |window, _| { window.remove_window();false });
                 gpui_component::init(app);
                 component::theme::init(app);
                 window.set_background_appearance(

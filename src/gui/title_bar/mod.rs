@@ -93,13 +93,7 @@ impl Render for AppTitleBar {
                         colors.accent,
                         cx,
                     ))
-                    .child(self.window_button(
-                        "window-close",
-                        "×",
-                        WindowControlArea::Close,
-                        colors.danger,
-                        cx,
-                    )),
+                    .child(self.close_button(colors.danger, cx)),
             )
     }
 }

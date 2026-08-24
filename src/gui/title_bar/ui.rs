@@ -26,11 +26,24 @@ impl AppTitleBar {
                 this.on_click(cx.listener(move |_, _, window, _| match control {
                     WindowControlArea::Min => window.minimize_window(),
                     WindowControlArea::Max => window.zoom_window(),
-                    WindowControlArea::Close => window.remove_window(),
                     _ => {}
                 }))
             })
             .child(label)
+            .into_any_element()
+    }
+
+    pub(super) fn close_button(&self, hover_color: Hsla, cx: &Context<Self>) -> AnyElement {
+        div()
+            .id("window-close")
+            .size(px(34.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_color(cx.theme().foreground)
+            .hover(move |style| style.bg(hover_color))
+            .on_click(cx.listener(|_, _, window, _| window.remove_window()))
+            .child("×")
             .into_any_element()
     }
 }

@@ -1,9 +1,7 @@
 use crate::component::theme::{self, AppTheme};
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::color_picker::{ColorPicker, ColorPickerState};
-use gpui_component::slider::Slider;
-use gpui_component::{
+use gpui_kit::component::color_picker::{ColorPicker, ColorPickerState};
+use gpui_kit::component::slider::Slider;
+use gpui_kit::component::{
     ActiveTheme, Icon, IconName, Sizable, ThemeColor,
     button::{Button, ButtonVariants},
     h_flex,
@@ -11,6 +9,8 @@ use gpui_component::{
     scroll::ScrollableElement,
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 use super::{SettingsOperationWindow, SettingsSection};
 

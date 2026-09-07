@@ -4,15 +4,15 @@ mod settings_operation_window;
 mod ui;
 
 use crate::component::theme;
-use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::DropdownMenu as _,
 };
+use gpui_kit::*;
 
-actions!(title_bar, [CreateSession, OpenSettings, OpenTools]);
+gpui_kit::actions!(title_bar, [CreateSession, OpenSettings, OpenTools]);
 
 pub struct AppTitleBar;
 

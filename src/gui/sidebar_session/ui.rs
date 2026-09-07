@@ -2,11 +2,11 @@ use crate::component::{draggable_list::DraggableList, theme};
 use crate::gui::sidebar_session::{
     ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent,
 };
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::input::Input;
-use gpui_component::menu::PopupMenu;
-use gpui_component::*;
+use gpui_kit::component::input::Input;
+use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::*;
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 impl SessionComponent {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {

@@ -2,7 +2,7 @@ use super::{
     AppTitleBar, CreateSession, OpenSettings, session_operation_window::open_new_session_window,
     settings_operation_window::open_settings_window,
 };
-use gpui::*;
+use gpui_kit::*;
 
 impl AppTitleBar {
     pub(super) fn open_session_window(

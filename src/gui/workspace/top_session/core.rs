@@ -1,4 +1,4 @@
-use gpui::Context;
+use gpui_kit::Context;
 
 use super::{OpenedWorkspaceSession, WorkspaceSession};
 use crate::domain::session::SessionProfile;

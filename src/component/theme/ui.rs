@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use gpui::{App, Hsla};
-use gpui_component::ActiveTheme;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::{App, Hsla};
 
 use crate::component::color::rgb_to_u32;
 

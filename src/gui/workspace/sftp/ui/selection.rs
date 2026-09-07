@@ -1,6 +1,6 @@
 use std::{collections::HashSet, hash::Hash, path::PathBuf};
 
-use gpui::Context;
+use gpui_kit::Context;
 
 use super::super::SftpView;
 

@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use gpui::{App, Hsla, WindowBackgroundAppearance};
-use gpui_component::ActiveTheme;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::{App, Hsla, WindowBackgroundAppearance};
 
 use super::{
     AppTheme, ChangeComponentThemeColor, CustomerUiThemeState, ThemePreview, WALLPAPER_DIRECTORY,

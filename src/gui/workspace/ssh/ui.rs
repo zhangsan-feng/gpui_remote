@@ -1,9 +1,9 @@
 mod terminal_render {
     use std::{cell::Cell, rc::Rc, sync::Arc};
 
-    use gpui::prelude::FluentBuilder;
-    use gpui::*;
-    use gpui_component::{ElementExt, h_flex, menu::ContextMenuExt};
+    use gpui_kit::component::{ElementExt, h_flex, menu::ContextMenuExt};
+    use gpui_kit::prelude::FluentBuilder;
+    use gpui_kit::*;
 
     use crate::{
         component::theme,
@@ -253,8 +253,8 @@ mod terminal_render {
     }
 }
 
-use gpui::*;
-use gpui_component::v_flex;
+use gpui_kit::component::v_flex;
+use gpui_kit::*;
 
 use crate::{
     component::{color::rgb_to_u32, theme},

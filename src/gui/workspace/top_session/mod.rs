@@ -5,7 +5,7 @@ mod ui;
 
 use std::collections::HashMap;
 
-use gpui::*;
+use gpui_kit::*;
 
 use crate::component::draggable_list::DraggableList;
 use crate::domain::session::SessionProfile;

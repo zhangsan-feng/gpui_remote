@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui_kit::*;
 
 use crate::infrastructure::agent_mcp::{self, McpSettings};
 

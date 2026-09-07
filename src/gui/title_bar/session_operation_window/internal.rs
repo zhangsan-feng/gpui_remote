@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui_kit::*;
 
 use super::{ConnectionProtocol, FormSection, SessionOperationWindow};
 

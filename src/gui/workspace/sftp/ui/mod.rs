@@ -7,14 +7,14 @@ pub(super) use select_path_dialog::PathTarget;
 pub(super) use selection::MultiSelection;
 
 use super::{CancelTransfer, RetryTransfer, SftpSnapshot, SftpView, TransferRecord};
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Icon, IconName, Sizable, h_flex,
     menu::ContextMenuExt,
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarMode},
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 use crate::component::theme;
 

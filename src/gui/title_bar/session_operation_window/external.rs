@@ -1,5 +1,5 @@
 use anyhow::Result;
-use gpui::*;
+use gpui_kit::*;
 
 use super::{SessionFormMode, SessionOperationWindow};
 use crate::component::window::window_center_options;
@@ -47,7 +47,7 @@ pub(crate) fn open_edit_session_window<T: 'static>(
 
 fn open_session_window(profile: Option<SessionProfile>, window: &mut Window, cx: &mut App) {
     let editing = profile.is_some();
-    let mut options = window_center_options(window, 680., 500.);
+    let mut options = window_center_options(window, size(px(680.), px(500.)));
     options.titlebar = Some(TitlebarOptions {
         title: Some(
             if editing {
@@ -65,11 +65,14 @@ fn open_session_window(profile: Option<SessionProfile>, window: &mut Window, cx:
     options.is_minimizable = false;
 
     let _ = cx.open_window(options, move |window, cx| {
-        window.on_window_should_close(cx, |window, _| { window.remove_window();false });
+        window.on_window_should_close(cx, |window, _| {
+            window.remove_window();
+            false
+        });
         let form = match profile {
             Some(profile) => cx.new(|cx| SessionOperationWindow::edit(profile, window, cx)),
             None => cx.new(|cx| SessionOperationWindow::new(window, cx)),
         };
-        cx.new(|cx| gpui_component::Root::new(form, window, cx))
+        cx.new(|cx| gpui_kit::component::Root::new(form, window, cx))
     });
 }

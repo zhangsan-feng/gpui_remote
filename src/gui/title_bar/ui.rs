@@ -1,6 +1,6 @@
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::ActiveTheme;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 use super::AppTitleBar;
 

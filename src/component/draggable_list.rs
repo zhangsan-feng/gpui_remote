@@ -1,11 +1,11 @@
 use std::{rc::Rc, time::Duration};
 
-use gpui::*;
-use gpui_component::scroll::*;
-use gpui_component::{
+use gpui_kit::component::scroll::*;
+use gpui_kit::component::{
     menu::{ContextMenuExt, PopupMenu},
     *,
 };
+use gpui_kit::*;
 
 #[derive(Clone, Copy, Debug)]
 struct ListTransition {
@@ -83,7 +83,7 @@ pub struct DraggableList {
     context_menu_id: Option<ElementId>,
     item_height: Pixels,
     item_width: Pixels,
-    item_sizes: Rc<Vec<gpui::Size<Pixels>>>,
+    item_sizes: Rc<Vec<gpui_kit::Size<Pixels>>>,
     scroll_handle: VirtualListScrollHandle,
     item_bg: Rgba,
     item_selected_bg: Rgba,

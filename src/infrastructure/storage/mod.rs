@@ -2,7 +2,7 @@ mod derive;
 mod known_hosts;
 mod repository;
 
-use gpui::Global;
+use gpui_kit::Global;
 use known_hosts::HostPubKey;
 use repository::session_repository::SessionStorageRepository;
 use russh::keys::ssh_key::PublicKey;

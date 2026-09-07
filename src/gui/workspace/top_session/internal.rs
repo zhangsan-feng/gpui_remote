@@ -1,5 +1,5 @@
 use crate::domain::terminal::TerminalStatus;
-use gpui::{Context, ElementId};
+use gpui_kit::{Context, ElementId};
 
 use super::{WorkspaceSession, ui::workspace_tab};
 

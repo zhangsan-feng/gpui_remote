@@ -5,7 +5,7 @@ mod ui;
 
 use std::{collections::HashMap, sync::Arc};
 
-use gpui::*;
+use gpui_kit::*;
 use serde::Deserialize;
 use tokio::sync::Notify;
 

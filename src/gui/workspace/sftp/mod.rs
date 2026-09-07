@@ -12,8 +12,8 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-use gpui::*;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
+use gpui_kit::*;
 use serde::Deserialize;
 use tokio::{
     sync::{Notify, mpsc, oneshot},

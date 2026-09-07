@@ -1,5 +1,5 @@
-use gpui::*;
-use gpui_component::{ActiveTheme, h_flex};
+use gpui_kit::component::{ActiveTheme, h_flex};
+use gpui_kit::*;
 
 use crate::{
     component::{color::rgb_to_u32, draggable_list::DraggableList, theme},

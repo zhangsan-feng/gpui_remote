@@ -1,5 +1,5 @@
 use chrono::{DateTime, Local};
-use gpui::*;
+use gpui_kit::*;
 use std::{path::PathBuf, time::SystemTime};
 
 use super::{SftpSnapshot, SftpView};

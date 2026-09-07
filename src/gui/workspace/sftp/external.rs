@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use gpui::*;
+use gpui_kit::*;
 use tokio::sync::Notify;
 
 use crate::{

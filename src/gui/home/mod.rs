@@ -1,6 +1,6 @@
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::{Root, v_flex};
+use gpui_kit::component::{Root, v_flex};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 use crate::{
     component::{resizable_panel::ResizablePanel, theme},

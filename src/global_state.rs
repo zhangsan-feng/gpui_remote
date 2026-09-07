@@ -1,4 +1,4 @@
-use gpui::{App, Entity, EventEmitter, Global};
+use gpui_kit::{App, Entity, EventEmitter, Global};
 
 use crate::domain::session::SessionProfile;
 

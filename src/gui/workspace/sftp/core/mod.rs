@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use gpui::*;
+use gpui_kit::*;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::domain::session::SessionProfile;

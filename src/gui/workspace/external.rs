@@ -1,4 +1,4 @@
-use gpui::Context;
+use gpui_kit::Context;
 
 use crate::global_state::{GlobalEvent, read_global_state};
 

@@ -1,7 +1,7 @@
 use crate::component::color::rgb_to_u32;
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::{h_flex, v_flex};
+use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 use uuid::Uuid;
 
 #[derive(Clone)]

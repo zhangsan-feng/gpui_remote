@@ -1,5 +1,5 @@
 mod keyboard {
-    use gpui::*;
+    use gpui_kit::*;
 
     use super::super::{
         PasteTerminal, SendTab, TerminalView,
@@ -80,8 +80,8 @@ mod scroll {
         rc::Rc,
     };
 
-    use gpui::*;
-    use gpui_component::ElementExt;
+    use gpui_kit::component::ElementExt;
+    use gpui_kit::*;
     use tokio::sync::mpsc;
 
     use crate::{
@@ -243,7 +243,7 @@ mod scroll {
 }
 
 mod selection {
-    use gpui::*;
+    use gpui_kit::*;
     use std::sync::Arc;
     use unicode_width::UnicodeWidthChar;
 
@@ -495,7 +495,7 @@ mod selection {
 }
 
 mod watcher {
-    use gpui::Context;
+    use gpui_kit::Context;
 
     use super::super::TerminalView;
 

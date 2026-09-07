@@ -4,9 +4,7 @@ use super::super::{
     SftpView,
 };
 use super::PathTarget;
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
@@ -14,6 +12,8 @@ use gpui_component::{
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarMode},
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 use crate::component::theme;
 

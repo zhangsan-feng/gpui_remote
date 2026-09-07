@@ -1,10 +1,10 @@
-use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme,
     color_picker::{ColorPickerEvent, ColorPickerState},
     input::InputState,
     slider::{SliderEvent, SliderState},
 };
+use gpui_kit::*;
 
 use crate::{component::theme, infrastructure::agent_mcp};
 

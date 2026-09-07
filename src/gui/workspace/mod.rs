@@ -7,7 +7,7 @@ mod ssh;
 mod top_session;
 mod ui;
 
-use gpui::*;
+use gpui_kit::*;
 
 use crate::domain::session::Protocol;
 use sftp::SftpView;

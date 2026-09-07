@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use gpui::Context;
+use gpui_kit::Context;
 
 use crate::{domain::session::SessionProfile, infrastructure::storage::Storage};
 

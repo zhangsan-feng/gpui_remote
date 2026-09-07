@@ -3,8 +3,8 @@ mod external;
 mod internal;
 mod ui;
 
-use gpui::*;
-use gpui_component::input::InputState;
+use gpui_kit::component::input::InputState;
+use gpui_kit::*;
 
 use crate::domain::session::SessionProfile;
 

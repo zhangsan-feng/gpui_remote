@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use gpui::{App, Global, Hsla};
+use gpui_kit::{App, Global, Hsla};
 use serde::{Deserialize, Serialize};
 
 mod core;

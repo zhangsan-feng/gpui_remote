@@ -1,5 +1,5 @@
-use gpui::*;
-use gpui_component::{ActiveTheme, IconName, v_flex};
+use gpui_kit::component::{ActiveTheme, IconName, v_flex};
+use gpui_kit::*;
 
 use crate::{component::theme, domain::session::Protocol};
 

@@ -1,12 +1,12 @@
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Icon, IconName, Sizable, ThemeColor,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 use crate::component::theme;
 

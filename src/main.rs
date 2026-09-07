@@ -12,8 +12,8 @@ mod gui;
 mod infrastructure;
 
 use crate::global_state::{GlobalState, GlobalStateHandle};
-use gpui::*;
-use gpui_component::*;
+use gpui_kit::component::*;
+use gpui_kit::*;
 use log::info;
 use reqwest_client::ReqwestClient;
 use rust_embed::RustEmbed;
@@ -62,7 +62,7 @@ struct AssetFiles;
 
 struct MergedAssets {
     local_directories: Vec<PathBuf>,
-    component_assets: gpui_component_assets::Assets,
+    component_assets: gpui_kit::assets::Assets,
 }
 
 impl AssetSource for MergedAssets {
@@ -122,10 +122,10 @@ async fn main() {
     let http_client = ReqwestClient::user_agent("gpui").unwrap();
     let assets = MergedAssets {
         local_directories: vec![PathBuf::from("/"), PathBuf::from("./src/icon")],
-        component_assets: gpui_component_assets::Assets,
+        component_assets: gpui_kit::assets::Assets,
     };
 
-    gpui_platform::application()
+    gpui_kit::application()
         .with_http_client(Arc::new(http_client))
         .with_assets(assets)
         .run(move |cx| {
@@ -143,8 +143,11 @@ async fn main() {
             window_options.window_decorations = Some(WindowDecorations::Client);
 
             cx.open_window(window_options, |window, app| {
-                window.on_window_should_close(app, |window, _| { window.remove_window();false });
-                gpui_component::init(app);
+                window.on_window_should_close(app, |window, _| {
+                    window.remove_window();
+                    false
+                });
+                gpui_kit::init(app);
                 component::theme::init(app);
                 window.set_background_appearance(
                     component::theme::CustomerUiTheme::window_background_appearance(app),

@@ -4,8 +4,8 @@ mod internal;
 mod ui;
 
 use anyhow::Error;
-use gpui::*;
-use gpui_component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::*;
 use serde::Deserialize;
 
 use crate::{component::draggable_list::DraggableList, domain::session::SessionProfile};

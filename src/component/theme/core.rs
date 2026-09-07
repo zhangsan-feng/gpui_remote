@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use gpui::{App, Hsla, Rgba};
-use gpui_component::{Colorize, Theme, ThemeMode};
+use gpui_kit::component::{Colorize, Theme, ThemeMode};
+use gpui_kit::{App, Hsla, Rgba};
 
 use crate::{
     component::color::rgb_to_u32,

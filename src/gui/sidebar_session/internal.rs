@@ -1,5 +1,5 @@
 use anyhow::{Error, Result};
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 
 use crate::{
     domain::session::Protocol, gui::title_bar::session_operation_window::open_edit_session_window,

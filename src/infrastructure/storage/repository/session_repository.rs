@@ -1,10 +1,12 @@
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context as _, Result};
 use chrono::Utc;
 use rusqlite::{OptionalExtension, Row, params, types::Type};
 use uuid::Uuid;
 
 use crate::{
-    domain::session::{NewSession, Protocol, ProxyConfig, SessionProfile},
+    domain::session::{NewSession, Protocol, ProxyConfig, SessionProfile, SftpSessionState},
     infrastructure::storage::derive::sqlite_drive::SqliteDrive,
 };
 
@@ -139,6 +141,52 @@ impl SessionStorageRepository {
             .connection
             .execute("DELETE FROM sessions WHERE id = ?1", [id])
             .context("delete top_session from SQLite")?;
+        Ok(())
+    }
+
+    pub fn sftp_state(&self, id: &str) -> Result<Option<SftpSessionState>> {
+        self.drive
+            .connection
+            .query_row(
+                "SELECT sftp_local_path, sftp_remote_path FROM sessions WHERE id = ?1",
+                [id],
+                |row| {
+                    let local_path = row
+                        .get::<_, Option<String>>(0)?
+                        .filter(|path| !path.is_empty())
+                        .map(PathBuf::from);
+                    let remote_path = row
+                        .get::<_, Option<String>>(1)?
+                        .filter(|path| !path.is_empty());
+                    Ok(SftpSessionState {
+                        local_path,
+                        remote_path,
+                    })
+                },
+            )
+            .optional()
+            .context("read SFTP session state from SQLite")
+    }
+
+    pub fn update_sftp_local_path(&self, id: &str, path: &Path) -> Result<()> {
+        self.drive
+            .connection
+            .execute(
+                "UPDATE sessions SET sftp_local_path = ?2 WHERE id = ?1",
+                params![id, path.display().to_string()],
+            )
+            .context("save SFTP local directory to SQLite")?;
+        Ok(())
+    }
+
+    pub fn update_sftp_remote_path(&self, id: &str, path: &str) -> Result<()> {
+        self.drive
+            .connection
+            .execute(
+                "UPDATE sessions SET sftp_remote_path = ?2 WHERE id = ?1",
+                params![id, path],
+            )
+            .context("save SFTP remote directory to SQLite")?;
         Ok(())
     }
 }

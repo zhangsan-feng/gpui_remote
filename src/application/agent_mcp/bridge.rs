@@ -4,7 +4,7 @@ use crate::domain::session::Protocol;
 
 use super::{
     AgentMcpCommand, AgentSftpCommand, AgentSshCommand, ProfileSummary, SftpDirectorySummary,
-    SftpTransferInfo, SftpTransferSummary, TerminalReadPage, TerminalSummary,
+    SftpTransferInfo, SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
     command::AgentMcpResult,
 };
 
@@ -43,10 +43,22 @@ impl AgentMcpClient {
         &self,
         profile_id: String,
         protocol: Protocol,
+        ip: String,
+        title: String,
     ) -> AgentMcpResult<String> {
         self.request(|reply| match protocol {
-            Protocol::Ssh => AgentMcpCommand::Ssh(AgentSshCommand::Open { profile_id, reply }),
-            Protocol::Sftp => AgentMcpCommand::Sftp(AgentSftpCommand::Open { profile_id, reply }),
+            Protocol::Ssh => AgentMcpCommand::Ssh(AgentSshCommand::Open {
+                profile_id,
+                ip,
+                title,
+                reply,
+            }),
+            Protocol::Sftp => AgentMcpCommand::Sftp(AgentSftpCommand::Open {
+                profile_id,
+                ip,
+                title,
+                reply,
+            }),
         })
         .await
     }
@@ -56,6 +68,25 @@ impl AgentMcpClient {
             .await
     }
 
+    pub async fn change_sftp_local_directory(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        path: String,
+    ) -> AgentMcpResult<()> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeLocalDirectory {
+                workspace_id,
+                ip,
+                title,
+                path,
+                reply,
+            })
+        })
+        .await
+    }
+
     pub async fn list_sftp_remote(
         &self,
         workspace_id: String,
@@ -63,6 +94,25 @@ impl AgentMcpClient {
         self.request(|reply| {
             AgentMcpCommand::Sftp(AgentSftpCommand::ListRemote {
                 workspace_id,
+                reply,
+            })
+        })
+        .await
+    }
+
+    pub async fn change_sftp_remote_directory(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        path: String,
+    ) -> AgentMcpResult<()> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeRemoteDirectory {
+                workspace_id,
+                ip,
+                title,
+                path,
                 reply,
             })
         })
@@ -112,15 +162,77 @@ impl AgentMcpClient {
         .await
     }
 
+    pub async fn watch_sftp_local(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        local_path: String,
+    ) -> AgentMcpResult<SftpWatchSummary> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::WatchLocal {
+                workspace_id,
+                ip,
+                title,
+                local_path,
+                reply,
+            })
+        })
+        .await
+    }
+
+    pub async fn stop_sftp_local_watch(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        local_path: String,
+    ) -> AgentMcpResult<()> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::StopWatchingLocal {
+                workspace_id,
+                ip,
+                title,
+                local_path,
+                reply,
+            })
+        })
+        .await
+    }
+
+    pub async fn list_sftp_local_watches(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+    ) -> AgentMcpResult<Vec<SftpWatchSummary>> {
+        self.request(|reply| {
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListLocalWatches {
+                workspace_id,
+                ip,
+                title,
+                reply,
+            })
+        })
+        .await
+    }
+
     pub async fn list_terminals(&self) -> AgentMcpResult<Vec<TerminalSummary>> {
         self.request(|reply| AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }))
             .await
     }
 
-    pub async fn select_terminal(&self, workspace_id: String) -> AgentMcpResult<()> {
+    pub async fn select_terminal(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+    ) -> AgentMcpResult<()> {
         self.request(|reply| {
             AgentMcpCommand::Ssh(AgentSshCommand::SelectTerminal {
                 workspace_id,
+                ip,
+                title,
                 reply,
             })
         })

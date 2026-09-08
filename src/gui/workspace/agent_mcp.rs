@@ -70,6 +70,7 @@ impl Workspace {
                             .into_iter()
                             .map(|profile| ProfileSummary {
                                 id: profile.id,
+                                title: profile.name,
                                 host: profile.host,
                             })
                             .collect()
@@ -77,16 +78,41 @@ impl Workspace {
                     .map_err(|error| format!("读取连接配置失败: {error:#}"));
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Ssh(AgentSshCommand::Open { profile_id, reply }) => {
-                let result = self.open_agent_session(profile_id, Protocol::Ssh, cx);
+            AgentMcpCommand::Ssh(AgentSshCommand::Open {
+                profile_id,
+                ip,
+                title,
+                reply,
+            }) => {
+                let result = self.open_agent_session(profile_id, Protocol::Ssh, ip, title, cx);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::Open { profile_id, reply }) => {
-                let result = self.open_agent_session(profile_id, Protocol::Sftp, cx);
+            AgentMcpCommand::Sftp(AgentSftpCommand::Open {
+                profile_id,
+                ip,
+                title,
+                reply,
+            }) => {
+                let result = self.open_agent_session(profile_id, Protocol::Sftp, ip, title, cx);
                 let _ = reply.send(result);
             }
             AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }) => {
                 let result = Ok(self.sftp.read(cx).mcp_local_directory());
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeLocalDirectory {
+                workspace_id,
+                ip,
+                title,
+                path,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .update(cx, |sftp, cx| {
+                        sftp.mcp_change_local_directory(workspace_id, ip, title, path, cx)
+                    })
+                    .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
             AgentMcpCommand::Sftp(AgentSftpCommand::ListRemote {
@@ -94,6 +120,21 @@ impl Workspace {
                 reply,
             }) => {
                 let result = self.sftp.read(cx).mcp_remote_directory(&workspace_id);
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeRemoteDirectory {
+                workspace_id,
+                ip,
+                title,
+                path,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .update(cx, |sftp, cx| {
+                        sftp.mcp_change_remote_directory(workspace_id, ip, title, path, cx)
+                    })
+                    .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
             AgentMcpCommand::Sftp(AgentSftpCommand::Upload {
@@ -129,6 +170,48 @@ impl Workspace {
                 let result = self.sftp.read(cx).mcp_transfers(&workspace_id);
                 let _ = reply.send(result);
             }
+            AgentMcpCommand::Sftp(AgentSftpCommand::WatchLocal {
+                workspace_id,
+                ip,
+                title,
+                local_path,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .update(cx, |sftp, cx| {
+                        sftp.mcp_watch_local(workspace_id, ip, title, local_path, cx)
+                    })
+                    .map_err(|_| "工作区已关闭".to_owned());
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::StopWatchingLocal {
+                workspace_id,
+                ip,
+                title,
+                local_path,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .update(cx, |sftp, cx| {
+                        sftp.mcp_stop_watching_local(workspace_id, ip, title, local_path, cx)
+                    })
+                    .map_err(|_| "工作区已关闭".to_owned());
+                let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListLocalWatches {
+                workspace_id,
+                ip,
+                title,
+                reply,
+            }) => {
+                let result = self
+                    .sftp
+                    .read(cx)
+                    .mcp_list_local_watches(&workspace_id, &ip, &title);
+                let _ = reply.send(result);
+            }
             AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }) => {
                 let selected_id = self.workspace.read(cx).selected_id();
                 let terminals = self
@@ -146,6 +229,8 @@ impl Workspace {
                         TerminalSummary {
                             workspace_id: opened.id.clone(),
                             profile_id: opened.profile.id.clone(),
+                            ip: opened.profile.host.clone(),
+                            title: opened.profile.name.clone(),
                             host: opened.profile.host.clone(),
                             status: status.to_owned(),
                             selected: selected_id == Some(opened.id.as_str()),
@@ -156,21 +241,28 @@ impl Workspace {
             }
             AgentMcpCommand::Ssh(AgentSshCommand::SelectTerminal {
                 workspace_id,
+                ip,
+                title,
                 reply,
             }) => {
-                let exists = self
+                let session_identity = self
                     .workspace
                     .read(cx)
                     .sessions()
                     .iter()
-                    .any(|opened| opened.id == workspace_id);
-                let result = if exists {
-                    self.workspace.update(cx, |workspace, cx| {
-                        workspace.activate(&workspace_id, cx);
-                    });
-                    Ok(())
-                } else {
-                    Err(format!("终端会话不存在: {workspace_id}"))
+                    .find(|opened| opened.id == workspace_id)
+                    .map(|opened| (opened.profile.host.clone(), opened.profile.name.clone()));
+                let result = match session_identity {
+                    None => Err(format!("终端会话不存在: {workspace_id}")),
+                    Some((actual_ip, actual_title)) if actual_ip == ip && actual_title == title => {
+                        self.workspace.update(cx, |workspace, cx| {
+                            workspace.activate(&workspace_id, cx);
+                        });
+                        Ok(())
+                    }
+                    Some(_) => Err(format!(
+                        "终端会话信息不匹配: {workspace_id}，请确认 ip 和 title"
+                    )),
                 };
                 let _ = reply.send(result);
             }
@@ -218,6 +310,8 @@ impl Workspace {
         &self,
         profile_id: String,
         protocol: Protocol,
+        ip: String,
+        title: String,
         cx: &mut Context<Self>,
     ) -> Result<String, String> {
         cx.global::<Storage>()
@@ -225,7 +319,12 @@ impl Workspace {
             .find(&profile_id)
             .map_err(|error| format!("读取连接配置失败: {error:#}"))
             .and_then(|profile| profile.ok_or_else(|| format!("连接配置不存在: {profile_id}")))
-            .map(|mut profile| {
+            .and_then(|mut profile| {
+                if profile.host != ip || profile.name != title {
+                    return Err(format!(
+                        "连接配置与 ip/title 不匹配: {profile_id}，请确认 ip 和 title"
+                    ));
+                }
                 profile.protocol = protocol;
                 let workspace_id = Uuid::new_v4().to_string();
                 read_global_state(cx).update(cx, |_, cx| {
@@ -234,7 +333,7 @@ impl Workspace {
                         profile,
                     ));
                 });
-                workspace_id
+                Ok(workspace_id)
             })
     }
 

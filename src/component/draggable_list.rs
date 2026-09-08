@@ -321,61 +321,64 @@ impl DraggableList {
             Axis::Horizontal => v_flex()
                 .size_full()
                 .child(
-                    h_virtual_list(
-                        view.clone(),
-                        virtual_list_id.clone(),
-                        item_sizes.clone(),
-                        move |this, range, _, cx| {
-                            range
-                                .filter_map(|index| {
-                                    let item = this.items.get(index)?;
-                                    Some(this.render_virtual_item(
-                                        index,
-                                        item.id.clone(),
-                                        item.render.clone(),
-                                        cx,
-                                    ))
-                                })
-                                .collect::<Vec<_>>()
-                        },
-                    )
-                    .track_scroll(&self.scroll_handle)
-                    .into_any_element(),
+                    div().flex_1().min_h_0().w_full().overflow_hidden().child(
+                        h_virtual_list(
+                            view.clone(),
+                            virtual_list_id.clone(),
+                            item_sizes.clone(),
+                            move |this, range, _, cx| {
+                                range
+                                    .filter_map(|index| {
+                                        let item = this.items.get(index)?;
+                                        Some(this.render_virtual_item(
+                                            index,
+                                            item.id.clone(),
+                                            item.render.clone(),
+                                            cx,
+                                        ))
+                                    })
+                                    .collect::<Vec<_>>()
+                            },
+                        )
+                        .track_scroll(&self.scroll_handle),
+                    ),
                 )
                 .child(
-                    div().w_full().h(px(10.)).child(
+                    div().w_full().h(px(10.)).flex_shrink_0().child(
                         Scrollbar::vertical(&self.scroll_handle)
                             .mode(ScrollbarMode::Always)
-                            .axis(ScrollbarAxis::Horizontal),
+                            .axis(ScrollbarAxis::Horizontal)
+                            .viewport_from_layout(),
                     ),
                 )
                 .into_any_element(),
             Axis::Vertical => h_flex()
                 .size_full()
                 .child(
-                    v_virtual_list(
-                        view.clone(),
-                        virtual_list_id,
-                        item_sizes,
-                        move |this, range, _, cx| {
-                            range
-                                .filter_map(|index| {
-                                    let item = this.items.get(index)?;
-                                    Some(this.render_virtual_item(
-                                        index,
-                                        item.id.clone(),
-                                        item.render.clone(),
-                                        cx,
-                                    ))
-                                })
-                                .collect::<Vec<_>>()
-                        },
-                    )
-                    .track_scroll(&self.scroll_handle)
-                    .into_any_element(),
+                    div().flex_1().min_w_0().h_full().overflow_hidden().child(
+                        v_virtual_list(
+                            view.clone(),
+                            virtual_list_id,
+                            item_sizes,
+                            move |this, range, _, cx| {
+                                range
+                                    .filter_map(|index| {
+                                        let item = this.items.get(index)?;
+                                        Some(this.render_virtual_item(
+                                            index,
+                                            item.id.clone(),
+                                            item.render.clone(),
+                                            cx,
+                                        ))
+                                    })
+                                    .collect::<Vec<_>>()
+                            },
+                        )
+                        .track_scroll(&self.scroll_handle),
+                    ),
                 )
                 .child(
-                    div().w(px(10.)).h_full().child(
+                    div().w(px(10.)).h_full().flex_shrink_0().child(
                         Scrollbar::vertical(&self.scroll_handle)
                             .mode(ScrollbarMode::Always)
                             .axis(ScrollbarAxis::Vertical),

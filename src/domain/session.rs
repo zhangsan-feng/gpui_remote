@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{fmt, path::PathBuf, str::FromStr};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyConfig {
@@ -53,6 +53,12 @@ pub struct SessionProfile {
     pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
     pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SftpSessionState {
+    pub local_path: Option<PathBuf>,
+    pub remote_path: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -1,6 +1,7 @@
 mod conn;
 mod local;
 mod remote;
+mod watcher;
 
 use std::{
     fs,
@@ -12,7 +13,9 @@ use std::{
 use gpui_kit::*;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::domain::session::SessionProfile;
+use crate::{domain::session::SessionProfile, infrastructure::storage::Storage};
+
+pub(crate) use watcher::LocalWatch;
 
 use super::{
     CancelTransfer, DeleteLocalEntry, DeleteRemoteEntry, DownloadRemoteEntry, RetryTransfer,
@@ -199,6 +202,7 @@ impl SftpModel {
 
 impl SftpView {
     pub(super) fn load_local_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let save_workspace_id = self.selected_workspace_id.clone();
         self.local_selection.clear();
         self.local.path = path.clone();
         self.local.loading = true;
@@ -215,9 +219,12 @@ impl SftpView {
                 this.local.loading = false;
                 match result {
                     Ok((path, entries)) => {
-                        this.local.path = path;
+                        this.local.path = path.clone();
                         this.local.entries = Arc::new(entries);
                         this.local.error = None;
+                        if let Some(workspace_id) = save_workspace_id.as_deref() {
+                            this.persist_local_directory(workspace_id, &path, cx);
+                        }
                     }
                     Err(error) => {
                         this.local.error = Some(format!("{error:#}"));
@@ -229,7 +236,86 @@ impl SftpView {
         .detach();
     }
 
-    pub(super) fn connect(&mut self, workspace_id: String, profile: SessionProfile) {
+    pub(super) fn restore_local_directory(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+        let Some(profile_id) = self
+            .runtimes
+            .get(workspace_id)
+            .map(|runtime| runtime.profile_id.clone())
+        else {
+            return;
+        };
+        let local_path = match cx.global::<Storage>().session.sftp_state(&profile_id) {
+            Ok(state) => state.and_then(|state| state.local_path),
+            Err(error) => {
+                log::warn!("读取 SFTP 本地目录失败，会话 {profile_id}: {error:#}");
+                None
+            }
+        }
+        .unwrap_or_else(default_desktop_path);
+        self.load_local_directory(local_path, cx);
+    }
+
+    fn persist_local_directory(
+        &self,
+        workspace_id: &str,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(profile_id) = self
+            .runtimes
+            .get(workspace_id)
+            .map(|runtime| runtime.profile_id.clone())
+        else {
+            return;
+        };
+        if let Err(error) = cx
+            .global::<Storage>()
+            .session
+            .update_sftp_local_path(&profile_id, path)
+        {
+            log::warn!("保存 SFTP 本地目录失败，会话 {profile_id}: {error:#}");
+        }
+    }
+
+    pub(super) fn persist_remote_directories(&mut self, cx: &mut Context<Self>) {
+        let directories = self
+            .runtimes
+            .iter()
+            .filter_map(|(workspace_id, runtime)| {
+                let path = runtime.model.snapshot().path;
+                (!path.is_empty()).then(|| (workspace_id.clone(), runtime.profile_id.clone(), path))
+            })
+            .collect::<Vec<_>>();
+        for (workspace_id, profile_id, path) in directories {
+            if self
+                .persisted_remote_paths
+                .get(&workspace_id)
+                .is_some_and(|saved_path| saved_path == &path)
+            {
+                continue;
+            }
+            match cx
+                .global::<Storage>()
+                .session
+                .update_sftp_remote_path(&profile_id, &path)
+            {
+                Ok(()) => {
+                    self.persisted_remote_paths.insert(workspace_id, path);
+                }
+                Err(error) => {
+                    log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error:#}");
+                }
+            }
+        }
+    }
+
+    pub(super) fn connect(
+        &mut self,
+        workspace_id: String,
+        profile: SessionProfile,
+        initial_remote_path: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.close(&workspace_id);
         self.remote_selection.clear();
         self.remote_list_state.reset_with_uniform_height(0, px(38.));
@@ -243,24 +329,48 @@ impl SftpView {
         });
         let (commands, command_receiver) = mpsc::unbounded_channel();
         let task_model = model.clone();
+        let profile_id = profile.id.clone();
+        let profile_ip = profile.host.clone();
+        let profile_title = profile.name.clone();
+        let task_initial_remote_path = initial_remote_path.clone();
         let task = tokio::spawn(async move {
-            if let Err(error) =
-                remote::run_sftp(profile, command_receiver, task_model.clone()).await
+            if let Err(error) = remote::run_sftp(
+                profile,
+                task_initial_remote_path,
+                command_receiver,
+                task_model.clone(),
+            )
+            .await
             {
                 task_model.set_failed(format!("{error:#}"));
             }
         });
+        if let Some(path) = initial_remote_path {
+            self.persisted_remote_paths
+                .insert(workspace_id.clone(), path);
+        }
+        let should_restore_local_directory =
+            self.selected_workspace_id.as_deref() == Some(workspace_id.as_str());
         self.runtimes.insert(
-            workspace_id,
+            workspace_id.clone(),
             SftpRuntime {
+                profile_id,
+                profile_ip,
+                profile_title,
                 model,
                 commands,
                 task,
             },
         );
+        self.updates.notify_waiters();
+        if should_restore_local_directory {
+            self.restore_local_directory(&workspace_id, cx);
+        }
     }
 
     pub(super) fn close(&mut self, workspace_id: &str) {
+        self.stop_local_watchers_for_workspace(workspace_id);
+        self.persisted_remote_paths.remove(workspace_id);
         if let Some(runtime) = self.runtimes.remove(workspace_id) {
             let _ = runtime.commands.send(SftpCommand::Disconnect);
             runtime.task.abort();
@@ -268,23 +378,34 @@ impl SftpView {
     }
 
     pub(super) fn load_directory(&mut self, path: String) {
-        self.remote_selection.clear();
-        let Some(runtime) = self
-            .selected_workspace_id
-            .as_deref()
-            .and_then(|workspace_id| self.runtimes.get(workspace_id))
-        else {
+        let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
-        self.remote_list_state.reset_with_uniform_height(0, px(38.));
+        let _ = self.load_directory_for_workspace(&workspace_id, path);
+    }
+
+    pub(super) fn load_directory_for_workspace(
+        &mut self,
+        workspace_id: &str,
+        path: String,
+    ) -> Result<(), String> {
+        let is_selected = self.selected_workspace_id.as_deref() == Some(workspace_id);
+        if is_selected {
+            self.remote_selection.clear();
+            self.remote_list_state.reset_with_uniform_height(0, px(38.));
+        }
+        let runtime = self
+            .runtimes
+            .get(workspace_id)
+            .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
         runtime.model.set_loading();
-        if runtime
+        runtime
             .commands
             .send(SftpCommand::LoadDirectory(path))
-            .is_err()
-        {
-            runtime.model.set_error("SFTP 连接已关闭".to_owned());
-        }
+            .map_err(|_| {
+                runtime.model.set_error("SFTP 连接已关闭".to_owned());
+                "SFTP 连接已关闭".to_owned()
+            })
     }
 
     pub(super) fn upload_file(&mut self, local_path: PathBuf, cx: &mut Context<Self>) {
@@ -304,6 +425,27 @@ impl SftpView {
             return None;
         };
         let snapshot = runtime.model.snapshot();
+        let Some(file_name) = local_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+        else {
+            return None;
+        };
+        let remote_path = remote::join_remote_path(&snapshot.path, &file_name);
+        self.upload_file_to_remote_path(workspace_id, local_path, remote_path, cx)
+    }
+
+    pub(super) fn upload_file_to_remote_path(
+        &mut self,
+        workspace_id: &str,
+        local_path: PathBuf,
+        remote_path: String,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let Some(runtime) = self.runtimes.get(workspace_id) else {
+            return None;
+        };
+        let snapshot = runtime.model.snapshot();
         let commands = runtime.commands.clone();
         let Some(file_name) = local_path
             .file_name()
@@ -317,7 +459,6 @@ impl SftpView {
         if !metadata.is_file() && !metadata.is_dir() {
             return None;
         }
-        let remote_path = remote::join_remote_path(&snapshot.path, &file_name);
         let request = TransferRequest::Upload {
             workspace_id: workspace_id.to_owned(),
             local_path: local_path.clone(),

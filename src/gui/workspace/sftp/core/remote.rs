@@ -23,6 +23,7 @@ const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 
 pub(super) async fn run_sftp(
     profile: SessionProfile,
+    initial_remote_path: Option<String>,
     mut commands: mpsc::UnboundedReceiver<SftpCommand>,
     model: Arc<SftpModel>,
 ) -> Result<()> {
@@ -78,10 +79,21 @@ pub(super) async fn run_sftp(
         .await
         .context("初始化 SFTP 协议失败")?;
 
-    let initial_path = sftp
-        .canonicalize(".")
-        .await
-        .context("读取 SFTP 初始目录失败")?;
+    let initial_path = if let Some(path) = initial_remote_path.as_deref() {
+        match sftp.canonicalize(path).await {
+            Ok(path) => path,
+            Err(error) => {
+                log::warn!("恢复 SFTP 远程目录失败（{path}）：{error:#}，将使用默认目录");
+                sftp.canonicalize(".")
+                    .await
+                    .context("读取 SFTP 初始目录失败")?
+            }
+        }
+    } else {
+        sftp.canonicalize(".")
+            .await
+            .context("读取 SFTP 初始目录失败")?
+    };
     let entries = read_directory(&sftp, &initial_path).await?;
     model.set_connected(initial_path, entries);
 

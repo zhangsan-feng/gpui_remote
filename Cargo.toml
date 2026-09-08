@@ -25,6 +25,7 @@ russh-sftp = "2.3.0"
 rmcp = { version = "3.0.0", features = ["transport-streamable-http-server"] }
 tokio-socks = "0.5.2"
 unicode-width = "0.2.2"
+notify = "7.0.0"
 
 [build-dependencies]
 chrono = { version = "0.4.43", features = ["default"] }

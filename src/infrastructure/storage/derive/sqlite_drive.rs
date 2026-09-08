@@ -39,6 +39,8 @@ impl SqliteDrive {
                     proxy_port INTEGER,
                     proxy_username TEXT,
                     proxy_password TEXT,
+                    sftp_local_path TEXT,
+                    sftp_remote_path TEXT,
                     created_at TEXT NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS sessions_created_at_idx
@@ -53,6 +55,12 @@ impl SqliteDrive {
         let _ = self
             .connection
             .execute("ALTER TABLE sessions ADD COLUMN private_key_path TEXT", []);
+        let _ = self
+            .connection
+            .execute("ALTER TABLE sessions ADD COLUMN sftp_local_path TEXT", []);
+        let _ = self
+            .connection
+            .execute("ALTER TABLE sessions ADD COLUMN sftp_remote_path TEXT", []);
         Ok(())
     }
 }

@@ -19,7 +19,7 @@ use gpui_kit::*;
 
 use crate::component::theme;
 
-const TRANSFER_PANEL_HEIGHT: f32 = 188.;
+const TRANSFER_PANEL_RATIO: f32 = 1. / 3.;
 
 impl SftpView {
     pub(super) fn render_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -54,6 +54,8 @@ impl SftpView {
             .on_action(cx.listener(Self::download_remote_entry))
             .on_action(cx.listener(Self::cancel_transfer))
             .on_action(cx.listener(Self::retry_transfer))
+            .on_action(cx.listener(Self::watch_local_path))
+            .on_action(cx.listener(Self::stop_watching_local_path))
             .size_full()
             .min_h_0()
             .overflow_hidden()
@@ -171,7 +173,7 @@ impl SftpView {
         };
         v_flex()
             .id("sftp-transfer-panel")
-            .h(px(TRANSFER_PANEL_HEIGHT))
+            .h(relative(TRANSFER_PANEL_RATIO))
             .flex_shrink_0()
             .border_t_1()
             .border_color(colors.border)

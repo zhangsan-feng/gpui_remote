@@ -1,6 +1,6 @@
 use super::super::{
     DeleteLocalEntry, DragPreviewRemoteToLocalItem, LocalEntry, LocalSnapshot, SftpView,
-    UploadLocalEntry,
+    StopWatchingLocalPath, UploadLocalEntry, WatchLocalPath,
 };
 use super::PathTarget;
 use std::path::PathBuf;
@@ -32,6 +32,7 @@ impl SftpView {
             let entries = snapshot.entries.clone();
             let selection = self.local_selection.clone();
             let selected_paths = selection.values();
+            let watched_paths = self.local_watched_paths();
             let view = cx.weak_entity();
             list(self.local_list_state.clone(), move |index, _, cx| {
                 entries
@@ -39,7 +40,15 @@ impl SftpView {
                     .cloned()
                     .map(|entry| {
                         let selected = selection.contains(&entry.path);
-                        Self::local_row(entry, view.clone(), selected, selected_paths.clone(), cx)
+                        let watched = watched_paths.contains(&entry.path);
+                        Self::local_row(
+                            entry,
+                            view.clone(),
+                            selected,
+                            watched,
+                            selected_paths.clone(),
+                            cx,
+                        )
                     })
                     .unwrap_or_else(|| div().into_any_element())
             })
@@ -142,8 +151,23 @@ impl SftpView {
                         vec![path.clone()]
                     }
                 };
-                menu.menu("上传", Box::new(UploadLocalEntry(paths)))
-                    .menu("删除", Box::new(DeleteLocalEntry(path)))
+                let is_watching = menu_view
+                    .read(menu_cx)
+                    .selected_workspace_id
+                    .as_deref()
+                    .is_some_and(|workspace_id| {
+                        menu_view
+                            .read(menu_cx)
+                            .is_local_path_watched(workspace_id, &path)
+                    });
+                let menu = menu
+                    .menu("上传", Box::new(UploadLocalEntry(paths)))
+                    .menu("删除", Box::new(DeleteLocalEntry(path.clone())));
+                if is_watching {
+                    menu.menu("停止监听", Box::new(StopWatchingLocalPath(path)))
+                } else {
+                    menu.menu("监听目录", Box::new(WatchLocalPath(path)))
+                }
             })
     }
 
@@ -151,11 +175,13 @@ impl SftpView {
         entry: LocalEntry,
         view: WeakEntity<SftpView>,
         selected: bool,
+        watched: bool,
         selected_paths: Vec<PathBuf>,
         cx: &mut App,
     ) -> AnyElement {
         let colors = cx.theme();
         let ui_colors = theme::CustomerUiTheme::colors(cx);
+        let watched_background = Self::watched_row_background(cx);
         let path = entry.path.clone();
         let is_directory = entry.is_directory;
         let drag_paths = if selected {
@@ -179,6 +205,7 @@ impl SftpView {
             .border_b_1()
             .border_color(colors.border)
             .hover(|style| style.bg(ui_colors.hover_background))
+            .when(watched, move |this| this.bg(watched_background))
             .when(selected, |this| this.bg(ui_colors.select_background))
             .cursor_pointer()
             .child(Self::entry_name(entry.name, is_directory, cx))
@@ -245,5 +272,15 @@ impl SftpView {
                 });
             })
             .into_any_element()
+    }
+
+    fn watched_row_background(cx: &App) -> Hsla {
+        let mut background = theme::CustomerUiTheme::panel_background(cx);
+        background.l = if background.l >= 0.5 {
+            (background.l - 0.06).clamp(0.08, 0.92)
+        } else {
+            (background.l + 0.06).clamp(0.08, 0.92)
+        };
+        background
     }
 }

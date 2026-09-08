@@ -3,6 +3,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Serialize)]
 pub struct ProfileSummary {
     pub id: String,
+    pub title: String,
     pub host: String,
 }
 
@@ -10,6 +11,8 @@ pub struct ProfileSummary {
 pub struct TerminalSummary {
     pub workspace_id: String,
     pub profile_id: String,
+    pub ip: String,
+    pub title: String,
     pub host: String,
     pub status: String,
     pub selected: bool,
@@ -62,4 +65,15 @@ pub struct SftpTransferInfo {
     pub speed_bytes_per_second: u64,
     pub status: String,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SftpWatchSummary {
+    pub workspace_id: String,
+    pub ip: String,
+    pub title: String,
+    pub local_path: String,
+    pub remote_path: String,
+    pub is_directory: bool,
+    pub debounce_ms: u64,
 }

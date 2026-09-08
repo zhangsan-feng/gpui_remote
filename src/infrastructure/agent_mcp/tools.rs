@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::agent_mcp::{
         AgentMcpClient, ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
-        SftpTransferSummary, TerminalReadPage, TerminalSummary,
+        SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
     },
     domain::session::Protocol,
 };
@@ -28,6 +28,8 @@ impl AgentTerminalMcp {
 #[derive(Deserialize, JsonSchema)]
 struct OpenSessionInput {
     profile_id: String,
+    ip: String,
+    title: String,
     protocol: OpenSessionProtocol,
 }
 
@@ -41,6 +43,8 @@ enum OpenSessionProtocol {
 #[derive(Deserialize, JsonSchema)]
 struct SelectTerminalInput {
     workspace_id: String,
+    ip: String,
+    title: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -58,6 +62,14 @@ struct SftpWorkspaceInput {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct SftpChangeDirectoryInput {
+    workspace_id: String,
+    ip: String,
+    title: String,
+    path: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SftpUploadInput {
     workspace_id: String,
     local_paths: Vec<String>,
@@ -67,6 +79,21 @@ struct SftpUploadInput {
 struct SftpDownloadInput {
     workspace_id: String,
     remote_paths: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SftpWatchPathInput {
+    workspace_id: String,
+    ip: String,
+    title: String,
+    local_path: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SftpWatchListInput {
+    workspace_id: String,
+    ip: String,
+    title: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -90,18 +117,24 @@ struct SendKeyInput {
 #[derive(Serialize, JsonSchema)]
 struct ProfileOutput {
     id: String,
+    title: String,
+    ip: String,
     host: String,
 }
 
 #[derive(Serialize, JsonSchema)]
 struct OpenSessionOutput {
     workspace_id: String,
+    ip: String,
+    title: String,
 }
 
 #[derive(Serialize, JsonSchema)]
 struct TerminalOutput {
     workspace_id: String,
     profile_id: String,
+    ip: String,
+    title: String,
     host: String,
     status: String,
     selected: bool,
@@ -157,13 +190,26 @@ struct SftpTransferInfoOutput {
 }
 
 #[derive(Serialize, JsonSchema)]
+struct SftpWatchOutput {
+    workspace_id: String,
+    ip: String,
+    title: String,
+    local_path: String,
+    remote_path: String,
+    is_directory: bool,
+    debounce_ms: u64,
+}
+
+#[derive(Serialize, JsonSchema)]
 struct ActionOutput {
     success: bool,
 }
 
 #[tool_router(server_handler)]
 impl AgentTerminalMcp {
-    #[tool(description = "List saved connection profiles. Returns only profile id and host.")]
+    #[tool(
+        description = "List saved connection profiles. Returns profile id, title, ip, and host."
+    )]
     async fn list_profiles(&self) -> Result<Json<Vec<ProfileOutput>>, ErrorData> {
         self.client
             .list_profiles()
@@ -173,16 +219,29 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Open a new workspace top_session using a saved profile id and the requested protocol."
+        description = "Open a new workspace top_session using a saved profile id, ip, title, and the requested protocol. The ip and title must match the saved profile."
     )]
     async fn open_session(
         &self,
         Parameters(input): Parameters<OpenSessionInput>,
     ) -> Result<Json<OpenSessionOutput>, ErrorData> {
+        let ip = input.ip.clone();
+        let title = input.title.clone();
         self.client
-            .open_session(input.profile_id, input.protocol.into())
+            .open_session(
+                input.profile_id,
+                input.protocol.into(),
+                input.ip,
+                input.title,
+            )
             .await
-            .map(|workspace_id| Json(OpenSessionOutput { workspace_id }))
+            .map(|workspace_id| {
+                Json(OpenSessionOutput {
+                    workspace_id,
+                    ip,
+                    title,
+                })
+            })
             .map_err(mcp_error)
     }
 
@@ -195,6 +254,20 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
+    #[tool(
+        description = "Change the local directory shown by an open SFTP workspace. The workspace must be selected in the GUI; ip and title must match the SFTP session."
+    )]
+    async fn change_sftp_local_directory(
+        &self,
+        Parameters(input): Parameters<SftpChangeDirectoryInput>,
+    ) -> Result<Json<ActionOutput>, ErrorData> {
+        self.client
+            .change_sftp_local_directory(input.workspace_id, input.ip, input.title, input.path)
+            .await
+            .map(|()| Json(ActionOutput { success: true }))
+            .map_err(mcp_error)
+    }
+
     #[tool(description = "List the current remote directory for an open SFTP workspace.")]
     async fn list_sftp_remote(
         &self,
@@ -204,6 +277,20 @@ impl AgentTerminalMcp {
             .list_sftp_remote(input.workspace_id)
             .await
             .map(|directory| Json(directory.into()))
+            .map_err(mcp_error)
+    }
+
+    #[tool(
+        description = "Change the remote directory shown by an open SFTP workspace. ip and title must match the SFTP session; the directory path is resolved by the remote SFTP server."
+    )]
+    async fn change_sftp_remote_directory(
+        &self,
+        Parameters(input): Parameters<SftpChangeDirectoryInput>,
+    ) -> Result<Json<ActionOutput>, ErrorData> {
+        self.client
+            .change_sftp_remote_directory(input.workspace_id, input.ip, input.title, input.path)
+            .await
+            .map(|()| Json(ActionOutput { success: true }))
             .map_err(mcp_error)
     }
 
@@ -249,6 +336,44 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
+    #[tool(
+        description = "Watch a local SFTP file or directory in the current session. Changes are uploaded after a fixed 2-second debounce; the watch is not persisted."
+    )]
+    async fn watch_sftp_local(
+        &self,
+        Parameters(input): Parameters<SftpWatchPathInput>,
+    ) -> Result<Json<SftpWatchOutput>, ErrorData> {
+        self.client
+            .watch_sftp_local(input.workspace_id, input.ip, input.title, input.local_path)
+            .await
+            .map(|watch| Json(watch.into()))
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "Stop watching a local SFTP file or directory in the current session.")]
+    async fn stop_sftp_local_watch(
+        &self,
+        Parameters(input): Parameters<SftpWatchPathInput>,
+    ) -> Result<Json<ActionOutput>, ErrorData> {
+        self.client
+            .stop_sftp_local_watch(input.workspace_id, input.ip, input.title, input.local_path)
+            .await
+            .map(|()| Json(ActionOutput { success: true }))
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "List local SFTP files and directories watched in the current session.")]
+    async fn list_sftp_local_watches(
+        &self,
+        Parameters(input): Parameters<SftpWatchListInput>,
+    ) -> Result<Json<Vec<SftpWatchOutput>>, ErrorData> {
+        self.client
+            .list_sftp_local_watches(input.workspace_id, input.ip, input.title)
+            .await
+            .map(|watches| Json(watches.into_iter().map(Into::into).collect()))
+            .map_err(mcp_error)
+    }
+
     #[tool(description = "List open terminal sessions and identify the selected top_session.")]
     async fn list_terminals(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.client
@@ -258,13 +383,15 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "Switch the GUI to an open terminal top_session.")]
+    #[tool(
+        description = "Switch the GUI to an open terminal top_session after verifying its ip and title."
+    )]
     async fn select_terminal(
         &self,
         Parameters(input): Parameters<SelectTerminalInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
         self.client
-            .select_terminal(input.workspace_id)
+            .select_terminal(input.workspace_id, input.ip, input.title)
             .await
             .map(|()| Json(ActionOutput { success: true }))
             .map_err(mcp_error)
@@ -330,6 +457,8 @@ impl From<ProfileSummary> for ProfileOutput {
     fn from(profile: ProfileSummary) -> Self {
         Self {
             id: profile.id,
+            title: profile.title,
+            ip: profile.host.clone(),
             host: profile.host,
         }
     }
@@ -340,6 +469,8 @@ impl From<TerminalSummary> for TerminalOutput {
         Self {
             workspace_id: terminal.workspace_id,
             profile_id: terminal.profile_id,
+            ip: terminal.ip,
+            title: terminal.title,
             host: terminal.host,
             status: terminal.status,
             selected: terminal.selected,
@@ -407,6 +538,20 @@ impl From<SftpTransferInfo> for SftpTransferInfoOutput {
             speed_bytes_per_second: transfer.speed_bytes_per_second,
             status: transfer.status,
             error: transfer.error,
+        }
+    }
+}
+
+impl From<SftpWatchSummary> for SftpWatchOutput {
+    fn from(watch: SftpWatchSummary) -> Self {
+        Self {
+            workspace_id: watch.workspace_id,
+            ip: watch.ip,
+            title: watch.title,
+            local_path: watch.local_path,
+            remote_path: watch.remote_path,
+            is_directory: watch.is_directory,
+            debounce_ms: watch.debounce_ms,
         }
     }
 }

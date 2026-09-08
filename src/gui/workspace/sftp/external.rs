@@ -6,9 +6,11 @@ use tokio::sync::Notify;
 use crate::{
     application::agent_mcp::{
         SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo, SftpTransferSummary,
+        SftpWatchSummary,
     },
     domain::{session::Protocol, terminal::TerminalStatus},
     global_state::{GlobalEvent, read_global_state},
+    infrastructure::storage::Storage,
 };
 
 use super::{SftpStatus, SftpView};
@@ -31,6 +33,26 @@ impl SftpView {
             loading: self.local.loading,
             error: self.local.error.clone(),
         }
+    }
+
+    pub(in crate::gui::workspace) fn mcp_change_local_directory(
+        &mut self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        path: String,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        self.validate_sftp_session(&workspace_id, &ip, &title)?;
+        if self.selected_workspace_id.as_deref() != Some(workspace_id.as_str()) {
+            return Err(format!("SFTP 会话未选中: {workspace_id}，请先切换到该会话"));
+        }
+        let path = PathBuf::from(path);
+        if !path.is_dir() {
+            return Err(format!("本地目录不存在: {}", path.display()));
+        }
+        self.load_local_directory(path, cx);
+        Ok(())
     }
 
     pub(in crate::gui::workspace) fn mcp_remote_directory(
@@ -57,6 +79,22 @@ impl SftpView {
             loading: snapshot.loading,
             error: snapshot.error,
         })
+    }
+
+    pub(in crate::gui::workspace) fn mcp_change_remote_directory(
+        &mut self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        path: String,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        self.validate_sftp_session(&workspace_id, &ip, &title)?;
+        self.load_directory_for_workspace(&workspace_id, path)?;
+        if self.selected_workspace_id.as_deref() == Some(workspace_id.as_str()) {
+            cx.notify();
+        }
+        Ok(())
     }
 
     pub(in crate::gui::workspace) fn mcp_upload(
@@ -153,6 +191,63 @@ impl SftpView {
             .collect())
     }
 
+    pub(in crate::gui::workspace) fn mcp_watch_local(
+        &mut self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        local_path: String,
+        cx: &mut Context<Self>,
+    ) -> Result<SftpWatchSummary, String> {
+        self.validate_sftp_session(&workspace_id, &ip, &title)?;
+        self.watch_local_path_for_workspace(&workspace_id, PathBuf::from(local_path), cx)
+    }
+
+    pub(in crate::gui::workspace) fn mcp_stop_watching_local(
+        &mut self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+        local_path: String,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        self.validate_sftp_session(&workspace_id, &ip, &title)?;
+        let result =
+            self.stop_watching_local_path_for_workspace(&workspace_id, &PathBuf::from(local_path));
+        if result.is_ok() {
+            cx.notify();
+        }
+        result
+    }
+
+    pub(in crate::gui::workspace) fn mcp_list_local_watches(
+        &self,
+        workspace_id: &str,
+        ip: &str,
+        title: &str,
+    ) -> Result<Vec<SftpWatchSummary>, String> {
+        self.validate_sftp_session(workspace_id, ip, title)?;
+        self.local_watch_summaries(workspace_id)
+    }
+
+    fn validate_sftp_session(
+        &self,
+        workspace_id: &str,
+        ip: &str,
+        title: &str,
+    ) -> Result<(), String> {
+        let runtime = self
+            .runtimes
+            .get(workspace_id)
+            .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
+        if runtime.profile_ip != ip || runtime.profile_title != title {
+            return Err(format!(
+                "SFTP 会话信息不匹配: {workspace_id}，请确认 ip 和 title"
+            ));
+        }
+        Ok(())
+    }
+
     fn mcp_transfer_infos(&self, transfer_ids: &[u64]) -> Vec<SftpTransferInfo> {
         let transfers = self
             .transfers
@@ -172,7 +267,23 @@ impl SftpView {
                 GlobalEvent::OpenWorkspaceSession(workspace_id, profile)
                     if profile.protocol == Protocol::Sftp =>
                 {
-                    this.connect(workspace_id.clone(), profile.clone());
+                    let initial_remote_path = match cx
+                        .global::<Storage>()
+                        .session
+                        .sftp_state(&profile.id)
+                    {
+                        Ok(state) => state.and_then(|state| state.remote_path),
+                        Err(error) => {
+                            log::warn!("读取 SFTP 远程目录失败，会话 {}: {error:#}", profile.id);
+                            None
+                        }
+                    };
+                    this.connect(
+                        workspace_id.clone(),
+                        profile.clone(),
+                        initial_remote_path,
+                        cx,
+                    );
                 }
                 GlobalEvent::SelectWorkspaceSession(workspace_id) => {
                     if this.selected_workspace_id == *workspace_id {
@@ -180,6 +291,13 @@ impl SftpView {
                     }
                     this.selected_workspace_id = workspace_id.clone();
                     this.remote_list_state.reset_with_uniform_height(0, px(38.));
+                    let sftp_workspace_id = workspace_id
+                        .as_deref()
+                        .map(str::to_owned)
+                        .filter(|workspace_id| this.runtimes.contains_key(workspace_id));
+                    if let Some(workspace_id) = sftp_workspace_id.as_deref() {
+                        this.restore_local_directory(workspace_id, cx);
+                    }
                 }
                 GlobalEvent::CloseWorkspaceSession { workspace_id } => {
                     this.close(workspace_id);

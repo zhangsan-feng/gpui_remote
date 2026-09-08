@@ -3,7 +3,10 @@ mod external;
 mod internal;
 mod ui;
 
-use self::{core::default_desktop_path, ui::MultiSelection};
+use self::{
+    core::{LocalWatch, default_desktop_path},
+    ui::MultiSelection,
+};
 
 use std::{
     collections::{HashMap, HashSet},
@@ -151,6 +154,9 @@ enum SftpCommand {
 }
 
 struct SftpRuntime {
+    profile_id: String,
+    profile_ip: String,
+    profile_title: String,
     model: Arc<SftpModel>,
     commands: mpsc::UnboundedSender<SftpCommand>,
     task: JoinHandle<()>,
@@ -158,6 +164,8 @@ struct SftpRuntime {
 
 pub(in crate::gui::workspace) struct SftpView {
     runtimes: HashMap<String, SftpRuntime>,
+    local_watchers: HashMap<String, HashMap<PathBuf, LocalWatch>>,
+    persisted_remote_paths: HashMap<String, String>,
     selected_workspace_id: Option<String>,
     local: LocalSnapshot,
     local_context_path: Option<PathBuf>,
@@ -254,6 +262,14 @@ struct UploadLocalEntry(Vec<PathBuf>);
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = sftp, no_json)]
+struct WatchLocalPath(PathBuf);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = sftp, no_json)]
+struct StopWatchingLocalPath(PathBuf);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = sftp, no_json)]
 struct DownloadRemoteEntry {
     items: Vec<RemoteTransferItem>,
 }
@@ -321,7 +337,13 @@ impl SftpView {
         cx.spawn(async move |this, cx| {
             loop {
                 model_updates.notified().await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                if this
+                    .update(cx, |this, cx| {
+                        this.persist_remote_directories(cx);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -330,6 +352,8 @@ impl SftpView {
 
         let mut this = Self {
             runtimes: HashMap::new(),
+            local_watchers: HashMap::new(),
+            persisted_remote_paths: HashMap::new(),
             selected_workspace_id: None,
             local: LocalSnapshot {
                 path: default_desktop_path(),
@@ -365,6 +389,7 @@ impl Render for SftpView {
 
 impl Drop for SftpView {
     fn drop(&mut self) {
+        self.stop_all_local_watchers();
         for (_, runtime) in self.runtimes.drain() {
             let _ = runtime.commands.send(SftpCommand::Disconnect);
             runtime.task.abort();

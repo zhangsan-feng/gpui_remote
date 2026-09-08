@@ -1,8 +1,8 @@
 use tokio::sync::oneshot;
 
 use super::{
-    ProfileSummary, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary, TerminalReadPage,
-    TerminalSummary,
+    ProfileSummary, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary, SftpWatchSummary,
+    TerminalReadPage, TerminalSummary,
 };
 
 pub type AgentMcpResult<T> = Result<T, String>;
@@ -18,6 +18,8 @@ pub enum AgentMcpCommand {
 pub enum AgentSshCommand {
     Open {
         profile_id: String,
+        ip: String,
+        title: String,
         reply: oneshot::Sender<AgentMcpResult<String>>,
     },
     ListTerminals {
@@ -25,6 +27,8 @@ pub enum AgentSshCommand {
     },
     SelectTerminal {
         workspace_id: String,
+        ip: String,
+        title: String,
         reply: oneshot::Sender<AgentMcpResult<()>>,
     },
     ReadTerminal {
@@ -51,14 +55,30 @@ pub enum AgentSshCommand {
 pub enum AgentSftpCommand {
     Open {
         profile_id: String,
+        ip: String,
+        title: String,
         reply: oneshot::Sender<AgentMcpResult<String>>,
     },
     ListLocal {
         reply: oneshot::Sender<AgentMcpResult<SftpDirectorySummary>>,
     },
+    ChangeLocalDirectory {
+        workspace_id: String,
+        ip: String,
+        title: String,
+        path: String,
+        reply: oneshot::Sender<AgentMcpResult<()>>,
+    },
     ListRemote {
         workspace_id: String,
         reply: oneshot::Sender<AgentMcpResult<SftpDirectorySummary>>,
+    },
+    ChangeRemoteDirectory {
+        workspace_id: String,
+        ip: String,
+        title: String,
+        path: String,
+        reply: oneshot::Sender<AgentMcpResult<()>>,
     },
     Upload {
         workspace_id: String,
@@ -73,5 +93,25 @@ pub enum AgentSftpCommand {
     ListTransfers {
         workspace_id: String,
         reply: oneshot::Sender<AgentMcpResult<Vec<SftpTransferInfo>>>,
+    },
+    WatchLocal {
+        workspace_id: String,
+        ip: String,
+        title: String,
+        local_path: String,
+        reply: oneshot::Sender<AgentMcpResult<SftpWatchSummary>>,
+    },
+    StopWatchingLocal {
+        workspace_id: String,
+        ip: String,
+        title: String,
+        local_path: String,
+        reply: oneshot::Sender<AgentMcpResult<()>>,
+    },
+    ListLocalWatches {
+        workspace_id: String,
+        ip: String,
+        title: String,
+        reply: oneshot::Sender<AgentMcpResult<Vec<SftpWatchSummary>>>,
     },
 }

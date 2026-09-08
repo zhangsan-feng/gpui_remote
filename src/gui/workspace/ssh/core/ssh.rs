@@ -250,6 +250,13 @@ mod runtime {
         if same_frame(last_frame, &next_frame) {
             return;
         }
+        if last_frame.cursor != next_frame.cursor {
+            // log::debug!(
+            //     "终端光标状态变化: previous={:?}, current={:?}",
+            //     last_frame.cursor,
+            //     next_frame.cursor
+            // );
+        }
         *last_frame = next_frame;
         model.replace(TerminalData {
             frame: last_frame.clone(),
@@ -260,6 +267,7 @@ mod runtime {
 
     fn same_frame(left: &TerminalFrame, right: &TerminalFrame) -> bool {
         left.application_cursor == right.application_cursor
+            && left.cursor == right.cursor
             && left.history_size == right.history_size
             && left.display_offset == right.display_offset
             && left.lines.len() == right.lines.len()

@@ -198,10 +198,20 @@ impl SettingsOperationWindow {
             .child(self.mcp_token_field(cx))
             .child(
                 h_flex().justify_end().pt_2().child(
-                    Button::new("apply-mcp-settings")
-                        .primary()
-                        .label("保存并重启")
-                        .on_click(cx.listener(Self::apply_mcp_settings)),
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("copy-mcp-config")
+                                .outline()
+                                .label("复制 MCP 配置")
+                                .on_click(cx.listener(Self::copy_mcp_config)),
+                        )
+                        .child(
+                            Button::new("apply-mcp-settings")
+                                .primary()
+                                .label("保存并重启")
+                                .on_click(cx.listener(Self::apply_mcp_settings)),
+                        ),
                 ),
             )
             .when_some(self.mcp_error.clone(), |this, error| {
@@ -264,13 +274,6 @@ impl SettingsOperationWindow {
                     .text_color(colors.foreground)
                     .truncate()
                     .child(self.mcp_token.clone()),
-            )
-            .child(
-                Button::new("copy-mcp-token")
-                    .outline()
-                    .small()
-                    .label("复制")
-                    .on_click(cx.listener(Self::copy_mcp_token)),
             )
     }
 

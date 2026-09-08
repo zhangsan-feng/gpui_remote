@@ -35,8 +35,24 @@ pub struct TerminalLine {
 pub struct TerminalFrame {
     pub lines: Arc<Vec<Arc<TerminalLine>>>,
     pub application_cursor: bool,
+    pub cursor: Option<TerminalCursor>,
     pub history_size: usize,
     pub display_offset: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerminalCursorShape {
+    Block,
+    Underline,
+    Beam,
+    HollowBlock,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TerminalCursor {
+    pub row: usize,
+    pub column: usize,
+    pub shape: TerminalCursorShape,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

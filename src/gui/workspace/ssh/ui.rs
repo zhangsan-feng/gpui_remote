@@ -7,7 +7,7 @@ mod terminal_render {
 
     use crate::{
         component::theme,
-        domain::terminal::{TerminalFrame, TerminalLine},
+        domain::terminal::{TerminalCursor, TerminalFrame, TerminalLine},
     };
 
     use super::super::{
@@ -28,6 +28,7 @@ mod terminal_render {
             let colors = theme::CustomerUiTheme::colors(cx);
             let terminal_background = colors.workspace_background;
             let terminal_foreground = colors.workspace_text_color;
+            let terminal_cursor_color = theme::CustomerUiTheme::terminal_cursor_color(cx);
             let selection_background = theme::CustomerUiTheme::terminal_selection_background(cx);
             let selection_foreground = theme::CustomerUiTheme::terminal_selection_foreground(cx);
             let selection = self.selection.clone();
@@ -46,6 +47,7 @@ mod terminal_render {
                     .filter(|selection| selection.workspace_id == workspace_id);
                 let fragments =
                     selected_fragments(&line, buffer_row(&frame, index), active_selection);
+                let cursor = frame.cursor.filter(|cursor| cursor.row == index);
                 let text_bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
                 let text_bounds_writer = text_bounds.clone();
                 let select_bounds = text_bounds.clone();
@@ -98,6 +100,7 @@ mod terminal_render {
                     ))
                     .child(
                         h_flex()
+                            .relative()
                             .h_full()
                             .flex_1()
                             .min_w_0()
@@ -112,7 +115,14 @@ mod terminal_render {
                                 selection_background,
                                 selection_foreground,
                                 terminal_foreground,
-                            )),
+                            ))
+                            .when_some(cursor, |this, cursor| {
+                                this.child(render_terminal_cursor(
+                                    cursor,
+                                    cell_width,
+                                    terminal_cursor_color,
+                                ))
+                            }),
                     )
                     .into_any_element()
             })
@@ -194,6 +204,19 @@ mod terminal_render {
 
     fn has_selection_contrast(foreground: Hsla, background: Hsla) -> bool {
         (foreground.l - background.l).abs() >= 0.35
+    }
+
+    fn render_terminal_cursor(cursor: TerminalCursor, cell_width: Pixels, color: Hsla) -> Div {
+        let left = 8. + f32::from(cell_width) * cursor.column as f32;
+        div()
+            .absolute()
+            .left(px(left))
+            .top(px(2.))
+            .bottom(px(2.))
+            .w(cell_width)
+            .bg(color.opacity(0.88))
+            .border_1()
+            .border_color(color)
     }
 
     fn render_terminal_text(

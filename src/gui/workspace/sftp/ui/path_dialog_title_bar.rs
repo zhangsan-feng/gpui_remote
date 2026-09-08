@@ -1,14 +1,23 @@
 use crate::component::color::rgb_to_u32;
+use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use gpui_kit::component::*;
 
-pub struct WindowCustomTitleBar {}
+pub(super) struct PathDialogTitleBar {
+    title: SharedString,
+}
 
-impl WindowCustomTitleBar {
-    pub fn new(_: &mut Window, _: &mut Context<Self>) -> Self {
-        Self {}
+impl PathDialogTitleBar {
+    pub(super) fn new(
+        title: impl Into<SharedString>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Self {
+        Self {
+            title: title.into(),
+        }
     }
+
     fn render_window_button(
         &self,
         id: &'static str,
@@ -46,7 +55,7 @@ impl WindowCustomTitleBar {
 
     fn render_close_button(&self, cx: &Context<Self>) -> AnyElement {
         div()
-            .id("custom-titlebar-close")
+            .id("sftp-path-dialog-titlebar-close")
             .size(px(34.))
             .flex()
             .items_center()
@@ -67,14 +76,14 @@ impl WindowCustomTitleBar {
 
     fn render_title_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let minimize = self.render_window_button(
-            "custom-titlebar-minimize",
+            "sftp-path-dialog-titlebar-minimize",
             "−",
             WindowControlArea::Min,
             rgb_to_u32(232, 216, 240),
             cx,
         );
         let maximize = self.render_window_button(
-            "custom-titlebar-maximize",
+            "sftp-path-dialog-titlebar-maximize",
             if window.is_maximized() { "❐" } else { "□" },
             WindowControlArea::Max,
             rgb_to_u32(232, 216, 240),
@@ -83,7 +92,7 @@ impl WindowCustomTitleBar {
         let close = self.render_close_button(cx);
 
         h_flex()
-            .id("custom-titlebar")
+            .id("sftp-path-dialog-titlebar")
             .w_full()
             .h(px(38.))
             .flex_shrink_0()
@@ -94,7 +103,7 @@ impl WindowCustomTitleBar {
             .bg(rgb_to_u32(250, 247, 252))
             .child(
                 h_flex()
-                    .id("custom-titlebar-drag")
+                    .id("sftp-path-dialog-titlebar-drag")
                     .h_full()
                     .flex_1()
                     .items_center()
@@ -106,7 +115,7 @@ impl WindowCustomTitleBar {
                             .text_size(px(13.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb_to_u32(73, 66, 92))
-                            .child(""),
+                            .child(self.title.clone()),
                     ),
             )
             .child(
@@ -121,7 +130,7 @@ impl WindowCustomTitleBar {
     }
 }
 
-impl Render for WindowCustomTitleBar {
+impl Render for PathDialogTitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.render_title_bar(window, cx)
     }

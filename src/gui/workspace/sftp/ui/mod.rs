@@ -1,4 +1,5 @@
 mod local;
+mod path_dialog_title_bar;
 mod remote;
 mod select_path_dialog;
 mod selection;
@@ -216,12 +217,20 @@ impl SftpView {
             .child(
                 h_flex()
                     .size_full()
-                    .child(div().gap_2().size_full().overflow_hidden().child(content))
                     .child(
-                        div().h_full().w(px(12.)).child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(content),
+                    )
+                    .child(
+                        div().h_full().w(px(16.)).flex_shrink_0().child(
                             Scrollbar::vertical(&self.transfer_list_state)
                                 .mode(ScrollbarMode::Always)
-                                .axis(ScrollbarAxis::Vertical),
+                                .axis(ScrollbarAxis::Vertical)
+                                .viewport_from_layout(),
                         ),
                     ),
             )

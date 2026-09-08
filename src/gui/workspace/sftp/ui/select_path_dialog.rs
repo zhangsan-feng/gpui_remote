@@ -8,6 +8,7 @@ use gpui_kit::component::{
 use gpui_kit::*;
 
 use super::super::SftpView;
+use super::path_dialog_title_bar::PathDialogTitleBar;
 
 #[derive(Clone, Copy)]
 pub enum PathTarget {
@@ -19,6 +20,7 @@ pub(super) struct PathInputDialog {
     parent: WeakEntity<SftpView>,
     target: PathTarget,
     input: Entity<InputState>,
+    title_bar: Entity<PathDialogTitleBar>,
 }
 
 impl PathInputDialog {
@@ -26,10 +28,12 @@ impl PathInputDialog {
         parent: WeakEntity<SftpView>,
         target: PathTarget,
         path: String,
+        title: impl Into<SharedString>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).default_value(path));
+        let title_bar = cx.new(|cx| PathDialogTitleBar::new(title, window, cx));
         input.update(cx, |input, cx| {
             input.select_all(window, cx);
             input.focus(window, cx);
@@ -38,6 +42,7 @@ impl PathInputDialog {
             parent,
             target,
             input,
+            title_bar,
         }
     }
 
@@ -77,13 +82,14 @@ impl SftpView {
             window_bounds: Some(WindowBounds::centered(window_size, cx)),
             window_min_size: Some(window_size),
             titlebar: Some(TitlebarOptions {
-                title: Some(title.into()),
-                appears_transparent: false,
+                title: None,
+                appears_transparent: true,
                 traffic_light_position: None,
             }),
             kind: WindowKind::Dialog,
             is_resizable: false,
             is_minimizable: false,
+            window_decorations: Some(WindowDecorations::Client),
             ..Default::default()
         };
         let parent = cx.weak_entity();
@@ -92,7 +98,7 @@ impl SftpView {
                 window.remove_window();
                 false
             });
-            let dialog = cx.new(|cx| PathInputDialog::new(parent, target, path, window, cx));
+            let dialog = cx.new(|cx| PathInputDialog::new(parent, target, path, title, window, cx));
             cx.new(|cx| gpui_kit::component::Root::new(dialog, window, cx))
         });
     }
@@ -103,28 +109,33 @@ impl Render for PathInputDialog {
         let colors = cx.theme();
         v_flex()
             .size_full()
-            .gap_4()
-            .p_5()
             .bg(colors.background)
             .text_color(colors.foreground)
-            .child(Input::new(&self.input).small())
+            .child(self.title_bar.clone())
             .child(
-                h_flex()
-                    .justify_end()
-                    .gap_2()
+                v_flex()
+                    .flex_1()
+                    .gap_4()
+                    .p_5()
+                    .child(Input::new(&self.input).small())
                     .child(
-                        Button::new("sftp-path-cancel")
-                            .ghost()
-                            .small()
-                            .label("取消")
-                            .on_click(cx.listener(Self::cancel)),
-                    )
-                    .child(
-                        Button::new("sftp-path-confirm")
-                            .primary()
-                            .small()
-                            .label("确定")
-                            .on_click(cx.listener(Self::confirm)),
+                        h_flex()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                Button::new("sftp-path-cancel")
+                                    .ghost()
+                                    .small()
+                                    .label("取消")
+                                    .on_click(cx.listener(Self::cancel)),
+                            )
+                            .child(
+                                Button::new("sftp-path-confirm")
+                                    .primary()
+                                    .small()
+                                    .label("确定")
+                                    .on_click(cx.listener(Self::confirm)),
+                            ),
                     ),
             )
     }

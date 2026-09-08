@@ -157,8 +157,8 @@ mod core {
     };
 
     use crate::domain::terminal::{
-        TerminalFrame, TerminalHistoryPage, TerminalLine, TerminalSessionCommand, TerminalSpan,
-        TerminalStyle,
+        TerminalCursor, TerminalCursorShape, TerminalFrame, TerminalHistoryPage, TerminalLine,
+        TerminalSessionCommand, TerminalSpan, TerminalStyle,
     };
 
     use super::{
@@ -179,6 +179,14 @@ mod core {
         fn with_event_proxy(event_proxy: TerminalPtyProxy) -> Self {
             let config = Config {
                 scrolling_history: MAX_SCROLLBACK_LINES,
+                default_cursor_style: ansi::CursorStyle {
+                    shape: ansi::CursorShape::Beam,
+                    blinking: false,
+                },
+                vi_mode_cursor_style: Some(ansi::CursorStyle {
+                    shape: ansi::CursorShape::Block,
+                    blinking: false,
+                }),
                 osc52: Osc52::Disabled,
                 ..Default::default()
             };
@@ -258,6 +266,10 @@ mod core {
                 .total_lines()
                 .saturating_sub(screen_lines);
             let display_offset = self.terminal.grid().display_offset();
+            let renderable_cursor = {
+                let renderable = self.terminal.renderable_content();
+                (renderable.cursor.shape, renderable.cursor.point)
+            };
             let damaged_lines = match self.terminal.damage() {
                 TermDamage::Full => None,
                 TermDamage::Partial(lines) => Some(lines.map(|line| line.line).collect::<Vec<_>>()),
@@ -298,6 +310,14 @@ mod core {
             TerminalFrame {
                 lines: Arc::new(lines),
                 application_cursor: self.terminal.mode().contains(TermMode::APP_CURSOR),
+                cursor: terminal_cursor(
+                    renderable_cursor.0,
+                    renderable_cursor.1.line.0,
+                    renderable_cursor.1.column.0,
+                    self.terminal.mode().contains(TermMode::VI),
+                    display_offset,
+                    screen_lines,
+                ),
                 history_size,
                 display_offset,
             }
@@ -355,8 +375,6 @@ mod core {
             }
             let colors = *self.terminal.renderable_content().colors;
             let cursor = grid.cursor.point;
-            let show_cursor =
-                grid.display_offset() == 0 && self.terminal.mode().contains(TermMode::SHOW_CURSOR);
             let wrapped = grid.columns() > 0
                 && grid[Line(row)][Column(grid.columns() - 1)]
                     .flags
@@ -384,8 +402,7 @@ mod core {
                 } else {
                     resolve_color(cell.bg, &colors, false, cell.flags)
                 };
-                let is_cursor = show_cursor && cursor.line.0 == row && cursor.column.0 == column;
-                if cell.flags.contains(Flags::INVERSE) || is_cursor {
+                if cell.flags.contains(Flags::INVERSE) {
                     std::mem::swap(&mut foreground, &mut background);
                 }
                 if cell.flags.contains(Flags::HIDDEN) {
@@ -425,6 +442,34 @@ mod core {
             let index = line_number.checked_sub(self.first_tracked_line_number)? as usize;
             self.line_timestamps.get(index)
         }
+    }
+
+    fn terminal_cursor(
+        shape: ansi::CursorShape,
+        line: i32,
+        column: usize,
+        vi_mode: bool,
+        display_offset: usize,
+        screen_lines: usize,
+    ) -> Option<TerminalCursor> {
+        if shape == ansi::CursorShape::Hidden || (!vi_mode && display_offset != 0) {
+            return None;
+        }
+        let row = usize::try_from(line.saturating_add(display_offset as i32)).ok()?;
+        if row >= screen_lines {
+            return None;
+        }
+        Some(TerminalCursor {
+            row,
+            column,
+            shape: match shape {
+                ansi::CursorShape::Block => TerminalCursorShape::Block,
+                ansi::CursorShape::Underline => TerminalCursorShape::Underline,
+                ansi::CursorShape::Beam => TerminalCursorShape::Beam,
+                ansi::CursorShape::HollowBlock => TerminalCursorShape::HollowBlock,
+                ansi::CursorShape::Hidden => return None,
+            },
+        })
     }
 
     fn trim_default_trailing_spaces(spans: &mut Vec<TerminalSpan>) {

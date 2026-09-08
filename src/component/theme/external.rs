@@ -198,6 +198,16 @@ impl CustomerUiTheme {
         ui::terminal_selection_foreground(cx)
     }
 
+    pub fn terminal_cursor_color(cx: &App) -> Hsla {
+        let colors = ui::build(cx);
+        let accent = cx.theme().primary;
+        if (accent.l - colors.workspace_background.l).abs() >= 0.3 {
+            accent
+        } else {
+            colors.workspace_text_color
+        }
+    }
+
     pub fn window_background_appearance(_: &App) -> WindowBackgroundAppearance {
         WindowBackgroundAppearance::Transparent
     }

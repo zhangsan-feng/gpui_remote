@@ -14,6 +14,11 @@ impl SessionComponent {
         cx.subscribe(&global_events, |this, _, event, cx| {
             match event {
                 GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
+                GlobalEvent::ThemeColorChanged => {
+                    this.refer_item(cx);
+                    cx.notify();
+                    return;
+                }
                 _ => return,
             }
             if let Err(error) = this.reload_session(cx) {

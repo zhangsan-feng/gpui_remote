@@ -7,6 +7,11 @@
 - 已完成旧 Zed GPUI、旧 gpui-component 和 Alacritty Git 依赖清理。
 - 已完成 GPUI、组件库、应用初始化、资源加载和 Action 宏路径迁移。
 - SSH 终端保留默认文本选区、复制和滚动行为；选区边缘自动上下滚动功能暂缓，不纳入当前版本。
+- SSH 终端已支持普通输入光标和 Vim 光标的位置渲染；光标统一显示为跟随主题强调色的高不透明度长方形，并在状态变化时记录调试日志。
+- 左侧会话列表会在主题颜色变化后重新绑定字体颜色，确保会话名称和连接信息跟随当前主题。
+- SFTP 本地、远程和传输列表采用主体可伸缩、16px 滚动条独立列的布局，并让滚动条使用自身列的布局边界，避免挤压或覆盖文件内容。
+- SFTP 路径弹窗改用 Client decorations 与 SFTP 内部私有标题栏，避免使用原生标题栏的窗口句柄生命周期回调。
+- MCP 设置页的复制操作会生成单行的标准 JSON 配置，包含 `/mcp` 地址、Bearer Token 和服务描述，并与“保存并重启”并列显示。
 - 已通过 `cargo fmt -- --check` 与 `cargo check --locked`；按项目约束未新增 GUI 测试。
 
 ## 目录 / 文件职责
@@ -29,5 +34,6 @@
 - `src/gui/workspace/sftp/`：SFTP 列表、文件操作、选择与传输界面。
 - `src/gui/workspace/sftp/core/`：SFTP 本地/远程数据、连接和文件操作核心逻辑。
 - `src/gui/workspace/sftp/ui/`：SFTP 本地/远程列表、选择和路径弹窗渲染。
+- `src/gui/workspace/sftp/ui/path_dialog_title_bar.rs`：SFTP 路径弹窗的私有标题栏和窗口控制。
 - `src/gui/workspace/top_session/`：工作区顶部会话标签及会话切换状态。
 - `src/infrastructure/storage/`：SQLite 会话存储、已知主机密钥和持久化基础设施。

@@ -105,15 +105,47 @@ impl SettingsOperationWindow {
         cx.notify();
     }
 
-    pub(super) fn copy_mcp_token(
+    pub(super) fn copy_mcp_config(
         &mut self,
         _: &ClickEvent,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.mcp_token.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(self.mcp_token.clone()));
+        let host = self.mcp_host.read(cx).value().trim().to_owned();
+        let port = self.mcp_port.read(cx).value().trim().parse::<u16>();
+
+        let result = if host.is_empty() {
+            Err("MCP Host 不能为空".to_owned())
+        } else if port.as_ref().is_err() || port == Ok(0) {
+            Err("MCP Port 必须是 1-65535 的数字".to_owned())
+        } else if self.mcp_token.is_empty() {
+            Err("MCP Token 不能为空".to_owned())
+        } else {
+            let port = port.expect("MCP 端口已校验");
+            let config = serde_json::json!({
+                "mcpServers": {
+                    "gpui-remote": {
+                        "url": format!("http://{host}:{port}/mcp"),
+                        "headers": {
+                            "Authorization": format!("Bearer {}", self.mcp_token),
+                        },
+                        "description": "本地 MCP 服务，用于通过 SSH/SFTP 操作远程主机",
+                    },
+                },
+            });
+            serde_json::to_string(&config).map_err(|error| error.to_string())
+        };
+
+        match result {
+            Ok(config) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(config));
+                self.mcp_error = None;
+            }
+            Err(error) => {
+                self.mcp_error = Some(error);
+            }
         }
+        cx.notify();
     }
 
     pub(super) fn apply_mcp_settings(

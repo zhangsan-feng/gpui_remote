@@ -109,12 +109,20 @@ impl SftpView {
                 this.child(self.file_header(cx)).child(
                     h_flex()
                         .size_full()
-                        .child(div().gap_2().size_full().overflow_hidden().child(content))
                         .child(
-                            div().h_full().w(px(12.)).child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .h_full()
+                                .overflow_hidden()
+                                .child(content),
+                        )
+                        .child(
+                            div().h_full().w(px(16.)).flex_shrink_0().child(
                                 Scrollbar::vertical(&self.remote_list_state)
                                     .mode(ScrollbarMode::Always)
-                                    .axis(ScrollbarAxis::Vertical),
+                                    .axis(ScrollbarAxis::Vertical)
+                                    .viewport_from_layout(),
                             ),
                         ),
                 )

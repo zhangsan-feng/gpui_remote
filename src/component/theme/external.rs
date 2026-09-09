@@ -25,12 +25,6 @@ impl CustomerTheme {
     pub fn select(theme: AppTheme, cx: &mut App) {
         let state = cx.global_mut::<CustomerUiThemeState>();
         state.theme = theme;
-        if theme != AppTheme::Custom {
-            state.colors.font = None;
-            state.colors.background = None;
-            state.colors.hover = None;
-            state.colors.selected = None;
-        }
         core::refresh(cx, true);
     }
 
@@ -161,9 +155,7 @@ impl CustomerUiTheme {
     }
 
     pub fn panel_background(cx: &App) -> Hsla {
-        ui::build(cx)
-            .background
-            .opacity(if ui::has_wallpaper(cx) { 0.15 } else { 1. })
+        ui::build(cx).title_bar_background
     }
 
     pub fn border_color(cx: &App) -> Hsla {
@@ -174,7 +166,7 @@ impl CustomerUiTheme {
         if ui::has_wallpaper(cx) {
             Hsla::transparent_black()
         } else {
-            cx.theme().tab_bar
+            ui::build(cx).sidebar_background
         }
     }
 

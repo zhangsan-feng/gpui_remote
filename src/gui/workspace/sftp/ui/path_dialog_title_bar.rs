@@ -1,4 +1,4 @@
-use crate::component::color::rgb_to_u32;
+use crate::component::theme;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -23,17 +23,18 @@ impl PathDialogTitleBar {
         id: &'static str,
         label: &'static str,
         control: WindowControlArea,
-        hover_color: Rgba,
+        hover_color: Hsla,
         cx: &Context<Self>,
     ) -> AnyElement {
+        let colors = theme::CustomerUiTheme::colors(cx);
         div()
             .id(id)
             .size(px(34.))
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgb_to_u32(250, 247, 252))
-            .text_color(rgb_to_u32(91, 82, 108))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
+            .text_color(colors.text_color)
             .hover(|style| style.bg(hover_color))
             .window_control_area(control)
             .when(cfg!(target_os = "linux"), move |this| {
@@ -47,28 +48,29 @@ impl PathDialogTitleBar {
                 div()
                     .text_size(px(14.))
                     .font_weight(FontWeight::NORMAL)
-                    .text_color(rgb_to_u32(73, 66, 92))
+                    .text_color(colors.text_color)
                     .child(label),
             )
             .into_any_element()
     }
 
     fn render_close_button(&self, cx: &Context<Self>) -> AnyElement {
+        let colors = theme::CustomerUiTheme::colors(cx);
         div()
             .id("sftp-path-dialog-titlebar-close")
             .size(px(34.))
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgb_to_u32(250, 247, 252))
-            .text_color(rgb_to_u32(91, 82, 108))
-            .hover(|style| style.bg(rgb_to_u32(244, 202, 215)))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
+            .text_color(colors.text_color)
+            .hover(|style| style.bg(colors.hover_background))
             .on_click(cx.listener(|_, _, window, _| window.remove_window()))
             .child(
                 div()
                     .text_size(px(14.))
                     .font_weight(FontWeight::NORMAL)
-                    .text_color(rgb_to_u32(73, 66, 92))
+                    .text_color(colors.text_color)
                     .child("×"),
             )
             .into_any_element()
@@ -79,14 +81,14 @@ impl PathDialogTitleBar {
             "sftp-path-dialog-titlebar-minimize",
             "−",
             WindowControlArea::Min,
-            rgb_to_u32(232, 216, 240),
+            theme::CustomerUiTheme::colors(cx).hover_background,
             cx,
         );
         let maximize = self.render_window_button(
             "sftp-path-dialog-titlebar-maximize",
             if window.is_maximized() { "❐" } else { "□" },
             WindowControlArea::Max,
-            rgb_to_u32(232, 216, 240),
+            theme::CustomerUiTheme::colors(cx).hover_background,
             cx,
         );
         let close = self.render_close_button(cx);
@@ -99,8 +101,8 @@ impl PathDialogTitleBar {
             .items_center()
             .justify_between()
             .border_b_1()
-            .border_color(rgb_to_u32(231, 220, 235))
-            .bg(rgb_to_u32(250, 247, 252))
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(
                 h_flex()
                     .id("sftp-path-dialog-titlebar-drag")
@@ -114,7 +116,7 @@ impl PathDialogTitleBar {
                             .px_2()
                             .text_size(px(13.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb_to_u32(73, 66, 92))
+                            .text_color(theme::CustomerUiTheme::colors(cx).text_color)
                             .child(self.title.clone()),
                     ),
             )
@@ -123,7 +125,7 @@ impl PathDialogTitleBar {
                     .h_full()
                     .items_center()
                     .border_l_1()
-                    .border_color(rgb_to_u32(231, 220, 235))
+                    .border_color(theme::CustomerUiTheme::border_color(cx))
                     .gap_0()
                     .children(vec![minimize, maximize, close]),
             )

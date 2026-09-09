@@ -14,66 +14,69 @@ const SETTINGS_PATH: &str = "data/theme.json";
 const WALLPAPER_DIRECTORY: &str = "data/background";
 const MIN_SELECTION_LIGHTNESS_CONTRAST: f32 = 0.12;
 const SELECTION_LIGHTNESS_OFFSET: f32 = 0.14;
+const REGION_BACKGROUND_OFFSET: f32 = 0.02;
+const MIN_HOVER_SELECTION_CONTRAST: f32 = 0.08;
+const HOVER_LIGHTNESS_OFFSET: f32 = 0.05;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppTheme {
     #[default]
-    Wisteria,
-    SeaSalt,
-    Moss,
-    WarmSand,
-    MaterialRed,
-    MaterialPink,
-    MaterialDeepOrange,
-    MaterialOrange,
-    MaterialAmber,
-    MaterialBrown,
+    #[serde(
+        alias = "monochrome",
+        alias = "wisteria",
+        alias = "sea_salt",
+        alias = "moss",
+        alias = "warm_sand",
+        alias = "material_red",
+        alias = "material_pink",
+        alias = "material_deep_orange",
+        alias = "material_orange",
+        alias = "material_amber",
+        alias = "material_brown",
+        alias = "peach_cream",
+        alias = "sunset_coral",
+        alias = "pomegranate_tea"
+    )]
+    RoseBerry,
+    DefaultTheme,
+    LightBlue,
+    LightOrange,
+    LightPurple,
+    LightPink,
     Custom,
 }
 
 impl AppTheme {
-    pub const BUILT_IN: [Self; 10] = [
-        Self::Wisteria,
-        Self::SeaSalt,
-        Self::Moss,
-        Self::WarmSand,
-        Self::MaterialRed,
-        Self::MaterialPink,
-        Self::MaterialDeepOrange,
-        Self::MaterialOrange,
-        Self::MaterialAmber,
-        Self::MaterialBrown,
+    pub const BUILT_IN: [Self; 6] = [
+        Self::DefaultTheme,
+        Self::RoseBerry,
+        Self::LightBlue,
+        Self::LightOrange,
+        Self::LightPurple,
+        Self::LightPink,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Wisteria => "默认主题",
-            Self::SeaSalt => "海盐",
-            Self::Moss => "苔藓",
-            Self::WarmSand => "暖沙",
-            Self::MaterialRed => "材质红",
-            Self::MaterialPink => "材质粉",
-            Self::MaterialDeepOrange => "材质深橙",
-            Self::MaterialOrange => "材质橙",
-            Self::MaterialAmber => "材质琥珀",
-            Self::MaterialBrown => "材质棕",
+            Self::RoseBerry => "粉玫红",
+            Self::DefaultTheme => "默认",
+            Self::LightBlue => "浅蓝色",
+            Self::LightOrange => "浅橙色",
+            Self::LightPurple => "浅紫色",
+            Self::LightPink => "浅粉色",
             Self::Custom => "自定义配色",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Wisteria => "白色应用主题，柔和的浅色工作区。",
-            Self::SeaSalt => "清爽的海蓝色交互配色。",
-            Self::Moss => "柔和的绿色交互配色。",
-            Self::WarmSand => "温暖的沙黄色交互配色。",
-            Self::MaterialRed => "高对比的材质红色。",
-            Self::MaterialPink => "轻快的材质粉色。",
-            Self::MaterialDeepOrange => "饱和的深橙色。",
-            Self::MaterialOrange => "明亮的材质橙色。",
-            Self::MaterialAmber => "温暖的琥珀色。",
-            Self::MaterialBrown => "稳重的材质棕色。",
+            Self::RoseBerry => "保留的粉玫红主题。",
+            Self::DefaultTheme => "黑白、浅灰、深灰的默认主题。",
+            Self::LightBlue => "使用图片色阶生成的浅蓝色主题。",
+            Self::LightOrange => "使用图片色阶生成的浅橙色主题。",
+            Self::LightPurple => "使用图片色阶生成的浅紫色主题。",
+            Self::LightPink => "使用图片色阶生成的浅粉色主题。",
             Self::Custom => "自定义主色并自动派生界面颜色。",
         }
     }

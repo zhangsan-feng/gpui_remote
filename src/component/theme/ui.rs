@@ -5,9 +5,7 @@ use gpui_kit::{App, Hsla};
 
 use crate::component::color::rgb_to_u32;
 
-use super::{
-    AppTheme, CustomerUiThemeState, MIN_SELECTION_LIGHTNESS_CONTRAST, SELECTION_LIGHTNESS_OFFSET,
-};
+use super::{CustomerUiThemeState, MIN_SELECTION_LIGHTNESS_CONTRAST, SELECTION_LIGHTNESS_OFFSET};
 
 #[derive(Clone)]
 pub struct GuiColor {
@@ -29,26 +27,14 @@ pub(super) fn build(cx: &App) -> GuiColor {
     let state = cx.global::<CustomerUiThemeState>();
     let theme = cx.theme();
     let wallpaper = has_wallpaper(cx);
-    let workspace_base = if state.theme == AppTheme::Wisteria {
-        rgb_to_u32(248, 247, 250).into()
-    } else {
-        theme.background
-    };
+    let workspace_base = theme.background;
     let workspace_background = if wallpaper {
         Hsla::transparent_black()
     } else {
         workspace_base
     };
-    let workspace_text_color = state
-        .colors
-        .font
-        .unwrap_or_else(|| default_foreground(workspace_base.l < 0.5));
-    let workspace_select_color =
-        if state.theme == AppTheme::Wisteria && state.colors.selected.is_none() {
-            rgb_to_u32(224, 224, 224).into()
-        } else {
-            theme.selection
-        };
+    let workspace_text_color = state.colors.font.unwrap_or(theme.foreground);
+    let workspace_select_color = theme.selection;
 
     GuiColor {
         background: theme.background,
@@ -102,7 +88,7 @@ pub(super) fn default_foreground(dark: bool) -> Hsla {
     if dark {
         rgb_to_u32(245, 243, 242).into()
     } else {
-        rgb_to_u32(0, 0, 0).into()
+        rgb_to_u32(17, 17, 17).into()
     }
 }
 

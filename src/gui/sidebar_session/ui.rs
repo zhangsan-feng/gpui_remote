@@ -68,14 +68,17 @@ impl SessionComponent {
     }
 
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
-        let colors = theme::CustomerUiTheme::colors(cx);
         let mut list = DraggableList::new();
         let session = cx.weak_entity();
 
         list.set_item_height(px(58.))
             .set_item_bg(Hsla::transparent_black().into())
-            .set_item_selected_bg(colors.select_background.into())
-            .set_item_hover_bg(colors.hover_background.into())
+            .set_item_selected_bg_provider(|cx| {
+                theme::CustomerUiTheme::colors(cx).select_background.into()
+            })
+            .set_item_hover_bg_provider(|cx| {
+                theme::CustomerUiTheme::colors(cx).hover_background.into()
+            })
             .set_context_menu(
                 |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();

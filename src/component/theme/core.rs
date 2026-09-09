@@ -12,8 +12,9 @@ use crate::{
 };
 
 use super::{
-    AppTheme, ColorOverrides, CustomerUiThemeState, SETTINGS_PATH, StoredColors, ThemePreview,
-    ThemeSettings, VisualSettings,
+    AppTheme, ColorOverrides, CustomerUiThemeState, HOVER_LIGHTNESS_OFFSET,
+    MIN_HOVER_SELECTION_CONTRAST, REGION_BACKGROUND_OFFSET, SETTINGS_PATH, StoredColors,
+    ThemePreview, ThemeSettings, VisualSettings,
 };
 
 #[derive(Clone, Copy)]
@@ -23,86 +24,73 @@ pub(super) struct ThemePalette {
     pub(super) accent_dark: Rgba,
     pub(super) soft: Rgba,
     pub(super) background: Rgba,
-    pub(super) surface: Rgba,
-    pub(super) sidebar: Rgba,
     pub(super) border: Rgba,
+    pub(super) foreground: Rgba,
+    pub(super) muted_foreground: Rgba,
 }
 
 impl AppTheme {
     pub(super) fn palette(self) -> ThemePalette {
         match self {
-            Self::Wisteria => material_light_palette(),
-            Self::SeaSalt => material_palette(
-                (3, 169, 244),
-                (41, 182, 246),
-                (2, 136, 209),
-                (225, 245, 254),
-                (179, 229, 252),
-                (129, 212, 250),
+            Self::RoseBerry => palette_from_tokens(
+                (255, 58, 131),
+                (251, 133, 177),
+                (219, 0, 81),
+                (255, 204, 223),
+                (255, 204, 223),
+                (255, 135, 180),
+                (138, 0, 51),
+                (219, 0, 81),
             ),
-            Self::Moss => material_palette(
-                (76, 175, 80),
-                (102, 187, 106),
-                (56, 142, 60),
-                (232, 245, 233),
-                (200, 230, 201),
-                (165, 214, 167),
+            Self::DefaultTheme => palette_from_tokens(
+                (17, 17, 17),
+                (115, 115, 115),
+                (0, 0, 0),
+                (229, 229, 229),
+                (255, 255, 255),
+                (163, 163, 163),
+                (17, 17, 17),
+                (115, 115, 115),
             ),
-            Self::WarmSand => material_palette(
-                (255, 193, 7),
-                (255, 202, 40),
-                (255, 160, 0),
-                (255, 248, 225),
-                (255, 236, 179),
-                (255, 224, 130),
+            Self::LightBlue => palette_from_tokens(
+                (117, 179, 255),
+                (169, 207, 252),
+                (5, 118, 255),
+                (214, 231, 252),
+                (214, 231, 252),
+                (169, 207, 252),
+                (0, 74, 164),
+                (5, 118, 255),
             ),
-            Self::MaterialRed => material_palette(
-                (244, 67, 54),
-                (239, 83, 80),
-                (211, 47, 47),
-                (255, 235, 238),
-                (255, 205, 210),
-                (239, 154, 154),
+            Self::LightOrange => palette_from_tokens(
+                (255, 205, 117),
+                (252, 222, 169),
+                (255, 164, 5),
+                (252, 238, 214),
+                (252, 238, 214),
+                (252, 222, 169),
+                (164, 104, 0),
+                (255, 164, 5),
             ),
-            Self::MaterialPink => material_palette(
-                (233, 30, 99),
-                (236, 64, 122),
-                (194, 24, 91),
-                (252, 228, 236),
-                (248, 187, 208),
-                (244, 143, 177),
+            Self::LightPurple => palette_from_tokens(
+                (255, 54, 243),
+                (251, 130, 244),
+                (216, 0, 203),
+                (250, 195, 247),
+                (250, 195, 247),
+                (251, 130, 244),
+                (136, 0, 128),
+                (216, 0, 203),
             ),
-            Self::MaterialDeepOrange => material_palette(
-                (255, 87, 34),
-                (255, 112, 67),
-                (230, 74, 25),
-                (251, 233, 231),
-                (255, 204, 188),
-                (255, 171, 145),
-            ),
-            Self::MaterialOrange => material_palette(
-                (255, 152, 0),
-                (255, 167, 38),
-                (245, 124, 0),
-                (255, 243, 224),
-                (255, 224, 178),
-                (255, 204, 128),
-            ),
-            Self::MaterialAmber => material_palette(
-                (255, 193, 7),
-                (255, 202, 40),
-                (255, 160, 0),
-                (255, 248, 225),
-                (255, 236, 179),
-                (255, 224, 130),
-            ),
-            Self::MaterialBrown => material_palette(
-                (121, 85, 72),
-                (141, 110, 99),
-                (93, 64, 55),
-                (239, 235, 233),
-                (215, 204, 200),
-                (188, 170, 164),
+            Self::LightPink => palette_from_tokens(
+                (255, 64, 201),
+                (251, 136, 219),
+                (223, 0, 160),
+                (251, 198, 236),
+                (251, 198, 236),
+                (251, 136, 219),
+                (140, 0, 101),
+                (223, 0, 160),
             ),
             Self::Custom => unreachable!("自定义主题需要使用自定义调色板"),
         }
@@ -136,15 +124,17 @@ pub(super) fn preview(theme: AppTheme) -> ThemePreview {
     } else {
         theme.palette()
     };
+    let accent: Hsla = palette.accent.into();
+    let background: Hsla = palette.background.into();
     ThemePreview {
-        accent: palette.accent.into(),
-        background: palette.background.into(),
-        hover: palette.soft.into(),
+        accent,
+        background,
+        hover: derive_hover(palette.soft.into(), derive_selected(background, accent)),
     }
 }
 
 pub(super) fn apply_theme(cx: &mut App) {
-    let (palette, colors) = {
+    let (app_theme, palette, colors) = {
         let state = cx.global::<CustomerUiThemeState>();
         let palette = if state.theme == AppTheme::Custom {
             custom_palette(state.colors.accent)
@@ -162,7 +152,7 @@ pub(super) fn apply_theme(cx: &mut App) {
                 selected: state.colors.selected,
             }
         };
-        (palette, colors)
+        (state.theme, palette, colors)
     };
 
     let accent: Hsla = palette.accent.into();
@@ -172,24 +162,33 @@ pub(super) fn apply_theme(cx: &mut App) {
     let background = colors
         .background
         .unwrap_or_else(|| palette.background.into());
-    let surface = colors
-        .background
-        .map(derive_surface)
-        .unwrap_or_else(|| palette.surface.into());
-    let sidebar = colors
-        .background
-        .map(derive_sidebar)
-        .unwrap_or_else(|| palette.sidebar.into());
+    let surface = derive_surface(background);
+    let sidebar = derive_sidebar(background);
     let border = colors
         .background
         .map(derive_border)
         .unwrap_or_else(|| palette.border.into());
     let dark = background.l < 0.5;
-    let foreground = colors.font.unwrap_or_else(|| default_foreground(dark));
-    let hover = colors.hover.unwrap_or(soft);
+    let foreground = colors.font.unwrap_or_else(|| {
+        if app_theme == AppTheme::Custom || colors.background.is_some() {
+            default_foreground(dark)
+        } else {
+            palette.foreground.into()
+        }
+    });
+    let muted_foreground_color =
+        if app_theme == AppTheme::Custom || colors.font.is_some() || colors.background.is_some() {
+            muted_foreground(dark)
+        } else {
+            palette.muted_foreground.into()
+        };
     let selected = colors
         .selected
         .unwrap_or_else(|| derive_selected(background, accent));
+    let hover = colors.hover.unwrap_or_else(|| derive_hover(soft, selected));
+    let primary_hover = with_alpha(accent_light, 0.9);
+    let primary_active = with_alpha(accent_dark, 0.92);
+    let primary_foreground = default_foreground(accent.l < 0.5);
 
     let theme = Theme::global_mut(cx);
     theme.mode = if dark {
@@ -199,7 +198,7 @@ pub(super) fn apply_theme(cx: &mut App) {
     };
     theme.background = background;
     theme.foreground = foreground;
-    theme.muted_foreground = muted_foreground(dark);
+    theme.muted_foreground = muted_foreground_color;
     theme.muted = surface;
     theme.secondary = surface;
     theme.secondary_foreground = foreground;
@@ -228,9 +227,21 @@ pub(super) fn apply_theme(cx: &mut App) {
     theme.group_box = surface;
     theme.tiles = background;
     theme.primary = accent;
-    theme.primary_hover = with_alpha(accent_light, 0.9);
-    theme.primary_active = with_alpha(accent_dark, 0.92);
-    theme.primary_foreground = default_foreground(accent.l < 0.5);
+    theme.primary_hover = primary_hover;
+    theme.primary_active = primary_active;
+    theme.primary_foreground = primary_foreground;
+    theme.button = surface;
+    theme.button_hover = hover;
+    theme.button_active = selected;
+    theme.button_foreground = foreground;
+    theme.button_primary = accent;
+    theme.button_primary_hover = primary_hover;
+    theme.button_primary_active = primary_active;
+    theme.button_primary_foreground = primary_foreground;
+    theme.button_secondary = surface;
+    theme.button_secondary_hover = hover;
+    theme.button_secondary_active = selected;
+    theme.button_secondary_foreground = foreground;
     theme.accent = soft;
     theme.accent_foreground = default_foreground(soft.l < 0.5);
     theme.ring = with_alpha(accent, 0.45);
@@ -260,36 +271,25 @@ pub(super) fn refresh(cx: &mut App, reapply_theme: bool) {
     cx.refresh_windows();
 }
 
-fn material_light_palette() -> ThemePalette {
-    ThemePalette {
-        accent: rgb_to_u32(156, 39, 176),
-        accent_light: rgb_to_u32(186, 104, 200),
-        accent_dark: rgb_to_u32(123, 31, 162),
-        soft: rgb_to_u32(243, 229, 245),
-        background: rgb_to_u32(245, 245, 245),
-        surface: rgb_to_u32(250, 245, 251),
-        sidebar: rgb_to_u32(255, 255, 255),
-        border: rgb_to_u32(206, 147, 216),
-    }
-}
-
-fn material_palette(
+fn palette_from_tokens(
     accent: (u8, u8, u8),
     accent_light: (u8, u8, u8),
     accent_dark: (u8, u8, u8),
     soft: (u8, u8, u8),
-    surface: (u8, u8, u8),
+    background: (u8, u8, u8),
     border: (u8, u8, u8),
+    foreground: (u8, u8, u8),
+    muted_foreground: (u8, u8, u8),
 ) -> ThemePalette {
     ThemePalette {
         accent: rgb_to_u32(accent.0, accent.1, accent.2),
         accent_light: rgb_to_u32(accent_light.0, accent_light.1, accent_light.2),
         accent_dark: rgb_to_u32(accent_dark.0, accent_dark.1, accent_dark.2),
         soft: rgb_to_u32(soft.0, soft.1, soft.2),
-        background: rgb_to_u32(soft.0, soft.1, soft.2),
-        surface: rgb_to_u32(surface.0, surface.1, surface.2),
-        sidebar: rgb_to_u32(soft.0, soft.1, soft.2),
+        background: rgb_to_u32(background.0, background.1, background.2),
         border: rgb_to_u32(border.0, border.1, border.2),
+        foreground: rgb_to_u32(foreground.0, foreground.1, foreground.2),
+        muted_foreground: rgb_to_u32(muted_foreground.0, muted_foreground.1, muted_foreground.2),
     }
 }
 
@@ -305,9 +305,9 @@ fn custom_palette(accent: Hsla) -> ThemePalette {
         accent_dark: accent_dark.into(),
         soft: soft.into(),
         background: background.into(),
-        surface: derive_surface(background).into(),
-        sidebar: derive_sidebar(background).into(),
         border: derive_border(background).into(),
+        foreground: default_foreground(dark).into(),
+        muted_foreground: muted_foreground(dark).into(),
     }
 }
 
@@ -315,24 +315,24 @@ pub(super) fn default_foreground(dark: bool) -> Hsla {
     if dark {
         rgb_to_u32(245, 243, 242).into()
     } else {
-        rgb_to_u32(0, 0, 0).into()
+        rgb_to_u32(17, 17, 17).into()
     }
 }
 
 fn derive_surface(background: Hsla) -> Hsla {
-    shift_background(
-        background,
-        if background.l < 0.5 { 0.035 } else { -0.025 },
-        0.82,
-    )
+    shift_background(background, region_lightness_offset(background), 0.96)
 }
 
 fn derive_sidebar(background: Hsla) -> Hsla {
-    shift_background(
-        background,
-        if background.l < 0.5 { 0.065 } else { -0.045 },
-        0.68,
-    )
+    shift_background(background, region_lightness_offset(background), 0.88)
+}
+
+fn region_lightness_offset(background: Hsla) -> f32 {
+    if background.l < 0.5 {
+        REGION_BACKGROUND_OFFSET
+    } else {
+        -REGION_BACKGROUND_OFFSET
+    }
 }
 
 fn derive_border(background: Hsla) -> Hsla {
@@ -357,6 +357,14 @@ fn derive_selected(background: Hsla, accent: Hsla) -> Hsla {
     }
 }
 
+fn derive_hover(soft: Hsla, selected: Hsla) -> Hsla {
+    let mut hover = shift_background(soft, -HOVER_LIGHTNESS_OFFSET, 0.92);
+    if (hover.l - selected.l).abs() < MIN_HOVER_SELECTION_CONTRAST {
+        hover.l = (selected.l - MIN_HOVER_SELECTION_CONTRAST).clamp(0.02, 0.98);
+    }
+    hover
+}
+
 fn shift_background(mut color: Hsla, lightness_delta: f32, saturation_scale: f32) -> Hsla {
     color.l = (color.l + lightness_delta).clamp(0.02, 0.98);
     color.s = (color.s * saturation_scale).clamp(0., 1.);
@@ -368,7 +376,7 @@ fn muted_foreground(dark: bool) -> Hsla {
     if dark {
         rgb_to_u32(184, 176, 172).into()
     } else {
-        rgb_to_u32(107, 99, 120).into()
+        rgb_to_u32(139, 109, 104).into()
     }
 }
 
@@ -428,7 +436,7 @@ fn parse_color(value: &str) -> Option<Hsla> {
 }
 
 pub(super) fn default_accent() -> String {
-    "#212121".to_owned()
+    "#FF3A83".to_owned()
 }
 
 fn default_custom_color() -> Hsla {

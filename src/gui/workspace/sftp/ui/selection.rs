@@ -53,7 +53,7 @@ impl SftpView {
     ) {
         let was_dragging = self.drag_started;
         self.drag_started = false;
-        if selected && !additive && !was_dragging {
+        if selected && !additive && !was_dragging && self.local_selection.contains(&path) {
             self.select_local_path(path, false, cx);
         }
     }
@@ -67,7 +67,7 @@ impl SftpView {
     ) {
         let was_dragging = self.drag_started;
         self.drag_started = false;
-        if selected && !additive && !was_dragging {
+        if selected && !additive && !was_dragging && self.remote_selection.contains(&path) {
             self.select_remote_path(path, false, cx);
         }
     }

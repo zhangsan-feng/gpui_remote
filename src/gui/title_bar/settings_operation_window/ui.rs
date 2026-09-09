@@ -302,7 +302,9 @@ impl SettingsOperationWindow {
     fn custom_color_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = cx.theme();
         let selected = theme::CustomerTheme::active(cx) == AppTheme::Custom;
-        let featured_colors = vec![theme::CustomerTheme::preview(AppTheme::Wisteria).accent];
+        let featured_colors = AppTheme::BUILT_IN
+            .map(|theme| theme::CustomerTheme::preview(theme).accent)
+            .to_vec();
 
         h_flex()
             .p_4()
@@ -463,9 +465,9 @@ impl SettingsOperationWindow {
             .bg(if selected {
                 colors.select_background
             } else {
-                theme::CustomerUiTheme::panel_background(cx)
+                preview.background
             })
-            .hover(|style| style.bg(colors.hover_background))
+            .hover(|style| style.bg(preview.hover))
             .cursor_pointer()
             .when(selected, |this| {
                 this.child(

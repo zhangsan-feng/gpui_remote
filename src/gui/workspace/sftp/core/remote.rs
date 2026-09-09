@@ -8,7 +8,8 @@ use russh::{Disconnect, client};
 use russh_sftp::client::SftpSession;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
+    task::JoinSet,
 };
 
 use crate::{
@@ -75,9 +76,11 @@ pub(super) async fn run_sftp(
         .request_subsystem(true, "sftp")
         .await
         .context("启动远程 SFTP 子系统失败")?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .context("初始化 SFTP 协议失败")?;
+    let sftp = Arc::new(
+        SftpSession::new(channel.into_stream())
+            .await
+            .context("初始化 SFTP 协议失败")?,
+    );
 
     let initial_path = if let Some(path) = initial_remote_path.as_deref() {
         match sftp.canonicalize(path).await {
@@ -97,124 +100,122 @@ pub(super) async fn run_sftp(
     let entries = read_directory(&sftp, &initial_path).await?;
     model.set_connected(initial_path, entries);
 
-    while let Some(command) = commands.recv().await {
-        match command {
-            SftpCommand::LoadDirectory(path) => {
-                let result = async {
-                    let path = sftp.canonicalize(path).await.context("解析远程目录失败")?;
-                    let entries = read_directory(&sftp, &path).await?;
-                    Ok::<_, anyhow::Error>((path, entries))
-                }
-                .await;
-                match result {
-                    Ok((path, entries)) => model.set_directory(path, entries),
-                    Err(error) => model.set_error(format!("{error:#}")),
-                }
-            }
-            SftpCommand::Upload {
-                transfer_id,
-                local_path,
-                remote_path,
-                refresh_path,
-            } => {
-                if model.is_cancelled(transfer_id) {
-                    model.update_transfer(transfer_id, 0., 0, 0, "已取消");
-                    continue;
-                }
-                model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
-                let result = upload_path(
-                    &sftp,
-                    &local_path,
-                    &remote_path,
-                    |transferred, total| {
-                        let progress = if total == 0 {
-                            1.
-                        } else {
-                            transferred as f32 / total as f32
-                        };
-                        model.update_transfer(transfer_id, progress, transferred, total, "传输中")
-                    },
-                    || model.is_cancelled(transfer_id),
-                )
-                .await;
-                match result {
-                    Ok(()) => {
-                        if model.is_cancelled(transfer_id) {
-                            model.update_transfer(transfer_id, 0., 0, 0, "已取消");
-                        } else {
-                            model.update_transfer(transfer_id, 1., 0, 0, "已完成");
-                            if model.snapshot().path == refresh_path {
-                                match read_directory(&sftp, &refresh_path).await {
-                                    Ok(entries) => model.set_directory(refresh_path, entries),
-                                    Err(error) => model.set_error(format!("{error:#}")),
-                                }
+    let mut transfer_tasks = JoinSet::new();
+    loop {
+        tokio::select! {
+            command = commands.recv() => {
+                let command = match command {
+                    Some(command) => command,
+                    None => {
+                        transfer_tasks.abort_all();
+                        while let Some(result) = transfer_tasks.join_next().await {
+                            if let Err(error) = result {
+                                log::debug!("SFTP 传输任务结束: {error}");
+                            }
+                        }
+                        break;
+                    }
+                };
+                match command {
+                    SftpCommand::LoadDirectory(path) => {
+                        log::debug!("SFTP 开始读取远程目录: {path}");
+                        let result = async {
+                            let path = sftp.canonicalize(path).await.context("解析远程目录失败")?;
+                            let entries = read_directory(&sftp, &path).await?;
+                            Ok::<_, anyhow::Error>((path, entries))
+                        }
+                        .await;
+                        match result {
+                            Ok((path, entries)) => {
+                                log::debug!("SFTP 远程目录读取完成: {path}");
+                                model.set_directory(path, entries)
+                            }
+                            Err(error) => {
+                                log::warn!("SFTP 读取远程目录失败: {error:#}");
+                                model.set_error(format!("{error:#}"));
                             }
                         }
                     }
-                    Err(error) => {
+                    SftpCommand::Upload {
+                        transfer_id,
+                        local_path,
+                        remote_path,
+                        refresh_path,
+                    } => {
                         if model.is_cancelled(transfer_id) {
                             model.update_transfer(transfer_id, 0., 0, 0, "已取消");
-                        } else {
-                            log::error!("上传文件失败: {error:#}");
-                            model.set_transfer_error(transfer_id, format!("{error:#}"));
+                            continue;
                         }
+                        model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
+                        log::debug!(
+                            "SFTP 上传任务开始: transfer_id={transfer_id}, local={}, remote={remote_path}",
+                            local_path.display()
+                        );
+                        transfer_tasks.spawn(run_upload(
+                            sftp.clone(),
+                            model.clone(),
+                            transfer_id,
+                            local_path,
+                            remote_path,
+                            refresh_path,
+                        ));
+                    }
+                    SftpCommand::Download {
+                        transfer_id,
+                        remote_path,
+                        local_path,
+                        total_size,
+                        is_directory,
+                        complete,
+                    } => {
+                        if model.is_cancelled(transfer_id) {
+                            model.update_transfer(transfer_id, 0., 0, 0, "已取消");
+                            let _ = complete.send(false);
+                            continue;
+                        }
+                        model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
+                        log::debug!(
+                            "SFTP 下载任务开始: transfer_id={transfer_id}, remote={remote_path}, local={}",
+                            local_path.display()
+                        );
+                        transfer_tasks.spawn(run_download(
+                            sftp.clone(),
+                            model.clone(),
+                            transfer_id,
+                            remote_path,
+                            local_path,
+                            total_size,
+                            is_directory,
+                            complete,
+                        ));
+                    }
+                    SftpCommand::Delete {
+                        path,
+                        is_directory,
+                        refresh_path,
+                    } => match delete_remote_path(&sftp, &path, is_directory).await {
+                        Ok(()) => match read_directory(&sftp, &refresh_path).await {
+                            Ok(entries) => model.set_directory(refresh_path, entries),
+                            Err(error) => model.set_error(format!("{error:#}")),
+                        },
+                        Err(error) => model.set_error(format!("{error:#}")),
+                    },
+                    SftpCommand::Disconnect => {
+                        transfer_tasks.abort_all();
+                        while let Some(result) = transfer_tasks.join_next().await {
+                            if let Err(error) = result {
+                                log::debug!("SFTP 传输任务结束: {error}");
+                            }
+                        }
+                        break;
                     }
                 }
             }
-            SftpCommand::Download {
-                transfer_id,
-                remote_path,
-                local_path,
-                total_size,
-                is_directory,
-                complete,
-            } => {
-                if model.is_cancelled(transfer_id) {
-                    model.update_transfer(transfer_id, 0., 0, 0, "已取消");
-                    let _ = complete.send(false);
-                    continue;
+            result = transfer_tasks.join_next(), if !transfer_tasks.is_empty() => {
+                if let Some(Err(error)) = result {
+                    log::warn!("SFTP 传输任务异常结束: {error}");
                 }
-                model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
-                let result = download_path(
-                    &sftp,
-                    &remote_path,
-                    &local_path,
-                    total_size,
-                    is_directory,
-                    |transferred, total| {
-                        let progress = if total == 0 {
-                            1.
-                        } else {
-                            transferred as f32 / total as f32
-                        };
-                        model.update_transfer(transfer_id, progress, transferred, total, "传输中")
-                    },
-                    || model.is_cancelled(transfer_id),
-                )
-                .await;
-                let succeeded = result.is_ok() && !model.is_cancelled(transfer_id);
-                if model.is_cancelled(transfer_id) {
-                    model.update_transfer(transfer_id, 0., 0, 0, "已取消");
-                } else if let Err(error) = result {
-                    log::error!("下载文件失败: {error:#}");
-                    model.set_transfer_error(transfer_id, format!("{error:#}"));
-                } else {
-                    model.update_transfer(transfer_id, 1., 0, 0, "已完成");
-                }
-                let _ = complete.send(succeeded);
             }
-            SftpCommand::Delete {
-                path,
-                is_directory,
-                refresh_path,
-            } => match delete_remote_path(&sftp, &path, is_directory).await {
-                Ok(()) => match read_directory(&sftp, &refresh_path).await {
-                    Ok(entries) => model.set_directory(refresh_path, entries),
-                    Err(error) => model.set_error(format!("{error:#}")),
-                },
-                Err(error) => model.set_error(format!("{error:#}")),
-            },
-            SftpCommand::Disconnect => break,
         }
     }
 
@@ -230,6 +231,95 @@ pub(super) async fn run_sftp(
         true,
     );
     Ok(())
+}
+
+async fn run_upload(
+    sftp: Arc<SftpSession>,
+    model: Arc<SftpModel>,
+    transfer_id: u64,
+    local_path: PathBuf,
+    remote_path: String,
+    refresh_path: String,
+) {
+    let result = upload_path(
+        &sftp,
+        &local_path,
+        &remote_path,
+        |transferred, total| {
+            let progress = if total == 0 {
+                1.
+            } else {
+                transferred as f32 / total as f32
+            };
+            model.update_transfer(transfer_id, progress, transferred, total, "传输中")
+        },
+        || model.is_cancelled(transfer_id),
+    )
+    .await;
+    match result {
+        Ok(()) => {
+            if model.is_cancelled(transfer_id) {
+                model.update_transfer(transfer_id, 0., 0, 0, "已取消");
+            } else {
+                model.update_transfer(transfer_id, 1., 0, 0, "已完成");
+                if model.snapshot().path == refresh_path {
+                    match read_directory(&sftp, &refresh_path).await {
+                        Ok(entries) => model.set_directory(refresh_path, entries),
+                        Err(error) => model.set_error(format!("{error:#}")),
+                    }
+                }
+            }
+        }
+        Err(error) => {
+            if model.is_cancelled(transfer_id) {
+                model.update_transfer(transfer_id, 0., 0, 0, "已取消");
+            } else {
+                log::error!("上传文件失败: {error:#}");
+                model.set_transfer_error(transfer_id, format!("{error:#}"));
+            }
+        }
+    }
+    log::debug!("SFTP 上传任务结束: transfer_id={transfer_id}");
+}
+
+async fn run_download(
+    sftp: Arc<SftpSession>,
+    model: Arc<SftpModel>,
+    transfer_id: u64,
+    remote_path: String,
+    local_path: PathBuf,
+    total_size: u64,
+    is_directory: bool,
+    complete: oneshot::Sender<bool>,
+) {
+    let result = download_path(
+        &sftp,
+        &remote_path,
+        &local_path,
+        total_size,
+        is_directory,
+        |transferred, total| {
+            let progress = if total == 0 {
+                1.
+            } else {
+                transferred as f32 / total as f32
+            };
+            model.update_transfer(transfer_id, progress, transferred, total, "传输中")
+        },
+        || model.is_cancelled(transfer_id),
+    )
+    .await;
+    let succeeded = result.is_ok() && !model.is_cancelled(transfer_id);
+    if model.is_cancelled(transfer_id) {
+        model.update_transfer(transfer_id, 0., 0, 0, "已取消");
+    } else if let Err(error) = result {
+        log::error!("下载文件失败: {error:#}");
+        model.set_transfer_error(transfer_id, format!("{error:#}"));
+    } else {
+        model.update_transfer(transfer_id, 1., 0, 0, "已完成");
+    }
+    let _ = complete.send(succeeded);
+    log::debug!("SFTP 下载任务结束: transfer_id={transfer_id}");
 }
 
 struct LocalTransferEntry {

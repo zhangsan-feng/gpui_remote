@@ -1,6 +1,7 @@
 mod conn;
 mod delete;
 mod local;
+mod local_view;
 mod path;
 mod remote;
 mod watcher;
@@ -47,7 +48,6 @@ impl SftpModel {
     }
 
     fn set_connected(&self, path: String, entries: Vec<super::SftpEntry>) {
-        let path_changed = self.snapshot().path != path;
         self.update(
             move |snapshot| {
                 snapshot.status = SftpStatus::Connected;
@@ -58,9 +58,6 @@ impl SftpModel {
             },
             true,
         );
-        if path_changed {
-            self.directory_updates.notify_one();
-        }
     }
 
     fn set_loading(&self) {
@@ -74,7 +71,6 @@ impl SftpModel {
     }
 
     fn set_directory(&self, path: String, entries: Vec<super::SftpEntry>) {
-        let path_changed = self.snapshot().path != path;
         self.update(
             move |snapshot| {
                 snapshot.path = path;
@@ -84,9 +80,6 @@ impl SftpModel {
             },
             false,
         );
-        if path_changed {
-            self.directory_updates.notify_one();
-        }
     }
 
     fn set_error(&self, error: String) {
@@ -247,184 +240,53 @@ impl SftpModel {
 }
 
 impl SftpView {
-    pub(super) fn load_local_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let save_workspace_id = self.selected_workspace_id.clone();
-        let should_persist_local_path = self.local.path != path;
-        self.local_selection.clear();
-        self.local.path = path.clone();
-        self.local.loading = true;
-        self.local.error = None;
-        self.local_list_state.reset_with_uniform_height(0, px(38.));
-        cx.notify();
-        log::debug!("SFTP 本地目录扫描开始: {}", path.display());
-
-        cx.spawn(async move |this, cx| {
-            let result = tokio::task::spawn_blocking(move || local::read_local_directory(&path))
-                .await
-                .map_err(|error| anyhow::anyhow!("读取本地目录任务失败: {error}"))
-                .and_then(|result| result);
-            let _ = this.update(cx, |this, cx| {
-                if this.selected_workspace_id != save_workspace_id {
-                    return;
-                }
-                this.local.loading = false;
-                match result {
-                    Ok((path, entries)) => {
-                        log::debug!(
-                            "SFTP 本地目录扫描完成: {}, entries={}",
-                            path.display(),
-                            entries.len()
-                        );
-                        this.local.path = path.clone();
-                        this.local.entries = Arc::new(entries);
-                        this.local.error = None;
-                        if should_persist_local_path {
-                            if let Some(workspace_id) = save_workspace_id.as_deref() {
-                                this.persist_local_directory(workspace_id, &path, cx);
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        log::warn!("SFTP 本地目录扫描失败: {error:#}");
-                        this.local.error = Some(format!("{error:#}"));
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub(super) fn restore_local_directory(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+    pub(super) fn persist_remote_directory(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(workspace_id) = self.selected_workspace_id.clone() else {
+            return;
+        };
         let Some(profile_id) = self
             .runtimes
-            .get(workspace_id)
+            .get(&workspace_id)
             .map(|runtime| runtime.profile_id.clone())
         else {
             return;
         };
-        let session = cx.global::<Storage>().session.clone();
-        let workspace_id = workspace_id.to_owned();
-        cx.spawn(async move |this, cx| {
-            let local_path = tokio::task::spawn_blocking(move || {
-                let state = session.sftp_state(&profile_id)?;
-                Ok::<_, anyhow::Error>(
-                    state
-                        .and_then(|state| state.local_path)
-                        .unwrap_or_else(default_desktop_path),
-                )
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("读取 SFTP 本地目录任务失败: {error}"))
-            .and_then(|result| result);
-            let local_path = match local_path {
-                Ok(path) => path,
-                Err(error) => {
-                    log::warn!("读取 SFTP 本地目录失败，会话 {workspace_id}: {error:#}");
-                    tokio::task::spawn_blocking(default_desktop_path)
-                        .await
-                        .unwrap_or_else(|task_error| {
-                            log::warn!("解析默认本地目录任务失败: {task_error}");
-                            PathBuf::from(".")
-                        })
-                }
-            };
-            let _ = this.update(cx, |this, cx| {
-                if this.selected_workspace_id.as_deref() != Some(workspace_id.as_str()) {
-                    return;
-                }
-                this.load_local_directory(local_path, cx);
-            });
-        })
-        .detach();
-    }
-
-    fn persist_local_directory(
-        &self,
-        workspace_id: &str,
-        path: &std::path::Path,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(profile_id) = self
-            .runtimes
-            .get(workspace_id)
-            .map(|runtime| runtime.profile_id.clone())
-        else {
+        if path.is_empty()
+            || self
+                .persisted_remote_paths
+                .get(&workspace_id)
+                .is_some_and(|saved_path| saved_path == path)
+        {
             return;
-        };
+        }
+        self.persisted_remote_paths
+            .insert(workspace_id, path.to_owned());
         let session = cx.global::<Storage>().session.clone();
         let path = path.to_owned();
         let task_profile_id = profile_id.clone();
         log::debug!(
-            "SFTP 本地目录路径变化，准备保存: session={}, path={}",
+            "SFTP 远程目录路径变化，准备保存: session={}, path={}",
             profile_id,
-            path.display()
+            path
         );
         cx.spawn(async move |_this, _cx| {
             let result = tokio::task::spawn_blocking(move || {
-                session.update_sftp_local_path(&task_profile_id, &path)
+                session.update_sftp_remote_path(&task_profile_id, &path)
             })
             .await;
             match result {
                 Ok(Ok(())) => {
-                    log::debug!("SFTP 本地目录保存完成: session={profile_id}");
+                    log::debug!("SFTP 远程目录保存完成: 会话 {profile_id}");
                 }
                 Ok(Err(error)) => {
-                    log::warn!("保存 SFTP 本地目录失败，会话 {profile_id}: {error:#}");
+                    log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error:#}");
                 }
                 Err(error) => {
-                    log::warn!("保存 SFTP 本地目录任务失败，会话 {profile_id}: {error}");
+                    log::warn!("保存 SFTP 远程目录任务失败，会话 {profile_id}: {error}");
                 }
             }
         })
         .detach();
-    }
-
-    pub(super) fn persist_remote_directories(&mut self, cx: &mut Context<Self>) {
-        let directories = self
-            .runtimes
-            .iter()
-            .filter_map(|(workspace_id, runtime)| {
-                let path = runtime.model.snapshot().path;
-                (!path.is_empty()).then(|| (workspace_id.clone(), runtime.profile_id.clone(), path))
-            })
-            .collect::<Vec<_>>();
-        for (workspace_id, profile_id, path) in directories {
-            if self
-                .persisted_remote_paths
-                .get(&workspace_id)
-                .is_some_and(|saved_path| saved_path == &path)
-            {
-                continue;
-            }
-            self.persisted_remote_paths
-                .insert(workspace_id, path.clone());
-            let session = cx.global::<Storage>().session.clone();
-            let task_profile_id = profile_id.clone();
-            log::debug!(
-                "SFTP 远程目录路径变化，准备保存: session={}, path={}",
-                profile_id,
-                path
-            );
-            cx.spawn(async move |_this, _cx| {
-                let result = tokio::task::spawn_blocking(move || {
-                    session.update_sftp_remote_path(&task_profile_id, &path)
-                })
-                .await;
-                match result {
-                    Ok(Ok(())) => {
-                        log::debug!("SFTP 远程目录保存完成: session={profile_id}");
-                    }
-                    Ok(Err(error)) => {
-                        log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error:#}");
-                    }
-                    Err(error) => {
-                        log::warn!("保存 SFTP 远程目录任务失败，会话 {profile_id}: {error}");
-                    }
-                }
-            })
-            .detach();
-        }
     }
 
     pub(super) fn connect(
@@ -443,7 +305,6 @@ impl SftpView {
             transfers: self.transfers.clone(),
             cancelled_transfers: RwLock::new(Default::default()),
             updates: self.updates.clone(),
-            directory_updates: self.directory_updates.clone(),
             status_updates: self.status_updates.clone(),
             transfer_ui_throttle: self.transfer_ui_throttle.clone(),
         });
@@ -469,7 +330,7 @@ impl SftpView {
             self.persisted_remote_paths
                 .insert(workspace_id.clone(), path);
         }
-        let should_restore_local_directory =
+        let should_restore_local_path =
             self.selected_workspace_id.as_deref() == Some(workspace_id.as_str());
         self.runtimes.insert(
             workspace_id.clone(),
@@ -483,13 +344,14 @@ impl SftpView {
             },
         );
         self.updates.notify_one();
-        if should_restore_local_directory {
-            self.restore_local_directory(&workspace_id, cx);
+        if should_restore_local_path {
+            self.restore_local_path(&workspace_id, cx);
         }
     }
 
     pub(super) fn close(&mut self, workspace_id: &str) {
         self.stop_local_watchers_for_workspace(workspace_id);
+        self.local_restore_requests.remove(workspace_id);
         self.persisted_remote_paths.remove(workspace_id);
         if let Some(runtime) = self.runtimes.remove(workspace_id) {
             let _ = runtime.commands.send(SftpCommand::Disconnect);

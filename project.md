@@ -12,6 +12,7 @@
 - `src/gui/`：主界面渲染入口和页面级 UI 组织。
 - `src/gui/sidebar_session/`：会话侧栏、会话输入、连接/编辑/删除操作和交互状态。
 - `src/gui/title_bar/`：标题栏、会话创建、设置入口及相关操作窗口。
+- `src/gui/title_bar/about_dialog/`：标题栏“关于”弹窗及构建时间展示。
 - `src/gui/title_bar/session_operation_window/`：SSH/SFTP 会话表单、输入状态和创建/编辑逻辑。
 - `src/gui/title_bar/settings_operation_window/`：应用设置表单、主题与 MCP 设置界面。
 - `src/gui/workspace/`：会话工作区、标签页、终端和 SFTP 内容布局。
@@ -19,6 +20,7 @@
 - `src/gui/workspace/ssh/core/`：终端缓冲区、PTY、SSH 连接和终端核心数据流。
 - `src/gui/workspace/sftp/`：SFTP 列表、文件操作、选择与传输界面。
 - `src/gui/workspace/sftp/core/`：SFTP 本地/远程数据、连接和文件操作核心逻辑。
+- `src/gui/workspace/sftp/core/local_view.rs`：本地目录扫描、路径恢复与路径持久化。
 - `src/gui/workspace/sftp/core/delete.rs`：本地与远程批量删除编排、目录刷新和错误汇总。
 - `src/gui/workspace/sftp/ui/`：SFTP 本地/远程列表、选择和路径弹窗渲染。
 - `src/gui/workspace/sftp/ui/path_dialog_title_bar.rs`：SFTP 路径弹窗的私有标题栏和窗口控制。
@@ -112,3 +114,11 @@ main
 ```
 
 MCP 服务由 `AgentMcpController` 管理启停和配置；Workspace 持有 GUI 侧 receiver，并在 GPUI 生命周期内消费来自 MCP 的命令。MCP 服务关闭或 Workspace 不可用时，命令通过超时、取消或错误返回结束。
+
+GUi
+    -> data_context -> ApplicationContext -> 数据
+    -> data_context -> InfrastructureContext -> 数据
+Mcp -> data_context -> ApplicationContext -> 数据
+    -> data_context -> InfrastructureContext -> 数据
+
+

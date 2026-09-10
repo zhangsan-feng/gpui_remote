@@ -103,7 +103,13 @@ pub(super) async fn run_sftp(
             .await
             .context("读取 SFTP 初始目录失败")?
     };
+    log::debug!("SFTP 初始远程目录扫描开始: {initial_path}");
     let entries = read_directory(&sftp, &initial_path).await?;
+    log::debug!(
+        "SFTP 初始远程目录扫描完成: {}, entries={}",
+        initial_path,
+        entries.len()
+    );
     model.set_connected(initial_path, entries);
 
     let mut transfer_tasks = JoinSet::new();

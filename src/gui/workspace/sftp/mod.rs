@@ -123,7 +123,6 @@ struct SftpModel {
     transfers: Arc<RwLock<Vec<TransferRecord>>>,
     cancelled_transfers: RwLock<HashSet<u64>>,
     updates: Arc<Notify>,
-    directory_updates: Arc<Notify>,
     status_updates: Arc<Notify>,
     transfer_ui_throttle: Arc<Mutex<Option<Instant>>>,
 }
@@ -163,6 +162,7 @@ struct SftpRuntime {
 pub(in crate::gui::workspace) struct SftpView {
     runtimes: HashMap<String, SftpRuntime>,
     local_watchers: HashMap<String, HashMap<PathBuf, LocalWatch>>,
+    local_restore_requests: HashSet<String>,
     persisted_remote_paths: HashMap<String, String>,
     selected_workspace_id: Option<String>,
     local: LocalSnapshot,
@@ -178,7 +178,6 @@ pub(in crate::gui::workspace) struct SftpView {
     remote_list_state: ListState,
     transfer_list_state: ListState,
     updates: Arc<Notify>,
-    directory_updates: Arc<Notify>,
     status_updates: Arc<Notify>,
     transfer_ui_throttle: Arc<Mutex<Option<Instant>>>,
 }
@@ -331,7 +330,6 @@ impl Render for DragPreviewRemoteToLocalItem {
 impl SftpView {
     pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
         let updates = Arc::new(Notify::new());
-        let directory_updates = Arc::new(Notify::new());
         let status_updates = Arc::new(Notify::new());
         let transfer_ui_throttle = Arc::new(Mutex::new(None));
         let local_list_state =
@@ -351,23 +349,10 @@ impl SftpView {
         })
         .detach();
 
-        let model_directory_updates = directory_updates.clone();
-        cx.spawn(async move |this, cx| {
-            loop {
-                model_directory_updates.notified().await;
-                if this
-                    .update(cx, |this, cx| this.persist_remote_directories(cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
-
         let this = Self {
             runtimes: HashMap::new(),
             local_watchers: HashMap::new(),
+            local_restore_requests: HashSet::new(),
             persisted_remote_paths: HashMap::new(),
             selected_workspace_id: None,
             local: LocalSnapshot {
@@ -388,7 +373,6 @@ impl SftpView {
             remote_list_state,
             transfer_list_state,
             updates,
-            directory_updates,
             status_updates,
             transfer_ui_throttle,
         };

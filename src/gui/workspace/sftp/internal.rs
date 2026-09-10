@@ -15,8 +15,34 @@ impl SftpView {
         cx.notify();
     }
 
+    pub(super) fn save_remote_directory_from_dialog(
+        &mut self,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        let current_path = self.selected_snapshot().map(|snapshot| snapshot.path);
+        let should_persist = should_persist_remote_path(current_path.as_deref(), &path);
+        self.load_directory(path.clone());
+        if should_persist {
+            self.persist_remote_directory(&path, cx);
+        }
+        cx.notify();
+    }
+
     pub(super) fn open_local_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.load_local_directory(path, cx);
+    }
+
+    pub(super) fn save_local_directory_from_dialog(
+        &mut self,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let should_persist = should_persist_local_path(&self.local.path, &path);
+        self.load_local_directory(path.clone(), cx);
+        if should_persist {
+            self.persist_local_path_for_selected_workspace(&path, cx);
+        }
     }
 
     pub(super) fn go_local_parent(
@@ -99,4 +125,38 @@ fn parent_path(path: &str) -> String {
             }
         })
         .unwrap_or_else(|| ".".to_owned())
+}
+
+fn should_persist_local_path(current: &std::path::Path, next: &std::path::Path) -> bool {
+    current != next
+}
+
+fn should_persist_remote_path(current: Option<&str>, next: &str) -> bool {
+    !next.is_empty() && current != Some(next)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{should_persist_local_path, should_persist_remote_path};
+
+    #[test]
+    fn local_path_is_persisted_only_when_dialog_selects_a_different_path() {
+        assert!(should_persist_local_path(
+            Path::new("C:/workspace"),
+            Path::new("C:/workspace/child")
+        ));
+        assert!(!should_persist_local_path(
+            Path::new("C:/workspace"),
+            Path::new("C:/workspace")
+        ));
+    }
+
+    #[test]
+    fn remote_path_is_persisted_only_when_dialog_selects_a_different_path() {
+        assert!(should_persist_remote_path(Some("/home"), "/home/user"));
+        assert!(!should_persist_remote_path(Some("/home"), "/home"));
+        assert!(!should_persist_remote_path(Some("/home"), ""));
+    }
 }

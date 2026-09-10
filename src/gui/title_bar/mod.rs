@@ -1,3 +1,4 @@
+mod about_dialog;
 mod core;
 pub mod session_operation_window;
 mod settings_operation_window;
@@ -66,6 +67,13 @@ impl Render for AppTitleBar {
                                     Box::new(OpenSettings),
                                 )
                             }),
+                    )
+                    .child(
+                        Button::new("about-menu")
+                            .ghost()
+                            .small()
+                            .label("关于")
+                            .on_click(cx.listener(Self::open_about)),
                     ),
             )
             .child(

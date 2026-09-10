@@ -55,8 +55,8 @@ impl PathInputDialog {
 
         let target = self.target;
         let _ = self.parent.update(cx, |view, cx| match target {
-            PathTarget::Local => view.open_local_directory(path.into(), cx),
-            PathTarget::Remote => view.open_directory(path, cx),
+            PathTarget::Local => view.save_local_directory_from_dialog(path.into(), cx),
+            PathTarget::Remote => view.save_remote_directory_from_dialog(path, cx),
         });
         window.remove_window();
     }

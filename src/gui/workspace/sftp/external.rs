@@ -295,6 +295,9 @@ impl SftpView {
                     if this.selected_workspace_id == *workspace_id {
                         return;
                     }
+                    if let Some(previous_workspace_id) = this.selected_workspace_id.as_deref() {
+                        this.local_restore_requests.remove(previous_workspace_id);
+                    }
                     this.selected_workspace_id = workspace_id.clone();
                     this.remote_list_state.reset_with_uniform_height(0, px(38.));
                     let sftp_workspace_id = workspace_id
@@ -302,7 +305,7 @@ impl SftpView {
                         .map(str::to_owned)
                         .filter(|workspace_id| this.runtimes.contains_key(workspace_id));
                     if let Some(workspace_id) = sftp_workspace_id.as_deref() {
-                        this.restore_local_directory(workspace_id, cx);
+                        this.restore_local_path(workspace_id, cx);
                     }
                 }
                 GlobalEvent::CloseWorkspaceSession { workspace_id } => {

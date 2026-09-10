@@ -17,6 +17,7 @@ mod.rs(类型定义,子模块,初始化与 Render 入口, start_subscribe, init_
 core.rs (核心功能) 
 external.rs(给外部用的) 
 mod.rs(类型定义、子模块声明、初始化)
+
 定位问题优先看日志
 
 单个文件行数代码维护在600-800行 超过800行 
@@ -26,9 +27,10 @@ mod.rs(类型定义、子模块声明、初始化)
 服务端 按照ddd的架构设计实现
 服务端 使用 get 和 post 禁止使用其他的rest 规范
 
-## 编写 project.md  
+涉及到io 操作都应该用   cx.spawn  + tokio 
 
-当前未完成的任务
+## 编写 project.md 
+当前未完成的任务 计划怎么做
 项目目录结构
 目录/
     文件名 主要做什么功能

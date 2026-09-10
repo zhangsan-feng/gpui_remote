@@ -120,6 +120,7 @@ struct ProfileOutput {
     title: String,
     ip: String,
     host: String,
+    protocol: String,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -136,6 +137,7 @@ struct TerminalOutput {
     ip: String,
     title: String,
     host: String,
+    protocol: String,
     status: String,
     selected: bool,
 }
@@ -208,7 +210,7 @@ struct ActionOutput {
 #[tool_router(server_handler)]
 impl AgentTerminalMcp {
     #[tool(
-        description = "List saved connection profiles. Returns profile id, title, ip, and host."
+        description = "List saved connection profiles. Returns profile id, title, ip, host, and protocol."
     )]
     async fn list_profiles(&self) -> Result<Json<Vec<ProfileOutput>>, ErrorData> {
         self.client
@@ -242,6 +244,15 @@ impl AgentTerminalMcp {
                     title,
                 })
             })
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "List open SFTP sessions and identify the selected SFTP session.")]
+    async fn list_sftp_sessions(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
+        self.client
+            .list_sftp_sessions()
+            .await
+            .map(|sessions| Json(sessions.into_iter().map(TerminalOutput::from).collect()))
             .map_err(mcp_error)
     }
 
@@ -374,7 +385,9 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "List open terminal sessions and identify the selected top_session.")]
+    #[tool(
+        description = "List open SSH terminal sessions and identify the selected terminal session."
+    )]
     async fn list_terminals(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.client
             .list_terminals()
@@ -460,6 +473,7 @@ impl From<ProfileSummary> for ProfileOutput {
             title: profile.title,
             ip: profile.host.clone(),
             host: profile.host,
+            protocol: profile.protocol,
         }
     }
 }
@@ -472,6 +486,7 @@ impl From<TerminalSummary> for TerminalOutput {
             ip: terminal.ip,
             title: terminal.title,
             host: terminal.host,
+            protocol: terminal.protocol,
             status: terminal.status,
             selected: terminal.selected,
         }

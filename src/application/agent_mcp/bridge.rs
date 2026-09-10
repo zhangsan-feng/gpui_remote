@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tokio::sync::{mpsc, oneshot};
 
 use crate::domain::session::Protocol;
@@ -8,7 +10,8 @@ use super::{
     command::AgentMcpResult,
 };
 
-const CHANNEL_CAPACITY: usize = 64;
+const CHANNEL_CAPACITY: usize = 256;
+const BRIDGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct AgentMcpClient {
@@ -65,6 +68,11 @@ impl AgentMcpClient {
 
     pub async fn list_sftp_local(&self) -> AgentMcpResult<SftpDirectorySummary> {
         self.request(|reply| AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }))
+            .await
+    }
+
+    pub async fn list_sftp_sessions(&self) -> AgentMcpResult<Vec<TerminalSummary>> {
+        self.request(|reply| AgentMcpCommand::Sftp(AgentSftpCommand::ListSessions { reply }))
             .await
     }
 
@@ -296,13 +304,113 @@ impl AgentMcpClient {
         &self,
         command: impl FnOnce(oneshot::Sender<AgentMcpResult<T>>) -> AgentMcpCommand,
     ) -> AgentMcpResult<T> {
+        self.request_with_timeout(command, BRIDGE_REQUEST_TIMEOUT)
+            .await
+    }
+
+    async fn request_with_timeout<T>(
+        &self,
+        command: impl FnOnce(oneshot::Sender<AgentMcpResult<T>>) -> AgentMcpCommand,
+        timeout: Duration,
+    ) -> AgentMcpResult<T> {
         let (reply, response) = oneshot::channel();
-        self.commands
-            .send(command(reply))
+        let queue_capacity = self.commands.capacity();
+        let deadline = tokio::time::Instant::now() + timeout;
+        let command = command(reply);
+        let command_name = command.name();
+
+        if queue_capacity == 0 {
+            log::warn!(
+                "MCP GUI bridge command queue is full; command={command_name}, waiting for capacity"
+            );
+        }
+
+        tokio::time::timeout_at(deadline, self.commands.send(command))
             .await
-            .map_err(|_| "GUI MCP bridge is unavailable".to_owned())?;
+            .map_err(|_| {
+                log::warn!(
+                    "MCP GUI bridge command queue timed out after {:?}; command={command_name}, capacity_before_send={queue_capacity}",
+                    timeout
+                );
+                "GUI MCP command queue timed out".to_owned()
+            })?
+            .map_err(|_| {
+                log::warn!("MCP GUI bridge command rejected: command={command_name}");
+                "GUI MCP bridge is unavailable".to_owned()
+            })?;
+
+        log::debug!(
+            "MCP GUI bridge command dispatched: command={command_name}, capacity_after_send={}",
+            self.commands.capacity()
+        );
+
+        let response = tokio::time::timeout_at(deadline, response)
+            .await
+            .map_err(|_| {
+                log::warn!(
+                    "MCP GUI bridge response timed out after {:?}: command={command_name}",
+                    timeout
+                );
+                "GUI MCP request timed out".to_owned()
+            })?
+            .map_err(|_| "GUI MCP request was cancelled".to_owned())?;
+
+        log::debug!("MCP GUI bridge response received: command={command_name}");
         response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn list_sftp_sessions_routes_to_the_sftp_command() {
+        let (client, mut receiver) = agent_mcp_channel();
+        let request = tokio::spawn(async move { client.list_sftp_sessions().await });
+
+        let command = receiver
+            .recv()
             .await
-            .map_err(|_| "GUI MCP request was cancelled".to_owned())?
+            .expect("SFTP session request expected");
+        match command {
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListSessions { reply }) => {
+                reply
+                    .send(Ok(Vec::new()))
+                    .expect("request should still be waiting");
+            }
+            _ => panic!("expected an SFTP session list command"),
+        }
+
+        assert!(request.await.expect("request task should finish").is_ok());
+    }
+
+    #[test]
+    fn agent_mcp_channel_buffers_256_commands() {
+        let (client, _receiver) = agent_mcp_channel();
+
+        assert_eq!(client.commands.capacity(), 256);
+    }
+
+    #[tokio::test]
+    async fn request_returns_an_error_when_the_command_queue_is_full() {
+        let (client, _receiver) = agent_mcp_channel();
+
+        for _ in 0..CHANNEL_CAPACITY {
+            let (reply, _response) = oneshot::channel();
+            client
+                .commands
+                .try_send(AgentMcpCommand::ListProfiles { reply })
+                .expect("the test queue should have capacity");
+        }
+
+        let result = client
+            .request_with_timeout(
+                |reply| AgentMcpCommand::ListProfiles { reply },
+                std::time::Duration::from_millis(20),
+            )
+            .await;
+
+        assert!(matches!(result, Err(error) if error == "GUI MCP command queue timed out"));
     }
 }

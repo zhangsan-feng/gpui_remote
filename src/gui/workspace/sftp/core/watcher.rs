@@ -62,9 +62,18 @@ impl SftpView {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
-        if let Err(error) = self.watch_local_path_for_workspace(&workspace_id, action.0.clone(), cx)
-        {
-            log::warn!("开启本地自动上传监听失败: {error}");
+        match self.watch_local_path_for_workspace(&workspace_id, action.0.clone(), cx) {
+            Ok(completion) => {
+                cx.spawn(async move |_this, _cx| match completion.await {
+                    Ok(Err(error)) => log::warn!("开启本地自动上传监听失败: {error}"),
+                    Err(_) => log::warn!("开启本地自动上传监听任务已取消"),
+                    Ok(Ok(_)) => {}
+                })
+                .detach();
+            }
+            Err(error) => {
+                log::warn!("开启本地自动上传监听失败: {error}");
+            }
         }
     }
 
@@ -73,7 +82,7 @@ impl SftpView {
         workspace_id: &str,
         local_path: PathBuf,
         cx: &mut Context<Self>,
-    ) -> Result<SftpWatchSummary, String> {
+    ) -> Result<oneshot::Receiver<Result<SftpWatchSummary, String>>, String> {
         let Some(runtime) = self.runtimes.get(workspace_id) else {
             return Err(format!("SFTP 会话不存在: {workspace_id}"));
         };
@@ -84,47 +93,14 @@ impl SftpView {
             return Err("SFTP 尚未进入远程目录".to_owned());
         }
 
-        let Ok(metadata) = fs::metadata(&local_path) else {
-            return Err(format!("监听本地路径不存在: {}", local_path.display()));
-        };
-        let kind = if metadata.is_dir() {
-            LocalWatchKind::Directory
-        } else if metadata.is_file() {
-            LocalWatchKind::File
-        } else {
-            return Err(format!("不支持监听本地路径类型: {}", local_path.display()));
-        };
         let Some(remote_path) = remote_path_for_watch(&local_path, &remote_directory) else {
             return Err(format!(
                 "无法为本地路径生成远程目标: {}",
                 local_path.display()
             ));
         };
-        let watch_root = watch_root(&local_path, kind);
-        let recursive_mode = match kind {
-            LocalWatchKind::File => RecursiveMode::NonRecursive,
-            LocalWatchKind::Directory => RecursiveMode::Recursive,
-        };
         let (event_sender, mut event_receiver) = mpsc::unbounded_channel::<notify::Result<Event>>();
         let (stop_sender, mut stop_receiver) = oneshot::channel();
-        let callback_sender = event_sender.clone();
-        let mut watcher = match RecommendedWatcher::new(
-            move |result| {
-                let _ = callback_sender.send(result);
-            },
-            Config::default(),
-        ) {
-            Ok(watcher) => watcher,
-            Err(error) => {
-                return Err(format!("创建监听器失败: {error:#}"));
-            }
-        };
-        if let Err(error) = watcher.watch(&watch_root, recursive_mode) {
-            return Err(format!("监听路径失败 {}: {error:#}", watch_root.display()));
-        }
-        drop(event_sender);
-
-        self.stop_local_watch_for_workspace(workspace_id, &local_path);
         let local_root = local_path.clone();
         let remote_root = remote_path.clone();
         let task_workspace_id = workspace_id.to_owned();
@@ -132,7 +108,97 @@ impl SftpView {
         let task_remote_root = remote_root.clone();
         let summary_local_path = local_root.display().to_string();
         let summary_remote_path = remote_root.clone();
+        let (completion_sender, completion_receiver) = oneshot::channel();
+        let setup_local_root = local_root.clone();
+        let setup_workspace_id = task_workspace_id.clone();
         cx.spawn(async move |this, cx| {
+            let setup = tokio::task::spawn_blocking(move || {
+                let metadata = fs::metadata(&setup_local_root).map_err(|error| {
+                    format!(
+                        "监听本地路径不存在: {}: {error}",
+                        setup_local_root.display()
+                    )
+                })?;
+                let kind = if metadata.is_dir() {
+                    LocalWatchKind::Directory
+                } else if metadata.is_file() {
+                    LocalWatchKind::File
+                } else {
+                    return Err(format!(
+                        "不支持监听本地路径类型: {}",
+                        setup_local_root.display()
+                    ));
+                };
+                let watch_root = watch_root(&setup_local_root, kind);
+                let recursive_mode = match kind {
+                    LocalWatchKind::File => RecursiveMode::NonRecursive,
+                    LocalWatchKind::Directory => RecursiveMode::Recursive,
+                };
+                let callback_sender = event_sender;
+                let mut watcher = RecommendedWatcher::new(
+                    move |result| {
+                        let _ = callback_sender.send(result);
+                    },
+                    Config::default(),
+                )
+                .map_err(|error| format!("创建监听器失败: {error:#}"))?;
+                watcher
+                    .watch(&watch_root, recursive_mode)
+                    .map_err(|error| format!("监听路径失败 {}: {error:#}", watch_root.display()))?;
+                Ok::<_, String>((watcher, kind))
+            })
+            .await
+            .map_err(|error| format!("创建本地监听任务失败: {error}"))
+            .and_then(|result| result);
+
+            let (watcher, kind) = match setup {
+                Ok(result) => result,
+                Err(error) => {
+                    let _ = completion_sender.send(Err(error));
+                    return;
+                }
+            };
+            let install_result = this.update(cx, |this, cx| {
+                if !this.runtimes.contains_key(&setup_workspace_id) {
+                    return Err(format!("SFTP 会话不存在: {setup_workspace_id}"));
+                }
+                this.stop_local_watch_for_workspace(&setup_workspace_id, &local_root);
+                this.local_watchers
+                    .entry(setup_workspace_id.clone())
+                    .or_default()
+                    .insert(
+                        local_root.clone(),
+                        LocalWatch {
+                            kind,
+                            remote_path: summary_remote_path.clone(),
+                            stop: Some(stop_sender),
+                        },
+                    );
+                cx.notify();
+                Ok(())
+            });
+            match install_result {
+                Ok(Ok(())) => {
+                    let _ = completion_sender.send(Ok(SftpWatchSummary {
+                        workspace_id: task_workspace_id.clone(),
+                        ip: profile_ip,
+                        title: profile_title,
+                        local_path: summary_local_path,
+                        remote_path: summary_remote_path,
+                        is_directory: kind == LocalWatchKind::Directory,
+                        debounce_ms: WATCH_DEBOUNCE.as_millis() as u64,
+                    }));
+                }
+                Ok(Err(error)) => {
+                    let _ = completion_sender.send(Err(error));
+                    return;
+                }
+                Err(_) => {
+                    let _ = completion_sender.send(Err("工作区已关闭".to_owned()));
+                    return;
+                }
+            }
+
             let _watcher = watcher;
             let mut pending_paths = HashSet::new();
             loop {
@@ -182,28 +248,7 @@ impl SftpView {
             }
         })
         .detach();
-
-        self.local_watchers
-            .entry(workspace_id.to_owned())
-            .or_default()
-            .insert(
-                local_path,
-                LocalWatch {
-                    kind,
-                    remote_path: summary_remote_path.clone(),
-                    stop: Some(stop_sender),
-                },
-            );
-        cx.notify();
-        Ok(SftpWatchSummary {
-            workspace_id: workspace_id.to_owned(),
-            ip: profile_ip,
-            title: profile_title,
-            local_path: summary_local_path,
-            remote_path: summary_remote_path,
-            is_directory: kind == LocalWatchKind::Directory,
-            debounce_ms: WATCH_DEBOUNCE.as_millis() as u64,
-        })
+        Ok(completion_receiver)
     }
 
     pub(in crate::gui::workspace::sftp) fn stop_watching_local_path(
@@ -309,9 +354,6 @@ impl SftpView {
                     .iter()
                     .any(|root: &PathBuf| path.starts_with(root))
             {
-                continue;
-            }
-            if !path.exists() {
                 continue;
             }
             let remote_path = match kind {

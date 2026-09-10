@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use anyhow::{Context as _, Result};
 use chrono::Utc;
@@ -10,19 +13,28 @@ use crate::{
     infrastructure::storage::derive::sqlite_drive::SqliteDrive,
 };
 
+#[derive(Clone)]
 pub struct SessionStorageRepository {
-    drive: SqliteDrive,
+    drive: Arc<Mutex<SqliteDrive>>,
 }
 
 impl SessionStorageRepository {
     pub fn new() -> Result<Self> {
+        let drive = SqliteDrive::new()?;
         Ok(Self {
-            drive: SqliteDrive::new()?,
+            drive: Arc::new(Mutex::new(drive)),
         })
     }
 
+    fn lock_drive(&self) -> MutexGuard<'_, SqliteDrive> {
+        self.drive
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     pub fn list(&self) -> Result<Vec<SessionProfile>> {
-        let mut statement = self.drive.connection.prepare(
+        let drive = self.lock_drive();
+        let mut statement = drive.connection.prepare(
             "SELECT id, protocol, name, host, port, username, password,
                     private_key_path, proxy_host, proxy_port, proxy_username,
                     proxy_password, created_at
@@ -35,7 +47,8 @@ impl SessionStorageRepository {
     }
 
     pub fn find(&self, id: &str) -> Result<Option<SessionProfile>> {
-        self.drive
+        let drive = self.lock_drive();
+        drive
             .connection
             .query_row(
                 "SELECT id, protocol, name, host, port, username, password,
@@ -63,7 +76,8 @@ impl SessionStorageRepository {
             created_at: Utc::now().to_rfc3339(),
         };
         let proxy = profile.proxy.as_ref();
-        self.drive.connection.execute(
+        let drive = self.lock_drive();
+        drive.connection.execute(
             "INSERT INTO sessions (
                 id, protocol, name, host, port, username, password,
                 private_key_path, proxy_host, proxy_port, proxy_username,
@@ -89,8 +103,8 @@ impl SessionStorageRepository {
     }
 
     pub fn update(&self, id: &str, draft: NewSession) -> Result<SessionProfile> {
-        let created_at: String = self
-            .drive
+        let drive = self.lock_drive();
+        let created_at: String = drive
             .connection
             .query_row(
                 "SELECT created_at FROM sessions WHERE id = ?1",
@@ -111,7 +125,7 @@ impl SessionStorageRepository {
             created_at,
         };
         let proxy = profile.proxy.as_ref();
-        self.drive.connection.execute(
+        drive.connection.execute(
             "UPDATE sessions SET
                 protocol = ?2, name = ?3, host = ?4, port = ?5,
                 username = ?6, password = ?7, private_key_path = ?8,
@@ -137,7 +151,8 @@ impl SessionStorageRepository {
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
-        self.drive
+        let drive = self.lock_drive();
+        drive
             .connection
             .execute("DELETE FROM sessions WHERE id = ?1", [id])
             .context("delete top_session from SQLite")?;
@@ -145,7 +160,8 @@ impl SessionStorageRepository {
     }
 
     pub fn sftp_state(&self, id: &str) -> Result<Option<SftpSessionState>> {
-        self.drive
+        let drive = self.lock_drive();
+        drive
             .connection
             .query_row(
                 "SELECT sftp_local_path, sftp_remote_path FROM sessions WHERE id = ?1",
@@ -169,7 +185,8 @@ impl SessionStorageRepository {
     }
 
     pub fn update_sftp_local_path(&self, id: &str, path: &Path) -> Result<()> {
-        self.drive
+        let drive = self.lock_drive();
+        drive
             .connection
             .execute(
                 "UPDATE sessions SET sftp_local_path = ?2 WHERE id = ?1",
@@ -180,7 +197,8 @@ impl SessionStorageRepository {
     }
 
     pub fn update_sftp_remote_path(&self, id: &str, path: &str) -> Result<()> {
-        self.drive
+        let drive = self.lock_drive();
+        drive
             .connection
             .execute(
                 "UPDATE sessions SET sftp_remote_path = ?2 WHERE id = ?1",

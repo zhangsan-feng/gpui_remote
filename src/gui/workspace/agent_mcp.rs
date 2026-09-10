@@ -19,11 +19,32 @@ use super::{Workspace, ssh::encode_agent_key};
 
 const DEFAULT_READ_LIMIT: usize = 200;
 const MAX_READ_LIMIT: usize = 2_000;
+const TERMINAL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl Workspace {
     pub(super) fn start_agent_mcp(&self, mut receiver: AgentMcpReceiver, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            while let Some(command) = receiver.recv().await {
+            log::debug!("Agent MCP GUI bridge loop started");
+
+            // This future is polled by GPUI's foreground executor while the app
+            // itself is inside Tokio's runtime. Tokio's bounded mpsc receiver
+            // consumes one cooperative budget unit per message; after 128
+            // messages it yields. GPUI is not a Tokio task, so that yield can
+            // leave the receiver asleep permanently. The bridge is already
+            // bounded by its own request timeout, so opt only this receive
+            // operation out of Tokio's cooperative budget.
+            while let Some(command) = tokio::task::unconstrained(receiver.recv()).await {
+                let command_name = command.name();
+                let started_at = std::time::Instant::now();
+                log::debug!("Agent MCP GUI bridge command received: command={command_name}");
+
+                if command.is_cancelled() {
+                    log::debug!(
+                        "Agent MCP GUI bridge skipped cancelled command: command={command_name}"
+                    );
+                    continue;
+                }
+
                 match command {
                     AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal {
                         workspace_id,
@@ -34,26 +55,61 @@ impl Workspace {
                         let request = this.update(cx, |this, cx| {
                             this.prepare_terminal_read(workspace_id, offset, limit, cx)
                         });
-                        let result = match request {
-                            Ok(Ok((workspace_id, response))) => response
-                                .await
-                                .map(|page| map_terminal_page(workspace_id, page))
-                                .map_err(|_| "终端读取请求已取消".to_owned()),
-                            Ok(Err(error)) => Err(error),
-                            Err(_) => Err("工作区已关闭".to_owned()),
-                        };
-                        let _ = reply.send(result);
+
+                        match request {
+                            Ok(Ok((workspace_id, response))) => {
+                                log::debug!(
+                                    "Agent MCP GUI bridge terminal read started: command={command_name}"
+                                );
+                                cx.spawn(async move |_cx| {
+                                    let result =
+                                        match tokio::time::timeout(TERMINAL_READ_TIMEOUT, response)
+                                            .await
+                                        {
+                                            Ok(response) => response
+                                                .map(|page| map_terminal_page(workspace_id, page))
+                                                .map_err(|_| "终端读取请求已取消".to_owned()),
+                                            Err(_) => {
+                                                log::warn!(
+                                                    "Agent MCP terminal read timed out after {:?}: command={command_name}",
+                                                    TERMINAL_READ_TIMEOUT
+                                                );
+                                                Err("终端读取请求超时".to_owned())
+                                            }
+                                        };
+                                    log::debug!(
+                                        "Agent MCP GUI bridge terminal read finished: command={command_name}, elapsed_ms={}",
+                                        started_at.elapsed().as_millis()
+                                    );
+                                    let _ = reply.send(result);
+                                })
+                                .detach();
+                            }
+                            Ok(Err(error)) => {
+                                let _ = reply.send(Err(error));
+                            }
+                            Err(_) => {
+                                let _ = reply.send(Err("工作区已关闭".to_owned()));
+                            }
+                        }
                     }
                     command => {
                         if this
                             .update(cx, |this, cx| this.handle_agent_command(command, cx))
                             .is_err()
                         {
+                            log::warn!("Agent MCP GUI bridge stopped: workspace is unavailable");
                             break;
                         }
+                        log::debug!(
+                            "Agent MCP GUI bridge command finished: command={command_name}, elapsed_ms={}",
+                            started_at.elapsed().as_millis()
+                        );
                     }
                 }
             }
+
+            log::debug!("Agent MCP GUI bridge loop stopped");
         })
         .detach();
     }
@@ -72,6 +128,7 @@ impl Workspace {
                                 id: profile.id,
                                 title: profile.name,
                                 host: profile.host,
+                                protocol: profile.protocol.as_str().to_owned(),
                             })
                             .collect()
                     })
@@ -95,6 +152,35 @@ impl Workspace {
             }) => {
                 let result = self.open_agent_session(profile_id, Protocol::Sftp, ip, title, cx);
                 let _ = reply.send(result);
+            }
+            AgentMcpCommand::Sftp(AgentSftpCommand::ListSessions { reply }) => {
+                let selected_id = self.workspace.read(cx).selected_id();
+                let sessions = self
+                    .workspace
+                    .read(cx)
+                    .sessions()
+                    .iter()
+                    .filter(|opened| opened.profile.protocol == Protocol::Sftp)
+                    .map(|opened| {
+                        let status = self
+                            .sftp
+                            .read(cx)
+                            .connection_status(&opened.id)
+                            .map(|status| terminal_status_name(&status))
+                            .unwrap_or("connecting");
+                        TerminalSummary {
+                            workspace_id: opened.id.clone(),
+                            profile_id: opened.profile.id.clone(),
+                            ip: opened.profile.host.clone(),
+                            title: opened.profile.name.clone(),
+                            host: opened.profile.host.clone(),
+                            protocol: opened.profile.protocol.as_str().to_owned(),
+                            status: status.to_owned(),
+                            selected: selected_id == Some(opened.id.as_str()),
+                        }
+                    })
+                    .collect();
+                let _ = reply.send(Ok(sessions));
             }
             AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }) => {
                 let result = Ok(self.sftp.read(cx).mcp_local_directory());
@@ -183,7 +269,20 @@ impl Workspace {
                         sftp.mcp_watch_local(workspace_id, ip, title, local_path, cx)
                     })
                     .map_err(|_| "工作区已关闭".to_owned());
-                let _ = reply.send(result);
+                match result {
+                    Ok(completion) => {
+                        cx.spawn(async move |_this, _cx| {
+                            let result = completion.await.unwrap_or_else(|_| {
+                                Err("开启本地自动上传监听任务已取消".to_owned())
+                            });
+                            let _ = reply.send(result);
+                        })
+                        .detach();
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                    }
+                }
             }
             AgentMcpCommand::Sftp(AgentSftpCommand::StopWatchingLocal {
                 workspace_id,
@@ -219,6 +318,7 @@ impl Workspace {
                     .read(cx)
                     .sessions()
                     .iter()
+                    .filter(|opened| opened.profile.protocol == Protocol::Ssh)
                     .map(|opened| {
                         let status = self
                             .terminal
@@ -232,6 +332,7 @@ impl Workspace {
                             ip: opened.profile.host.clone(),
                             title: opened.profile.name.clone(),
                             host: opened.profile.host.clone(),
+                            protocol: opened.profile.protocol.as_str().to_owned(),
                             status: status.to_owned(),
                             selected: selected_id == Some(opened.id.as_str()),
                         }

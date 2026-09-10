@@ -11,7 +11,7 @@ use self::{
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::{Instant, SystemTime},
 };
 
@@ -126,7 +126,9 @@ struct SftpModel {
     transfers: Arc<RwLock<Vec<TransferRecord>>>,
     cancelled_transfers: RwLock<HashSet<u64>>,
     updates: Arc<Notify>,
+    directory_updates: Arc<Notify>,
     status_updates: Arc<Notify>,
+    transfer_ui_throttle: Arc<Mutex<Option<Instant>>>,
 }
 
 enum SftpCommand {
@@ -146,8 +148,7 @@ enum SftpCommand {
         complete: oneshot::Sender<bool>,
     },
     Delete {
-        path: String,
-        is_directory: bool,
+        items: Vec<RemoteDeleteItem>,
         refresh_path: String,
     },
     Disconnect,
@@ -180,7 +181,9 @@ pub(in crate::gui::workspace) struct SftpView {
     remote_list_state: ListState,
     transfer_list_state: ListState,
     updates: Arc<Notify>,
+    directory_updates: Arc<Notify>,
     status_updates: Arc<Notify>,
+    transfer_ui_throttle: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Clone)]
@@ -240,6 +243,12 @@ struct RemoteTransferItem {
     is_directory: bool,
 }
 
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+struct RemoteDeleteItem {
+    path: String,
+    is_directory: bool,
+}
+
 #[derive(Clone)]
 struct DragPreviewRemoteToLocalItem {
     items: Vec<RemoteTransferItem>,
@@ -247,13 +256,12 @@ struct DragPreviewRemoteToLocalItem {
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = sftp, no_json)]
-struct DeleteLocalEntry(PathBuf);
+struct DeleteLocalEntry(Vec<PathBuf>);
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = sftp, no_json)]
 struct DeleteRemoteEntry {
-    path: String,
-    is_directory: bool,
+    items: Vec<RemoteDeleteItem>,
 }
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -326,7 +334,9 @@ impl Render for DragPreviewRemoteToLocalItem {
 impl SftpView {
     pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
         let updates = Arc::new(Notify::new());
+        let directory_updates = Arc::new(Notify::new());
         let status_updates = Arc::new(Notify::new());
+        let transfer_ui_throttle = Arc::new(Mutex::new(None));
         let local_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let remote_list_state =
@@ -337,11 +347,19 @@ impl SftpView {
         cx.spawn(async move |this, cx| {
             loop {
                 model_updates.notified().await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        let model_directory_updates = directory_updates.clone();
+        cx.spawn(async move |this, cx| {
+            loop {
+                model_directory_updates.notified().await;
                 if this
-                    .update(cx, |this, cx| {
-                        this.persist_remote_directories(cx);
-                        cx.notify();
-                    })
+                    .update(cx, |this, cx| this.persist_remote_directories(cx))
                     .is_err()
                 {
                     break;
@@ -350,13 +368,13 @@ impl SftpView {
         })
         .detach();
 
-        let mut this = Self {
+        let this = Self {
             runtimes: HashMap::new(),
             local_watchers: HashMap::new(),
             persisted_remote_paths: HashMap::new(),
             selected_workspace_id: None,
             local: LocalSnapshot {
-                path: default_desktop_path(),
+                path: PathBuf::new(),
                 entries: Arc::new(Vec::new()),
                 loading: true,
                 error: None,
@@ -373,9 +391,22 @@ impl SftpView {
             remote_list_state,
             transfer_list_state,
             updates,
+            directory_updates,
             status_updates,
+            transfer_ui_throttle,
         };
-        this.load_local_directory(this.local.path.clone(), cx);
+        cx.spawn(async move |this, cx| {
+            let path = tokio::task::spawn_blocking(default_desktop_path)
+                .await
+                .unwrap_or_else(|error| {
+                    log::warn!("解析默认本地目录任务失败: {error}");
+                    PathBuf::from(".")
+                });
+            let _ = this.update(cx, |this, cx| {
+                this.load_local_directory(path, cx);
+            });
+        })
+        .detach();
         this.start_subscribe(cx);
         this
     }

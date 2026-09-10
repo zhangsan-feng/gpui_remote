@@ -1,10 +1,11 @@
 mod conn;
+mod delete;
 mod local;
+mod path;
 mod remote;
 mod watcher;
 
 use std::{
-    fs,
     path::PathBuf,
     sync::{Arc, RwLock},
     time::Duration,
@@ -15,12 +16,12 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{domain::session::SessionProfile, infrastructure::storage::Storage};
 
+pub(super) use path::default_desktop_path;
 pub(crate) use watcher::LocalWatch;
 
 use super::{
-    CancelTransfer, DeleteLocalEntry, DeleteRemoteEntry, DownloadRemoteEntry, RetryTransfer,
-    SftpCommand, SftpModel, SftpRuntime, SftpSnapshot, SftpStatus, SftpView, TransferRecord,
-    TransferRequest, UploadLocalEntry,
+    CancelTransfer, DownloadRemoteEntry, RetryTransfer, SftpCommand, SftpModel, SftpRuntime,
+    SftpSnapshot, SftpStatus, SftpView, TransferRecord, TransferRequest, UploadLocalEntry,
 };
 
 impl SftpModel {
@@ -39,15 +40,16 @@ impl SftpModel {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             update(&mut snapshot);
         }
-        self.updates.notify_waiters();
+        self.updates.notify_one();
         if status_changed {
             self.status_updates.notify_waiters();
         }
     }
 
     fn set_connected(&self, path: String, entries: Vec<super::SftpEntry>) {
+        let path_changed = self.snapshot().path != path;
         self.update(
-            |snapshot| {
+            move |snapshot| {
                 snapshot.status = SftpStatus::Connected;
                 snapshot.path = path;
                 snapshot.entries = Arc::new(entries);
@@ -56,6 +58,9 @@ impl SftpModel {
             },
             true,
         );
+        if path_changed {
+            self.directory_updates.notify_one();
+        }
     }
 
     fn set_loading(&self) {
@@ -69,8 +74,9 @@ impl SftpModel {
     }
 
     fn set_directory(&self, path: String, entries: Vec<super::SftpEntry>) {
+        let path_changed = self.snapshot().path != path;
         self.update(
-            |snapshot| {
+            move |snapshot| {
                 snapshot.path = path;
                 snapshot.entries = Arc::new(entries);
                 snapshot.loading = false;
@@ -78,6 +84,9 @@ impl SftpModel {
             },
             false,
         );
+        if path_changed {
+            self.directory_updates.notify_one();
+        }
     }
 
     fn set_error(&self, error: String) {
@@ -110,6 +119,7 @@ impl SftpModel {
         status: impl Into<String>,
     ) {
         let status = status.into();
+        let is_progress = status == "传输中" && transferred > 0;
         let now = std::time::Instant::now();
         let mut transfers = self
             .transfers
@@ -143,7 +153,24 @@ impl SftpModel {
             transfer.status = status;
         }
         drop(transfers);
-        self.updates.notify_waiters();
+
+        let should_notify = if is_progress {
+            let mut last_notify = self
+                .transfer_ui_throttle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let should_notify = last_notify
+                .is_none_or(|updated_at| now.duration_since(updated_at) >= Duration::from_secs(1));
+            if should_notify {
+                *last_notify = Some(now);
+            }
+            should_notify
+        } else {
+            true
+        };
+        if should_notify {
+            self.updates.notify_one();
+        }
     }
 
     pub(super) fn request_cancel(&self, transfer_id: u64) {
@@ -181,7 +208,7 @@ impl SftpModel {
                 transfer.speed = 0;
             }
         }
-        self.updates.notify_waiters();
+        self.updates.notify_one();
     }
 
     pub(super) fn set_transfer_error(&self, transfer_id: u64, error: String) {
@@ -196,19 +223,40 @@ impl SftpModel {
             transfer.error = Some(error);
             transfer.speed = 0;
         }
-        self.updates.notify_waiters();
+        self.updates.notify_one();
+    }
+
+    fn set_upload_directory(&self, transfer_id: u64, is_directory: bool) {
+        if let Some(transfer) = self
+            .transfers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter_mut()
+            .find(|transfer| transfer.id == transfer_id)
+        {
+            if let TransferRequest::Upload {
+                is_directory: current,
+                ..
+            } = &mut transfer.request
+            {
+                *current = is_directory;
+            }
+        }
+        self.updates.notify_one();
     }
 }
 
 impl SftpView {
     pub(super) fn load_local_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let save_workspace_id = self.selected_workspace_id.clone();
+        let should_persist_local_path = self.local.path != path;
         self.local_selection.clear();
         self.local.path = path.clone();
         self.local.loading = true;
         self.local.error = None;
         self.local_list_state.reset_with_uniform_height(0, px(38.));
         cx.notify();
+        log::debug!("SFTP 本地目录扫描开始: {}", path.display());
 
         cx.spawn(async move |this, cx| {
             let result = tokio::task::spawn_blocking(move || local::read_local_directory(&path))
@@ -216,17 +264,28 @@ impl SftpView {
                 .map_err(|error| anyhow::anyhow!("读取本地目录任务失败: {error}"))
                 .and_then(|result| result);
             let _ = this.update(cx, |this, cx| {
+                if this.selected_workspace_id != save_workspace_id {
+                    return;
+                }
                 this.local.loading = false;
                 match result {
                     Ok((path, entries)) => {
+                        log::debug!(
+                            "SFTP 本地目录扫描完成: {}, entries={}",
+                            path.display(),
+                            entries.len()
+                        );
                         this.local.path = path.clone();
                         this.local.entries = Arc::new(entries);
                         this.local.error = None;
-                        if let Some(workspace_id) = save_workspace_id.as_deref() {
-                            this.persist_local_directory(workspace_id, &path, cx);
+                        if should_persist_local_path {
+                            if let Some(workspace_id) = save_workspace_id.as_deref() {
+                                this.persist_local_directory(workspace_id, &path, cx);
+                            }
                         }
                     }
                     Err(error) => {
+                        log::warn!("SFTP 本地目录扫描失败: {error:#}");
                         this.local.error = Some(format!("{error:#}"));
                     }
                 }
@@ -244,15 +303,40 @@ impl SftpView {
         else {
             return;
         };
-        let local_path = match cx.global::<Storage>().session.sftp_state(&profile_id) {
-            Ok(state) => state.and_then(|state| state.local_path),
-            Err(error) => {
-                log::warn!("读取 SFTP 本地目录失败，会话 {profile_id}: {error:#}");
-                None
-            }
-        }
-        .unwrap_or_else(default_desktop_path);
-        self.load_local_directory(local_path, cx);
+        let session = cx.global::<Storage>().session.clone();
+        let workspace_id = workspace_id.to_owned();
+        cx.spawn(async move |this, cx| {
+            let local_path = tokio::task::spawn_blocking(move || {
+                let state = session.sftp_state(&profile_id)?;
+                Ok::<_, anyhow::Error>(
+                    state
+                        .and_then(|state| state.local_path)
+                        .unwrap_or_else(default_desktop_path),
+                )
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("读取 SFTP 本地目录任务失败: {error}"))
+            .and_then(|result| result);
+            let local_path = match local_path {
+                Ok(path) => path,
+                Err(error) => {
+                    log::warn!("读取 SFTP 本地目录失败，会话 {workspace_id}: {error:#}");
+                    tokio::task::spawn_blocking(default_desktop_path)
+                        .await
+                        .unwrap_or_else(|task_error| {
+                            log::warn!("解析默认本地目录任务失败: {task_error}");
+                            PathBuf::from(".")
+                        })
+                }
+            };
+            let _ = this.update(cx, |this, cx| {
+                if this.selected_workspace_id.as_deref() != Some(workspace_id.as_str()) {
+                    return;
+                }
+                this.load_local_directory(local_path, cx);
+            });
+        })
+        .detach();
     }
 
     fn persist_local_directory(
@@ -268,13 +352,32 @@ impl SftpView {
         else {
             return;
         };
-        if let Err(error) = cx
-            .global::<Storage>()
-            .session
-            .update_sftp_local_path(&profile_id, path)
-        {
-            log::warn!("保存 SFTP 本地目录失败，会话 {profile_id}: {error:#}");
-        }
+        let session = cx.global::<Storage>().session.clone();
+        let path = path.to_owned();
+        let task_profile_id = profile_id.clone();
+        log::debug!(
+            "SFTP 本地目录路径变化，准备保存: session={}, path={}",
+            profile_id,
+            path.display()
+        );
+        cx.spawn(async move |_this, _cx| {
+            let result = tokio::task::spawn_blocking(move || {
+                session.update_sftp_local_path(&task_profile_id, &path)
+            })
+            .await;
+            match result {
+                Ok(Ok(())) => {
+                    log::debug!("SFTP 本地目录保存完成: session={profile_id}");
+                }
+                Ok(Err(error)) => {
+                    log::warn!("保存 SFTP 本地目录失败，会话 {profile_id}: {error:#}");
+                }
+                Err(error) => {
+                    log::warn!("保存 SFTP 本地目录任务失败，会话 {profile_id}: {error}");
+                }
+            }
+        })
+        .detach();
     }
 
     pub(super) fn persist_remote_directories(&mut self, cx: &mut Context<Self>) {
@@ -294,18 +397,33 @@ impl SftpView {
             {
                 continue;
             }
-            match cx
-                .global::<Storage>()
-                .session
-                .update_sftp_remote_path(&profile_id, &path)
-            {
-                Ok(()) => {
-                    self.persisted_remote_paths.insert(workspace_id, path);
+            self.persisted_remote_paths
+                .insert(workspace_id, path.clone());
+            let session = cx.global::<Storage>().session.clone();
+            let task_profile_id = profile_id.clone();
+            log::debug!(
+                "SFTP 远程目录路径变化，准备保存: session={}, path={}",
+                profile_id,
+                path
+            );
+            cx.spawn(async move |_this, _cx| {
+                let result = tokio::task::spawn_blocking(move || {
+                    session.update_sftp_remote_path(&task_profile_id, &path)
+                })
+                .await;
+                match result {
+                    Ok(Ok(())) => {
+                        log::debug!("SFTP 远程目录保存完成: session={profile_id}");
+                    }
+                    Ok(Err(error)) => {
+                        log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error:#}");
+                    }
+                    Err(error) => {
+                        log::warn!("保存 SFTP 远程目录任务失败，会话 {profile_id}: {error}");
+                    }
                 }
-                Err(error) => {
-                    log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error:#}");
-                }
-            }
+            })
+            .detach();
         }
     }
 
@@ -325,7 +443,9 @@ impl SftpView {
             transfers: self.transfers.clone(),
             cancelled_transfers: RwLock::new(Default::default()),
             updates: self.updates.clone(),
+            directory_updates: self.directory_updates.clone(),
             status_updates: self.status_updates.clone(),
+            transfer_ui_throttle: self.transfer_ui_throttle.clone(),
         });
         let (commands, command_receiver) = mpsc::unbounded_channel();
         let task_model = model.clone();
@@ -362,7 +482,7 @@ impl SftpView {
                 task,
             },
         );
-        self.updates.notify_waiters();
+        self.updates.notify_one();
         if should_restore_local_directory {
             self.restore_local_directory(&workspace_id, cx);
         }
@@ -453,16 +573,10 @@ impl SftpView {
         else {
             return None;
         };
-        let Ok(metadata) = fs::metadata(&local_path) else {
-            return None;
-        };
-        if !metadata.is_file() && !metadata.is_dir() {
-            return None;
-        }
         let request = TransferRequest::Upload {
             workspace_id: workspace_id.to_owned(),
             local_path: local_path.clone(),
-            is_directory: metadata.is_dir(),
+            is_directory: false,
         };
         let transfer_id = self.push_transfer(file_name, "上传", remote_path.clone(), request, cx);
         if commands
@@ -676,66 +790,6 @@ impl SftpView {
         }
     }
 
-    pub(super) fn delete_local_entry(
-        &mut self,
-        action: &DeleteLocalEntry,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let path = action.0.clone();
-        let current_directory = self.local.path.clone();
-        self.local.error = None;
-        cx.spawn(async move |this, cx| {
-            let result = tokio::task::spawn_blocking(move || local::delete_local_path(&path))
-                .await
-                .map_err(|error| anyhow::anyhow!("删除本地路径任务失败: {error}"))
-                .and_then(|result| result);
-            let _ = this.update(cx, |this, cx| {
-                if this.local.path != current_directory {
-                    return;
-                }
-                match result {
-                    Ok(()) => this.load_local_directory(current_directory, cx),
-                    Err(error) => {
-                        this.local.error = Some(format!("{error:#}"));
-                        cx.notify();
-                    }
-                }
-            });
-        })
-        .detach();
-    }
-
-    pub(super) fn delete_remote_entry(
-        &mut self,
-        action: &DeleteRemoteEntry,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(snapshot) = self.selected_snapshot() else {
-            return;
-        };
-        let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
-            return;
-        };
-        let Some(runtime) = self.runtimes.get(workspace_id) else {
-            return;
-        };
-        runtime.model.set_loading();
-        if runtime
-            .commands
-            .send(SftpCommand::Delete {
-                path: action.path.clone(),
-                is_directory: action.is_directory,
-                refresh_path: snapshot.path,
-            })
-            .is_err()
-        {
-            runtime.model.set_error("SFTP 连接已关闭".to_owned());
-        }
-        cx.notify();
-    }
-
     pub(super) fn upload_local_entry(
         &mut self,
         action: &UploadLocalEntry,
@@ -763,13 +817,4 @@ impl SftpView {
             );
         }
     }
-}
-
-pub(super) fn default_desktop_path() -> PathBuf {
-    let profile = std::env::var_os("USERPROFILE")
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."));
-    let desktop = profile.join("Desktop");
-    if desktop.is_dir() { desktop } else { profile }
 }

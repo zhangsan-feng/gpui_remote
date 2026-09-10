@@ -21,7 +21,6 @@ const HOVER_LIGHTNESS_OFFSET: f32 = 0.05;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppTheme {
-    #[default]
     #[serde(
         alias = "monochrome",
         alias = "wisteria",
@@ -39,6 +38,7 @@ pub enum AppTheme {
         alias = "pomegranate_tea"
     )]
     RoseBerry,
+    #[default]
     DefaultTheme,
     LightBlue,
     LightOrange,

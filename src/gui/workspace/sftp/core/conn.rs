@@ -15,10 +15,16 @@ impl client::Handler for SftpClientHandler {
         &mut self,
         server_public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        match verify_host_key(&self.endpoint, server_public_key) {
-            Ok(accepted) => Ok(accepted),
-            Err(error) => {
+        let endpoint = self.endpoint.clone();
+        let public_key = server_public_key.clone();
+        match tokio::task::spawn_blocking(move || verify_host_key(&endpoint, &public_key)).await {
+            Ok(Ok(accepted)) => Ok(accepted),
+            Ok(Err(error)) => {
                 log::info!("SFTP host key verification failed: {error:#}");
+                Ok(false)
+            }
+            Err(error) => {
+                log::info!("SFTP host key verification task failed: {error}");
                 Ok(false)
             }
         }

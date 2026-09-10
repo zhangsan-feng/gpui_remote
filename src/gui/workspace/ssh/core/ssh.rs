@@ -58,8 +58,14 @@ mod core {
         .await
         .context("SSH 握手或主机密钥校验失败")?;
         let authentication = if let Some(path) = profile.private_key_path.as_deref() {
-            let key = russh::keys::load_secret_key(path, None)
-                .with_context(|| format!("加载 SSH 私钥失败: {path}"))?;
+            let key_path = path.to_owned();
+            let key = tokio::task::spawn_blocking({
+                let key_path = key_path.clone();
+                move || russh::keys::load_secret_key(&key_path, None)
+            })
+            .await
+            .context("加载 SSH 私钥任务失败")?
+            .with_context(|| format!("加载 SSH 私钥失败: {key_path}"))?;
             session
                 .authenticate_publickey(
                     profile.username.clone(),
@@ -297,15 +303,21 @@ impl russh::client::Handler for ClientHandler {
         &mut self,
         server_public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        match verify_host_key(&self.endpoint, server_public_key) {
-            Ok(accepted) => {
+        let endpoint = self.endpoint.clone();
+        let public_key = server_public_key.clone();
+        match tokio::task::spawn_blocking(move || verify_host_key(&endpoint, &public_key)).await {
+            Ok(Ok(accepted)) => {
                 if !accepted {
                     log::info!("SSH host key changed for {}", self.endpoint);
                 }
                 Ok(accepted)
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 log::info!("SSH host key verification failed: {error:#}");
+                Ok(false)
+            }
+            Err(error) => {
+                log::info!("SSH host key verification task failed: {error}");
                 Ok(false)
             }
         }

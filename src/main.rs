@@ -20,12 +20,16 @@ use rust_embed::RustEmbed;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing_appender::non_blocking::WorkerGuard;
 
-pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) {
+pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) -> [WorkerGuard; 2] {
     let log_dir = log_dir.as_ref();
     std::fs::create_dir_all(log_dir).expect("create log directory failed");
 
     let log_file = log_dir.join(format!("{}.log", chrono::Local::now().format(date_format)));
+    let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+    let file = fern::log_file(&log_file).expect("open log file failed");
+    let (file_writer, file_guard) = tracing_appender::non_blocking(file);
 
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -45,17 +49,26 @@ pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) {
         //     metadata.level() == Level::Info && !metadata.target().starts_with("symphonia")
         // })
         .level(log::LevelFilter::Info)
+        .level_for(
+            "gpui_remote::application::agent_mcp",
+            log::LevelFilter::Debug,
+        )
+        .level_for(
+            "gpui_remote::gui::workspace::agent_mcp",
+            log::LevelFilter::Debug,
+        )
         .level_for("gpui_remote::gui::workspace::ssh", log::LevelFilter::Debug)
         .level_for("gpui_remote::gui::workspace::sftp", log::LevelFilter::Debug)
         // .level_for("gstreamer", log::LevelFilter::Debug)
         // .level(log::LevelFilter::Debug)
         // .level(log::LevelFilter::Trace)
-        .chain(std::io::stdout())
-        .chain(fern::log_file(&log_file).expect("open log file failed"))
+        .chain(fern::Output::writer(Box::new(stdout_writer), "\n"))
+        .chain(fern::Output::writer(Box::new(file_writer), "\n"))
         .apply()
         .expect("init logger failed");
 
     info!("init logger success: {}", log_file.display());
+    [stdout_guard, file_guard]
 }
 
 #[derive(RustEmbed)]
@@ -118,7 +131,7 @@ impl AssetSource for MergedAssets {
 
 #[tokio::main]
 async fn main() {
-    logger_init("./logs", "%Y-%m-%d");
+    let _log_guards = logger_init("./logs", "%Y-%m-%d");
     info!("build time: {}", build_info::BUILD_TIME);
 
     let http_client = ReqwestClient::user_agent("gpui").unwrap();

@@ -1,7 +1,7 @@
 use super::super::{
     DeleteRemoteEntry, DownloadRemoteEntry, DragPreviewLocalToRemoteItem,
-    DragPreviewRemoteToLocalItem, RemoteTransferItem, SftpEntry, SftpSnapshot, SftpStatus,
-    SftpView,
+    DragPreviewRemoteToLocalItem, RemoteDeleteItem, RemoteTransferItem, SftpEntry, SftpSnapshot,
+    SftpStatus, SftpView,
 };
 use super::PathTarget;
 use gpui_kit::component::{
@@ -187,8 +187,20 @@ impl SftpView {
                         vec![current_item]
                     }
                 };
+                let delete_items = items
+                    .iter()
+                    .map(|item| RemoteDeleteItem {
+                        path: item.path.clone(),
+                        is_directory: item.is_directory,
+                    })
+                    .collect();
                 menu.menu("下载", Box::new(DownloadRemoteEntry { items }))
-                    .menu("删除", Box::new(DeleteRemoteEntry { path, is_directory }))
+                    .menu(
+                        "删除",
+                        Box::new(DeleteRemoteEntry {
+                            items: delete_items,
+                        }),
+                    )
             })
     }
 

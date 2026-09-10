@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use gpui_kit::*;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, oneshot};
 
 use crate::{
     application::agent_mcp::{
@@ -48,9 +48,6 @@ impl SftpView {
             return Err(format!("SFTP 会话未选中: {workspace_id}，请先切换到该会话"));
         }
         let path = PathBuf::from(path);
-        if !path.is_dir() {
-            return Err(format!("本地目录不存在: {}", path.display()));
-        }
         self.load_local_directory(path, cx);
         Ok(())
     }
@@ -198,7 +195,7 @@ impl SftpView {
         title: String,
         local_path: String,
         cx: &mut Context<Self>,
-    ) -> Result<SftpWatchSummary, String> {
+    ) -> Result<oneshot::Receiver<Result<SftpWatchSummary, String>>, String> {
         self.validate_sftp_session(&workspace_id, &ip, &title)?;
         self.watch_local_path_for_workspace(&workspace_id, PathBuf::from(local_path), cx)
     }
@@ -267,23 +264,32 @@ impl SftpView {
                 GlobalEvent::OpenWorkspaceSession(workspace_id, profile)
                     if profile.protocol == Protocol::Sftp =>
                 {
-                    let initial_remote_path = match cx
-                        .global::<Storage>()
-                        .session
-                        .sftp_state(&profile.id)
-                    {
-                        Ok(state) => state.and_then(|state| state.remote_path),
-                        Err(error) => {
-                            log::warn!("读取 SFTP 远程目录失败，会话 {}: {error:#}", profile.id);
-                            None
-                        }
-                    };
-                    this.connect(
-                        workspace_id.clone(),
-                        profile.clone(),
-                        initial_remote_path,
-                        cx,
-                    );
+                    let session = cx.global::<Storage>().session.clone();
+                    let workspace_id = workspace_id.clone();
+                    let profile = profile.clone();
+                    cx.spawn(async move |this, cx| {
+                        let profile_id = profile.id.clone();
+                        let initial_remote_path =
+                            tokio::task::spawn_blocking(move || session.sftp_state(&profile_id))
+                                .await
+                                .map_err(|error| {
+                                    anyhow::anyhow!("读取 SFTP 远程目录任务失败: {error}")
+                                })
+                                .and_then(|result| result)
+                                .map(|state| state.and_then(|state| state.remote_path))
+                                .unwrap_or_else(|error| {
+                                    log::warn!(
+                                        "读取 SFTP 远程目录失败，会话 {}: {error:#}",
+                                        profile.id
+                                    );
+                                    None
+                                });
+                        let _ = this.update(cx, |this, cx| {
+                            this.connect(workspace_id, profile, initial_remote_path, cx);
+                            cx.notify();
+                        });
+                    })
+                    .detach();
                 }
                 GlobalEvent::SelectWorkspaceSession(workspace_id) => {
                     if this.selected_workspace_id == *workspace_id {

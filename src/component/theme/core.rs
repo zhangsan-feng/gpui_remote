@@ -99,6 +99,12 @@ impl AppTheme {
 
 pub(super) fn initialize(cx: &mut App) {
     let settings = load_settings();
+    log::info!(
+        "主题初始化: theme={:?}, settings_path={}, settings_exists={}",
+        settings.theme,
+        SETTINGS_PATH,
+        Path::new(SETTINGS_PATH).exists()
+    );
     let colors = ColorOverrides {
         accent: parse_color(&settings.colors.accent).unwrap_or_else(default_custom_color),
         font: parse_optional_color(settings.colors.font),

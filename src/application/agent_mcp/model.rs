@@ -5,6 +5,7 @@ pub struct ProfileSummary {
     pub id: String,
     pub title: String,
     pub host: String,
+    pub protocol: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -14,6 +15,7 @@ pub struct TerminalSummary {
     pub ip: String,
     pub title: String,
     pub host: String,
+    pub protocol: String,
     pub status: String,
     pub selected: bool,
 }

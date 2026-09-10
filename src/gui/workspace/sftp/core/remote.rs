@@ -17,7 +17,7 @@ use crate::{
     infrastructure::proxy::{ProxySettings, connect},
 };
 
-use super::super::{SftpCommand, SftpEntry, SftpModel, SftpStatus};
+use super::super::{RemoteDeleteItem, SftpCommand, SftpEntry, SftpModel, SftpStatus};
 use super::conn::{SftpClientHandler, ssh_config};
 
 const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
@@ -46,8 +46,14 @@ pub(super) async fn run_sftp(
     .await
     .context("SFTP SSH 握手或主机密钥校验失败")?;
     let authentication = if let Some(path) = profile.private_key_path.as_deref() {
-        let key = russh::keys::load_secret_key(path, None)
-            .with_context(|| format!("加载 SFTP SSH 私钥失败: {path}"))?;
+        let key_path = path.to_owned();
+        let key = tokio::task::spawn_blocking({
+            let key_path = key_path.clone();
+            move || russh::keys::load_secret_key(&key_path, None)
+        })
+        .await
+        .context("加载 SFTP SSH 私钥任务失败")?
+        .with_context(|| format!("加载 SFTP SSH 私钥失败: {key_path}"))?;
         session
             .authenticate_publickey(
                 profile.username.clone(),
@@ -190,16 +196,20 @@ pub(super) async fn run_sftp(
                         ));
                     }
                     SftpCommand::Delete {
-                        path,
-                        is_directory,
+                        items,
                         refresh_path,
-                    } => match delete_remote_path(&sftp, &path, is_directory).await {
-                        Ok(()) => match read_directory(&sftp, &refresh_path).await {
-                            Ok(entries) => model.set_directory(refresh_path, entries),
+                    } => {
+                        let delete_result = delete_remote_paths(&sftp, &items).await;
+                        match read_directory(&sftp, &refresh_path).await {
+                            Ok(entries) => {
+                                model.set_directory(refresh_path, entries);
+                                if let Err(error) = delete_result {
+                                    model.set_error(format!("{error:#}"));
+                                }
+                            }
                             Err(error) => model.set_error(format!("{error:#}")),
-                        },
-                        Err(error) => model.set_error(format!("{error:#}")),
-                    },
+                        }
+                    }
                     SftpCommand::Disconnect => {
                         transfer_tasks.abort_all();
                         while let Some(result) = transfer_tasks.join_next().await {
@@ -257,7 +267,8 @@ async fn run_upload(
     )
     .await;
     match result {
-        Ok(()) => {
+        Ok(is_directory) => {
+            model.set_upload_directory(transfer_id, is_directory);
             if model.is_cancelled(transfer_id) {
                 model.update_transfer(transfer_id, 0., 0, 0, "已取消");
             } else {
@@ -340,13 +351,14 @@ async fn upload_path(
     remote_path: &str,
     mut on_progress: impl FnMut(u64, u64),
     is_cancelled: impl Fn() -> bool,
-) -> Result<()> {
+) -> Result<bool> {
     let local_root = local_path.to_owned();
     let remote_root = remote_path.to_owned();
     let (entries, total_size) =
         tokio::task::spawn_blocking(move || collect_local_entries(&local_root, &remote_root))
             .await
             .context("扫描本地上传目录任务失败")??;
+    let is_directory = entries.first().is_some_and(|entry| entry.is_directory);
     let mut transferred = 0_u64;
 
     for entry in entries {
@@ -387,7 +399,7 @@ async fn upload_path(
             .with_context(|| format!("刷新远程文件 {} 失败", entry.remote_path))?;
     }
     on_progress(total_size, total_size);
-    Ok(())
+    Ok(is_directory)
 }
 
 async fn download_path(
@@ -577,6 +589,29 @@ async fn delete_remote_path(
             .await
             .with_context(|| format!("删除远程目录 {directory} 失败"))?;
     }
+    Ok(())
+}
+
+async fn delete_remote_paths(sftp: &SftpSession, items: &[RemoteDeleteItem]) -> Result<()> {
+    log::debug!("SFTP 批量删除远程路径开始: count={}", items.len());
+    let mut errors = Vec::new();
+    for item in items {
+        log::debug!(
+            "SFTP 删除远程路径: path={}, is_directory={}",
+            item.path,
+            item.is_directory
+        );
+        if let Err(error) = delete_remote_path(sftp, &item.path, item.is_directory).await {
+            let error =
+                anyhow::anyhow!(error).context(format!("批量删除远程路径 {} 失败", item.path));
+            log::warn!("{error:#}");
+            errors.push(format!("{error:#}"));
+        }
+    }
+    if !errors.is_empty() {
+        bail!("{}", errors.join("\n"));
+    }
+    log::debug!("SFTP 批量删除远程路径完成: count={}", items.len());
     Ok(())
 }
 

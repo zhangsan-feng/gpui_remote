@@ -161,8 +161,8 @@ impl SftpView {
                             .is_local_path_watched(workspace_id, &path)
                     });
                 let menu = menu
-                    .menu("上传", Box::new(UploadLocalEntry(paths)))
-                    .menu("删除", Box::new(DeleteLocalEntry(path.clone())));
+                    .menu("上传", Box::new(UploadLocalEntry(paths.clone())))
+                    .menu("删除", Box::new(DeleteLocalEntry(paths)));
                 if is_watching {
                     menu.menu("停止监听", Box::new(StopWatchingLocalPath(path)))
                 } else {

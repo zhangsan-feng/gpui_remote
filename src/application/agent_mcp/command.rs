@@ -1,16 +1,13 @@
 use tokio::sync::oneshot;
 
 use super::{
-    ProfileSummary, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary, SftpWatchSummary,
+    SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary, SftpWatchSummary,
     TerminalReadPage, TerminalSummary,
 };
 
 pub type AgentMcpResult<T> = Result<T, String>;
 
 pub enum AgentMcpCommand {
-    ListProfiles {
-        reply: oneshot::Sender<AgentMcpResult<Vec<ProfileSummary>>>,
-    },
     Ssh(AgentSshCommand),
     Sftp(AgentSftpCommand),
 }
@@ -122,7 +119,6 @@ pub enum AgentSftpCommand {
 impl AgentMcpCommand {
     pub fn is_cancelled(&self) -> bool {
         match self {
-            Self::ListProfiles { reply } => reply.is_closed(),
             Self::Ssh(command) => command.is_cancelled(),
             Self::Sftp(command) => command.is_cancelled(),
         }
@@ -130,7 +126,6 @@ impl AgentMcpCommand {
 
     pub fn name(&self) -> &'static str {
         match self {
-            Self::ListProfiles { .. } => "profiles.list",
             Self::Ssh(command) => command.name(),
             Self::Sftp(command) => command.name(),
         }

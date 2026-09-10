@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use crate::{
     application::agent_mcp::{
-        AgentMcpCommand, AgentMcpReceiver, AgentSftpCommand, AgentSshCommand, ProfileSummary,
-        TerminalReadPage, TerminalSummary,
+        AgentMcpCommand, AgentMcpReceiver, AgentSftpCommand, AgentSshCommand, TerminalReadPage,
+        TerminalSummary,
     },
     domain::{
         session::Protocol,
@@ -116,25 +116,6 @@ impl Workspace {
 
     fn handle_agent_command(&mut self, command: AgentMcpCommand, cx: &mut Context<Self>) {
         match command {
-            AgentMcpCommand::ListProfiles { reply } => {
-                let result = cx
-                    .global::<Storage>()
-                    .session
-                    .list()
-                    .map(|profiles| {
-                        profiles
-                            .into_iter()
-                            .map(|profile| ProfileSummary {
-                                id: profile.id,
-                                title: profile.name,
-                                host: profile.host,
-                                protocol: profile.protocol.as_str().to_owned(),
-                            })
-                            .collect()
-                    })
-                    .map_err(|error| format!("读取连接配置失败: {error:#}"));
-                let _ = reply.send(result);
-            }
             AgentMcpCommand::Ssh(AgentSshCommand::Open {
                 profile_id,
                 ip,

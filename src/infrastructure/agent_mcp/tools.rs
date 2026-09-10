@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     application::agent_mcp::{
-        AgentMcpClient, ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
+        AgentMcpDataFlow, ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
         SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
     },
     domain::session::Protocol,
@@ -16,12 +16,12 @@ use crate::{
 
 #[derive(Clone)]
 pub(super) struct AgentTerminalMcp {
-    client: AgentMcpClient,
+    data_flow: AgentMcpDataFlow,
 }
 
 impl AgentTerminalMcp {
-    pub(super) fn new(client: AgentMcpClient) -> Self {
-        Self { client }
+    pub(super) fn new(data_flow: AgentMcpDataFlow) -> Self {
+        Self { data_flow }
     }
 }
 
@@ -213,7 +213,7 @@ impl AgentTerminalMcp {
         description = "List saved connection profiles. Returns profile id, title, ip, host, and protocol."
     )]
     async fn list_profiles(&self) -> Result<Json<Vec<ProfileOutput>>, ErrorData> {
-        self.client
+        self.data_flow
             .list_profiles()
             .await
             .map(|profiles| Json(profiles.into_iter().map(ProfileOutput::from).collect()))
@@ -229,7 +229,7 @@ impl AgentTerminalMcp {
     ) -> Result<Json<OpenSessionOutput>, ErrorData> {
         let ip = input.ip.clone();
         let title = input.title.clone();
-        self.client
+        self.data_flow
             .open_session(
                 input.profile_id,
                 input.protocol.into(),
@@ -249,7 +249,7 @@ impl AgentTerminalMcp {
 
     #[tool(description = "List open SFTP sessions and identify the selected SFTP session.")]
     async fn list_sftp_sessions(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
-        self.client
+        self.data_flow
             .list_sftp_sessions()
             .await
             .map(|sessions| Json(sessions.into_iter().map(TerminalOutput::from).collect()))
@@ -258,7 +258,7 @@ impl AgentTerminalMcp {
 
     #[tool(description = "List the local directory currently shown by the SFTP workspace.")]
     async fn list_sftp_local(&self) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .list_sftp_local()
             .await
             .map(|directory| Json(directory.into()))
@@ -272,7 +272,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpChangeDirectoryInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .change_sftp_local_directory(input.workspace_id, input.ip, input.title, input.path)
             .await
             .map(|()| Json(ActionOutput { success: true }))
@@ -284,7 +284,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpWorkspaceInput>,
     ) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .list_sftp_remote(input.workspace_id)
             .await
             .map(|directory| Json(directory.into()))
@@ -298,7 +298,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpChangeDirectoryInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .change_sftp_remote_directory(input.workspace_id, input.ip, input.title, input.path)
             .await
             .map(|()| Json(ActionOutput { success: true }))
@@ -312,7 +312,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpUploadInput>,
     ) -> Result<Json<SftpTransferOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .upload_sftp(input.workspace_id, input.local_paths)
             .await
             .map(|transfer| Json(transfer.into()))
@@ -326,7 +326,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpDownloadInput>,
     ) -> Result<Json<SftpTransferOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .download_sftp(input.workspace_id, input.remote_paths)
             .await
             .map(|transfer| Json(transfer.into()))
@@ -340,7 +340,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpWorkspaceInput>,
     ) -> Result<Json<Vec<SftpTransferInfoOutput>>, ErrorData> {
-        self.client
+        self.data_flow
             .list_sftp_transfers(input.workspace_id)
             .await
             .map(|transfers| Json(transfers.into_iter().map(Into::into).collect()))
@@ -354,7 +354,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpWatchPathInput>,
     ) -> Result<Json<SftpWatchOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .watch_sftp_local(input.workspace_id, input.ip, input.title, input.local_path)
             .await
             .map(|watch| Json(watch.into()))
@@ -366,7 +366,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpWatchPathInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .stop_sftp_local_watch(input.workspace_id, input.ip, input.title, input.local_path)
             .await
             .map(|()| Json(ActionOutput { success: true }))
@@ -378,7 +378,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SftpWatchListInput>,
     ) -> Result<Json<Vec<SftpWatchOutput>>, ErrorData> {
-        self.client
+        self.data_flow
             .list_sftp_local_watches(input.workspace_id, input.ip, input.title)
             .await
             .map(|watches| Json(watches.into_iter().map(Into::into).collect()))
@@ -389,7 +389,7 @@ impl AgentTerminalMcp {
         description = "List open SSH terminal sessions and identify the selected terminal session."
     )]
     async fn list_terminals(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
-        self.client
+        self.data_flow
             .list_terminals()
             .await
             .map(|terminals| Json(terminals.into_iter().map(TerminalOutput::from).collect()))
@@ -403,7 +403,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SelectTerminalInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .select_terminal(input.workspace_id, input.ip, input.title)
             .await
             .map(|()| Json(ActionOutput { success: true }))
@@ -417,7 +417,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<ReadTerminalInput>,
     ) -> Result<Json<TerminalReadOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .read_terminal(input.workspace_id, input.offset, input.limit)
             .await
             .map(|page| Json(TerminalReadOutput::from(page)))
@@ -429,7 +429,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SendTextInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .send_text(input.workspace_id, input.text)
             .await
             .map(|()| Json(ActionOutput { success: true }))
@@ -443,7 +443,7 @@ impl AgentTerminalMcp {
         &self,
         Parameters(input): Parameters<SendKeyInput>,
     ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.client
+        self.data_flow
             .send_key(
                 input.workspace_id,
                 input.key,

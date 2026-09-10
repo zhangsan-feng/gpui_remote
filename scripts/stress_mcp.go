@@ -284,8 +284,3 @@ func fatal(message string) {
 	fmt.Fprintln(os.Stderr, message)
 	os.Exit(2)
 }
-
-gui 用户输入 用户展示
-数据流向层 对接gui输入 对接mcp 输入 刷新gui  跟基础设施层交互
-mcp 层只跟数据流向层交互
-

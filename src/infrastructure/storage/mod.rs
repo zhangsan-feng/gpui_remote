@@ -4,8 +4,9 @@ mod repository;
 
 use gpui_kit::Global;
 use known_hosts::HostPubKey;
-use repository::session_repository::SessionStorageRepository;
 use russh::keys::ssh_key::PublicKey;
+
+pub(crate) use repository::session_repository::SessionStorageRepository;
 
 pub struct Storage {
     pub session: SessionStorageRepository,

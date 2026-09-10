@@ -5,8 +5,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::domain::session::Protocol;
 
 use super::{
-    AgentMcpCommand, AgentSftpCommand, AgentSshCommand, ProfileSummary, SftpDirectorySummary,
-    SftpTransferInfo, SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
+    AgentMcpCommand, AgentSftpCommand, AgentSshCommand, SftpDirectorySummary, SftpTransferInfo,
+    SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
     command::AgentMcpResult,
 };
 
@@ -37,11 +37,6 @@ impl AgentMcpReceiver {
 }
 
 impl AgentMcpClient {
-    pub async fn list_profiles(&self) -> AgentMcpResult<Vec<ProfileSummary>> {
-        self.request(|reply| AgentMcpCommand::ListProfiles { reply })
-            .await
-    }
-
     pub async fn open_session(
         &self,
         profile_id: String,
@@ -400,13 +395,15 @@ mod tests {
             let (reply, _response) = oneshot::channel();
             client
                 .commands
-                .try_send(AgentMcpCommand::ListProfiles { reply })
+                .try_send(AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals {
+                    reply,
+                }))
                 .expect("the test queue should have capacity");
         }
 
         let result = client
             .request_with_timeout(
-                |reply| AgentMcpCommand::ListProfiles { reply },
+                |reply| AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }),
                 std::time::Duration::from_millis(20),
             )
             .await;

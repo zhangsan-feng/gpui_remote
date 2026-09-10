@@ -2,8 +2,8 @@
 
 ## 未完成任务
 
-- [进行中] MCP 数据流层解耦：先将 `list_profiles` 只读查询移出 GUI bridge，建立 MCP Query/Command 分流；其余依赖实时 GUI 状态的命令继续通过有序 GUI command channel 执行。
-- [计划] MCP 查询路径增加分层耗时日志，区分 HTTP、查询执行和 GUI command queue 等待时间。
+- [完成] MCP 数据流层解耦第一阶段：将 `list_profiles` 只读查询移出 GUI bridge，建立 MCP Query/Command 分流；其余依赖实时 GUI 状态的命令继续通过有序 GUI command channel 执行。
+- [进行中] MCP 查询路径增加分层耗时日志：当前已记录 QueryService 查询开始、结束、数量、错误和耗时；HTTP 入口与完整 queue 等待耗时仍需继续补齐。
 - [计划] 为 SFTP/SSH 实时状态建立线程安全快照，逐步移出 `Workspace.update()` 读取路径。
 - [计划] 将 SSH/SFTP 长耗时 IO 核心从 GUI 组件中继续下沉到应用服务和基础设施层，GUI 只负责输入、状态订阅和展示。
 
@@ -43,6 +43,14 @@ MCP HTTP/RPC ─► MCP Adapter ─► Application Data Flow
 5. 保留当前 GUI command channel 的有界和有序特性；`CHANNEL_CAPACITY=256` 仅作为回滚前的 checkpoint 实验结果，不作为本次性能结论。
 6. 增加应用层查询测试、Data Flow 委托测试，并运行现有 MCP 单元测试、`cargo check` 和 `scripts/stress_mcp.go`。
 
+### 第一阶段实测结论（2026-09-10）
+
+- `list_profiles` 已由 `AgentMcpQueryService` 通过 `spawn_blocking` 调用 SQLite profile adapter，不再进入 GUI command channel。
+- smoke 测试 `1 请求 / 1 worker / 1 connection`：`1/1` 成功，P50 `4.1ms`。
+- 高并发测试 `2000 请求 / 2000 workers / 128 connections`：`2000/2000` 成功，P50 `177.8ms`、P95 `317.2ms`、最大 `348.7ms`。
+- 有界并发测试 `2000 请求 / 128 workers / 128 connections`：`2000/2000` 成功，P50 `19.6ms`、P95 `39.1ms`、最大 `84.1ms`。
+- 日志确认请求进入 `application::agent_mcp::query`；本轮未发现 GUI bridge queue-full、响应超时或 MCP server 停止错误。高并发延迟仍主要受客户端连接并发、线程调度和 SQLite 同步读取影响，不能仅靠继续扩大 channel 容量解决。
+
 ### 数据流与并发规则
 
 - `list_profiles`：MCP Adapter → Data Flow QueryService → profile repository → DTO → MCP Adapter，不经过 `Workspace.update()`。
@@ -53,11 +61,11 @@ MCP HTTP/RPC ─► MCP Adapter ─► Application Data Flow
 
 ### 实施计划
 
-- [ ] 建立 `AgentMcpProfileQuery` port、`AgentMcpQueryService` 和 `AgentMcpDataFlow`，先写查询与委托测试。
-- [ ] 将 SQLite `SessionStorageRepository` 包装为 profile query adapter，并在启动时注入 Data Flow。
-- [ ] 修改 MCP server/tools 依赖 Data Flow，移除 GUI 对 `ListProfiles` 的处理。
-- [ ] 更新 GUI bridge command enum、初始化与日志，确保 UI 命令顺序和取消行为不变。
-- [ ] 运行 `cargo test agent_mcp`、`cargo check` 和脚本压测；对比单请求、128 并发和 2000 请求结果。
+- [x] 建立 `AgentMcpProfileQuery` port、`AgentMcpQueryService` 和 `AgentMcpDataFlow`，先写查询与委托测试。
+- [x] 将 SQLite `SessionStorageRepository` 包装为 profile query adapter，并在启动时注入 Data Flow。
+- [x] 修改 MCP server/tools 依赖 Data Flow，移除 GUI 对 `ListProfiles` 的处理。
+- [x] 更新 GUI bridge command enum、初始化与日志，确保 UI 命令顺序和取消行为不变。
+- [x] 运行 `cargo test`、`cargo check`、格式检查和脚本压测；对比单请求、128 并发和 2000 请求结果。
 - [ ] 根据结果决定是否继续拆 SFTP/SSH 状态快照；不以扩大 channel 容量替代数据路径解耦。
 
 ### 验收标准
@@ -95,3 +103,79 @@ MCP HTTP/RPC ─► MCP Adapter ─► Application Data Flow
 - `src/application/agent_mcp/query.rs`：MCP 只读查询 port、查询服务和基础设施无关的 DTO 编排。
 - `src/application/agent_mcp/data_flow.rs`：统一协调 MCP QueryService 与 GUI CommandService 的应用数据流门面。
 - `src/infrastructure/agent_mcp/profile_query.rs`：基于 SQLite session repository 的 profile 查询适配器。
+
+## 第二阶段：DataContext 核心中转层设计（2026-09-10）
+
+### 目标
+
+将数据流向从 `application::agent_mcp` 迁移到顶层 `data_context` 核心层。`DataContext` 统一持有 `McpContext`、`GuiContext` 和 `InfrastructureContext`，对外提供稳定的接口句柄，负责 GUI、MCP 与基础设施之间的命令、查询和结果路由。
+
+### 核心架构
+
+```text
+GUI ──► GuiContext API ─┐
+                        │
+MCP ──► McpContext API ─┼──► DataContext / CoreBus ───► InfrastructureContext
+                        │                    │
+                        └──── GuiCommandBus ◄─┘
+                                      │
+                                      ▼
+                                GUI Actor / GPUI
+```
+
+`DataContext` 是组合根和中转层，不把业务实现全部堆进 `core.rs`。三个 Context 是能力上下文，不互相持有具体实现；它们通过 `CoreBus`、查询服务和明确的接口句柄协作。
+
+- `McpContext`：面向 MCP adapter 的协议无关调用接口，负责把 MCP 用例转交给 DataContext；不包含 rmcp、axum 或 JSON 类型。
+- `GuiContext`：面向 GUI adapter 的命令入口、GUI command receiver 和后续事件订阅；不让核心层持有 GPUI `Context`、`Entity` 或 `Window`。
+- `InfrastructureContext`：持有 SQLite、SSH、SFTP 等 ports 的实现；不依赖 GUI 或 MCP。
+- `CoreBus`：执行路由、超时、取消、背压和日志；纯查询直接调用 Infrastructure，依赖 GUI 实时状态的命令进入 GUI actor FIFO 队列。
+
+### 目录迁移
+
+```text
+src/data_context/
+├── mod.rs          类型、构造和外部接口导出
+├── core.rs         DataContext、CoreBus 和组合根
+├── bus.rs          command/query 的通道与请求生命周期
+├── mcp.rs          McpContext 对外能力接口
+├── gui.rs          GuiContext、GUI receiver 和 GUI 命令适配
+├── infrastructure.rs InfrastructureContext 与基础设施 ports
+├── command.rs      中立的数据上下文命令
+├── query.rs        查询 port 与查询服务
+├── model.rs        跨 GUI/MCP/Infrastructure 的中立 DTO
+└── event.rs        数据上下文事件类型和订阅扩展点
+```
+
+`application::agent_mcp` 中的 bridge、command、query、model 和 data flow 实现迁移到 `data_context`；`infrastructure::agent_mcp` 只保留 MCP HTTP/RPC adapter，profile query adapter 迁移到 `infrastructure::data_context`。
+
+### 外部接口与生命周期
+
+```rust
+let (data_context, gui_receiver) = DataContext::new(infrastructure_context);
+let mcp_context = data_context.mcp();
+```
+
+- Infrastructure 在应用启动组合阶段创建 `InfrastructureContext` 并注入 DataContext。
+- MCP server/tools 只持有 `McpContext`，不能访问 DataContext 内部字段。
+- GUI Workspace 只持有 `GuiContextReceiver`，负责 GPUI update、用户展示和状态变更。
+- DataContext 本体由服务控制器和接口句柄共享的 `Arc` 内核保持生命周期。
+- `DataContext` 不依赖具体外部协议或 UI 框架，外部 adapter 只能通过公开接口调用内核。
+
+### 第二阶段实施计划
+
+- [ ] 先提交第一阶段实现和本设计文档作为 DataContext 迁移 checkpoint。
+- [ ] 创建 `src/data_context`，迁移中立 model、command、bus、query、McpContext 和 GuiContext。
+- [ ] 创建 `src/infrastructure/data_context`，迁移 SQLite profile query adapter，构造 InfrastructureContext。
+- [ ] 修改 MCP server/tools 只依赖 `McpContext`，修改 GUI Workspace 只依赖 `GuiContextReceiver`。
+- [ ] 删除 `application::agent_mcp` 的实际实现和旧命名，确保核心层不再以 MCP 作为唯一入口。
+- [ ] 保持查询绕过 GUI 队列、GUI 命令 FIFO、超时/取消语义和现有日志能力。
+- [ ] 运行 `cargo test`、`cargo check`、格式检查和 MCP 脚本压测。
+
+### 第二阶段验收标准
+
+- `DataContext` 明确持有 `McpContext`、`GuiContext`、`InfrastructureContext`，外部只能拿到接口句柄。
+- MCP adapter 不再依赖 `AgentMcpClient` 或 `AgentMcpDataFlow`。
+- GUI 不再直接创建 MCP 专用 channel，GUI 只消费 `GuiContextReceiver`。
+- `data_context` 不引用 GPUI、rmcp、axum 或具体 Infrastructure 实现。
+- profile 查询继续绕过 GUI command channel；其他 GUI 状态操作顺序不变。
+- 全量测试、编译检查、格式检查和 MCP 压测通过。

@@ -7,7 +7,7 @@ use std::{
 use tokio::task::AbortHandle;
 use uuid::Uuid;
 
-use crate::application::agent_mcp::AgentMcpClient;
+use crate::application::agent_mcp::AgentMcpDataFlow;
 
 use super::{McpSettings, SETTINGS_PATH, server};
 
@@ -19,16 +19,16 @@ pub(super) struct AgentMcpController {
 }
 
 struct ControllerState {
-    client: AgentMcpClient,
+    data_flow: AgentMcpDataFlow,
     settings: McpSettings,
     server_abort: Option<AbortHandle>,
 }
 
 impl AgentMcpController {
-    pub(super) fn new(client: AgentMcpClient) -> Self {
+    pub(super) fn new(data_flow: AgentMcpDataFlow) -> Self {
         Self {
             state: Arc::new(Mutex::new(ControllerState {
-                client,
+                data_flow,
                 settings: McpSettings::default(),
                 server_abort: None,
             })),
@@ -57,10 +57,10 @@ impl AgentMcpController {
 
         state.settings = settings.clone();
         if settings.enabled {
-            let client = state.client.clone();
+            let data_flow = state.data_flow.clone();
             let server_settings = settings.clone();
             let server = tokio::spawn(async move {
-                if let Err(error) = server::run(client, server_settings).await {
+                if let Err(error) = server::run(data_flow, server_settings).await {
                     log::error!("Agent MCP server stopped: {error:#}");
                 }
             });

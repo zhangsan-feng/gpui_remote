@@ -1,6 +1,7 @@
 mod auth;
 mod core;
 mod external;
+mod profile_query;
 mod server;
 mod tools;
 

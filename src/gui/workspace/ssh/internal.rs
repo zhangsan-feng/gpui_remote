@@ -21,7 +21,7 @@ mod keyboard {
                 .as_ref()
                 .is_some_and(|model| model.read().frame.application_cursor);
             if let Some(bytes) = encode_keystroke(&event.keystroke, application_cursor) {
-                self.send_input(&workspace_id, bytes);
+                self.send_input_with_context(&workspace_id, bytes, cx);
                 cx.stop_propagation();
             }
         }
@@ -30,9 +30,9 @@ mod keyboard {
             &mut self,
             _: &SendTab,
             _: &mut Window,
-            _: &mut Context<Self>,
+            cx: &mut Context<Self>,
         ) {
-            self.send_action_input(b"\t");
+            self.send_action_input(b"\t", cx);
         }
 
         pub(in crate::gui::workspace::ssh) fn paste_terminal(
@@ -44,15 +44,31 @@ mod keyboard {
             let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
                 return;
             };
-            self.send_action_input(text.as_bytes());
+            self.send_action_input(text.as_bytes(), cx);
             cx.stop_propagation();
         }
 
-        fn send_action_input(&self, bytes: &[u8]) {
+        fn send_action_input(&self, bytes: &[u8], cx: &mut Context<Self>) {
             let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
                 return;
             };
-            self.send_input(workspace_id, bytes.to_vec());
+            self.send_input_with_context(workspace_id, bytes.to_vec(), cx);
+        }
+
+        fn send_input_with_context(
+            &self,
+            workspace_id: &str,
+            input: Vec<u8>,
+            cx: &mut Context<Self>,
+        ) {
+            let gui = self.gui.clone();
+            let workspace_id = workspace_id.to_owned();
+            cx.spawn(async move |_this, _cx| {
+                if let Err(error) = gui.send_terminal_input(workspace_id, input).await {
+                    log::debug!("发送 SSH 输入失败: {error}");
+                }
+            })
+            .detach();
         }
     }
 
@@ -80,14 +96,13 @@ mod scroll {
         rc::Rc,
     };
 
-    use gpui_kit::component::ElementExt;
-    use gpui_kit::*;
-    use tokio::sync::mpsc;
-
     use crate::{
         component::{color::rgb_to_u32, theme},
-        domain::terminal::{TerminalFrame, TerminalSessionCommand},
+        data_context::GuiContext,
+        domain::terminal::TerminalFrame,
     };
+    use gpui_kit::component::ElementExt;
+    use gpui_kit::*;
 
     use super::super::TerminalView;
 
@@ -98,7 +113,6 @@ mod scroll {
         history_size: usize,
         viewport_lines: usize,
         display_offset: usize,
-        commands: Option<mpsc::UnboundedSender<TerminalSessionCommand>>,
     }
 
     #[derive(Clone, Default)]
@@ -120,16 +134,11 @@ mod scroll {
     }
 
     impl TerminalScrollHandle {
-        pub(in crate::gui::workspace::ssh) fn sync(
-            &self,
-            frame: &TerminalFrame,
-            commands: Option<mpsc::UnboundedSender<TerminalSessionCommand>>,
-        ) {
+        pub(in crate::gui::workspace::ssh) fn sync(&self, frame: &TerminalFrame) {
             *self.0.borrow_mut() = TerminalScrollState {
                 history_size: frame.history_size,
                 viewport_lines: frame.lines.len(),
                 display_offset: frame.display_offset,
-                commands,
             };
         }
 
@@ -151,11 +160,6 @@ mod scroll {
                 (progress.clamp(0.0, 1.0) * state.history_size as f32).round() as usize;
             let display_offset = state.history_size.saturating_sub(lines_from_top);
             state.display_offset = display_offset;
-            if let Some(commands) = &state.commands {
-                let _ = commands.send(TerminalSessionCommand::ScrollTo {
-                    offset: display_offset,
-                });
-            }
         }
     }
 
@@ -189,6 +193,7 @@ mod scroll {
                     let _ = down_view.update(cx, |this, cx| {
                         this.selecting_text = false;
                         this.scroll_handle.scroll_to_progress(progress);
+                        this.request_scroll_to(progress, cx);
                         cx.notify();
                     });
                     cx.stop_propagation();
@@ -231,7 +236,27 @@ mod scroll {
             let progress =
                 scrollbar_progress(event.event.position, drag.bounds.get(), drag.thumb_size);
             self.scroll_handle.scroll_to_progress(progress);
+            self.request_scroll_to(progress, cx);
             cx.notify();
+        }
+    }
+
+    impl TerminalView {
+        fn request_scroll_to(&self, progress: f32, cx: &mut Context<Self>) {
+            let state = self.scroll_handle.0.borrow();
+            let lines_from_top =
+                (progress.clamp(0.0, 1.0) * state.history_size as f32).round() as usize;
+            let offset = state.history_size.saturating_sub(lines_from_top);
+            let Some(workspace_id) = self.selected_workspace_id.clone() else {
+                return;
+            };
+            let gui: GuiContext = self.gui.clone();
+            cx.spawn(async move |_this, _cx| {
+                if let Err(error) = gui.scroll_terminal_to(workspace_id, offset).await {
+                    log::debug!("滚动 SSH 终端失败: {error}");
+                }
+            })
+            .detach();
         }
     }
 

@@ -1,40 +1,107 @@
-use std::time::Duration;
+use std::sync::Arc;
 
-use tokio::sync::{mpsc, oneshot};
-
-use crate::domain::session::Protocol;
-
-use super::{
-    DataContextCommand, DataContextResult, SftpCommand, SftpDirectorySummary, SftpTransferInfo,
-    SftpTransferSummary, SftpWatchSummary, SshCommand, TerminalReadPage, TerminalSummary,
+use crate::{
+    application::{
+        ApplicationContext, LocalSnapshot, LocalWatchSummary, RemoteDeleteItem, SftpSnapshot,
+        SftpStatus, TransferRecord, TransferRequest,
+    },
+    domain::{
+        session::{Protocol, SessionProfile},
+        terminal::TerminalStatus,
+    },
 };
 
-use super::bus::{GUI_COMMAND_QUEUE_CAPACITY, GUI_REQUEST_TIMEOUT};
+use super::{
+    DataContextResult, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
+    SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
+};
 
 #[derive(Clone)]
 pub struct GuiContext {
-    commands: mpsc::Sender<DataContextCommand>,
-}
-
-pub struct GuiContextReceiver {
-    commands: mpsc::Receiver<DataContextCommand>,
-}
-
-pub fn gui_context_channel() -> (GuiContext, GuiContextReceiver) {
-    let (commands, receiver) = mpsc::channel(GUI_COMMAND_QUEUE_CAPACITY);
-    (
-        GuiContext { commands },
-        GuiContextReceiver { commands: receiver },
-    )
-}
-
-impl GuiContextReceiver {
-    pub async fn recv(&mut self) -> Option<DataContextCommand> {
-        self.commands.recv().await
-    }
+    application: ApplicationContext,
 }
 
 impl GuiContext {
+    pub(crate) fn from_application(application: ApplicationContext) -> Self {
+        Self { application }
+    }
+
+    pub(crate) fn terminal_updates(&self) -> Arc<tokio::sync::Notify> {
+        self.application.ssh().updates()
+    }
+
+    pub(crate) fn terminal_status_updates(&self) -> Arc<tokio::sync::Notify> {
+        self.application.ssh().status_updates()
+    }
+
+    pub(crate) fn sftp_updates(&self) -> Arc<tokio::sync::Notify> {
+        self.application.sftp().updates()
+    }
+
+    pub(crate) fn sftp_status_updates(&self) -> Arc<tokio::sync::Notify> {
+        self.application.sftp().status_updates()
+    }
+
+    pub(crate) fn terminal_snapshot(
+        &self,
+        workspace_id: &str,
+    ) -> DataContextResult<crate::domain::terminal::TerminalData> {
+        self.application.ssh().snapshot(workspace_id)
+    }
+
+    pub(crate) fn terminal_revision(&self, workspace_id: &str) -> DataContextResult<u64> {
+        self.application.ssh().revision(workspace_id)
+    }
+
+    pub(crate) fn sftp_snapshot(
+        &self,
+        workspace_id: &str,
+    ) -> DataContextResult<SftpDirectorySummary> {
+        self.application
+            .sftp()
+            .snapshot(workspace_id)
+            .map(map_remote_directory)
+    }
+
+    pub(crate) fn sftp_revision(&self, workspace_id: &str) -> DataContextResult<u64> {
+        self.application.sftp().revision(workspace_id)
+    }
+
+    pub(crate) fn sftp_connection_status(
+        &self,
+        workspace_id: &str,
+    ) -> DataContextResult<TerminalStatus> {
+        self.application
+            .sftp()
+            .snapshot(workspace_id)
+            .map(|snapshot| match snapshot.status {
+                SftpStatus::Connecting => TerminalStatus::Connecting,
+                SftpStatus::Connected => TerminalStatus::Connected,
+                SftpStatus::Disconnected => TerminalStatus::Disconnected,
+                SftpStatus::Failed => TerminalStatus::Failed,
+            })
+    }
+
+    pub(crate) fn sftp_local_snapshot(
+        &self,
+        workspace_id: &str,
+    ) -> DataContextResult<SftpDirectorySummary> {
+        self.application
+            .sftp()
+            .local_snapshot(workspace_id)
+            .map(map_local_directory)
+    }
+
+    pub(crate) fn sftp_transfers_snapshot(
+        &self,
+        workspace_id: &str,
+    ) -> DataContextResult<Vec<SftpTransferInfo>> {
+        self.application
+            .sftp()
+            .transfers(workspace_id)
+            .map(|transfers| transfers.into_iter().map(map_transfer_info).collect())
+    }
+
     pub async fn open_session(
         &self,
         profile_id: String,
@@ -42,31 +109,76 @@ impl GuiContext {
         ip: String,
         title: String,
     ) -> DataContextResult<String> {
-        self.request(|reply| match protocol {
-            Protocol::Ssh => DataContextCommand::Ssh(SshCommand::Open {
-                profile_id,
-                ip,
-                title,
-                reply,
-            }),
-            Protocol::Sftp => DataContextCommand::Sftp(SftpCommand::Open {
-                profile_id,
-                ip,
-                title,
-                reply,
-            }),
-        })
-        .await
+        self.application
+            .open_session(profile_id, protocol, ip, title)
+            .await
+    }
+
+    pub(crate) async fn close_session(&self, workspace_id: String) -> DataContextResult<()> {
+        self.application.close_session(&workspace_id).await
+    }
+
+    pub(crate) async fn select_session(
+        &self,
+        workspace_id: Option<String>,
+    ) -> DataContextResult<()> {
+        self.application.select_session(workspace_id).await
+    }
+
+    pub(crate) async fn persist_sftp_local_path(
+        &self,
+        workspace_id: String,
+        path: std::path::PathBuf,
+    ) -> DataContextResult<()> {
+        self.application
+            .update_sftp_local_path(&workspace_id, &path)
+            .await
+    }
+
+    pub(crate) async fn persist_sftp_remote_path(
+        &self,
+        workspace_id: String,
+        path: String,
+    ) -> DataContextResult<()> {
+        self.application
+            .update_sftp_remote_path(&workspace_id, path)
+            .await
+    }
+
+    pub(crate) async fn delete_sftp_local_paths(
+        &self,
+        workspace_id: String,
+        paths: Vec<std::path::PathBuf>,
+    ) -> DataContextResult<()> {
+        self.application
+            .sftp()
+            .delete_local_paths(&workspace_id, paths)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn delete_sftp_remote(
+        &self,
+        workspace_id: String,
+        items: Vec<RemoteDeleteItem>,
+    ) -> DataContextResult<()> {
+        self.application
+            .sftp()
+            .delete_remote(&workspace_id, items)
+            .await
     }
 
     pub async fn list_sftp_local(&self) -> DataContextResult<SftpDirectorySummary> {
-        self.request(|reply| DataContextCommand::Sftp(SftpCommand::ListLocal { reply }))
+        let workspace_id = selected_sftp_workspace(&self.application)?;
+        self.application
+            .sftp()
+            .list_local(&workspace_id)
             .await
+            .map(map_local_directory)
     }
 
     pub async fn list_sftp_sessions(&self) -> DataContextResult<Vec<TerminalSummary>> {
-        self.request(|reply| DataContextCommand::Sftp(SftpCommand::ListSessions { reply }))
-            .await
+        Ok(list_sftp_sessions(&self.application))
     }
 
     pub async fn change_sftp_local_directory(
@@ -76,29 +188,25 @@ impl GuiContext {
         title: String,
         path: String,
     ) -> DataContextResult<()> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::ChangeLocalDirectory {
-                workspace_id,
-                ip,
-                title,
-                path,
-                reply,
-            })
-        })
-        .await
+        validate_session(
+            &self.application,
+            &workspace_id,
+            Protocol::Sftp,
+            &ip,
+            &title,
+        )?;
+        self.application
+            .sftp()
+            .change_local_directory(&workspace_id, path.into())
+            .await
+            .map(|_| ())
     }
 
     pub async fn list_sftp_remote(
         &self,
         workspace_id: String,
     ) -> DataContextResult<SftpDirectorySummary> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::ListRemote {
-                workspace_id,
-                reply,
-            })
-        })
-        .await
+        self.sftp_snapshot(&workspace_id)
     }
 
     pub async fn change_sftp_remote_directory(
@@ -108,16 +216,17 @@ impl GuiContext {
         title: String,
         path: String,
     ) -> DataContextResult<()> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::ChangeRemoteDirectory {
-                workspace_id,
-                ip,
-                title,
-                path,
-                reply,
-            })
-        })
-        .await
+        validate_session(
+            &self.application,
+            &workspace_id,
+            Protocol::Sftp,
+            &ip,
+            &title,
+        )?;
+        self.application
+            .sftp()
+            .load_directory(&workspace_id, path)
+            .await
     }
 
     pub async fn upload_sftp(
@@ -125,14 +234,11 @@ impl GuiContext {
         workspace_id: String,
         local_paths: Vec<String>,
     ) -> DataContextResult<SftpTransferSummary> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::Upload {
-                workspace_id,
-                local_paths,
-                reply,
-            })
-        })
-        .await
+        self.application
+            .sftp()
+            .upload(&workspace_id, local_paths)
+            .await
+            .map(map_transfer_summary)
     }
 
     pub async fn download_sftp(
@@ -140,27 +246,42 @@ impl GuiContext {
         workspace_id: String,
         remote_paths: Vec<String>,
     ) -> DataContextResult<SftpTransferSummary> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::Download {
-                workspace_id,
-                remote_paths,
-                reply,
-            })
-        })
-        .await
+        self.application
+            .sftp()
+            .download(&workspace_id, remote_paths)
+            .await
+            .map(map_transfer_summary)
+    }
+
+    pub(crate) async fn cancel_sftp_transfer(
+        &self,
+        workspace_id: String,
+        transfer_id: u64,
+    ) -> DataContextResult<()> {
+        self.application
+            .sftp()
+            .cancel_transfer(&workspace_id, transfer_id)
+    }
+
+    pub(crate) async fn retry_sftp_transfer(
+        &self,
+        workspace_id: String,
+        transfer_id: u64,
+    ) -> DataContextResult<()> {
+        self.application
+            .sftp()
+            .retry_transfer(&workspace_id, transfer_id)
+            .await
     }
 
     pub async fn list_sftp_transfers(
         &self,
         workspace_id: String,
     ) -> DataContextResult<Vec<SftpTransferInfo>> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::ListTransfers {
-                workspace_id,
-                reply,
-            })
-        })
-        .await
+        self.application
+            .sftp()
+            .transfers(&workspace_id)
+            .map(|transfers| transfers.into_iter().map(map_transfer_info).collect())
     }
 
     pub async fn watch_sftp_local(
@@ -170,16 +291,18 @@ impl GuiContext {
         title: String,
         local_path: String,
     ) -> DataContextResult<SftpWatchSummary> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::WatchLocal {
-                workspace_id,
-                ip,
-                title,
-                local_path,
-                reply,
-            })
-        })
-        .await
+        validate_session(
+            &self.application,
+            &workspace_id,
+            Protocol::Sftp,
+            &ip,
+            &title,
+        )?;
+        self.application
+            .sftp()
+            .watch_local(&workspace_id, local_path.into())
+            .await
+            .map(map_watch_summary)
     }
 
     pub async fn stop_sftp_local_watch(
@@ -189,38 +312,40 @@ impl GuiContext {
         title: String,
         local_path: String,
     ) -> DataContextResult<()> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::StopWatchingLocal {
-                workspace_id,
-                ip,
-                title,
-                local_path,
-                reply,
-            })
-        })
-        .await
+        validate_session(
+            &self.application,
+            &workspace_id,
+            Protocol::Sftp,
+            &ip,
+            &title,
+        )?;
+        self.application
+            .sftp()
+            .stop_watching_local(&workspace_id, local_path.as_ref())
+            .await
     }
 
-    pub async fn list_sftp_local_watches(
+    pub(crate) fn list_sftp_local_watches(
         &self,
         workspace_id: String,
         ip: String,
         title: String,
     ) -> DataContextResult<Vec<SftpWatchSummary>> {
-        self.request(|reply| {
-            DataContextCommand::Sftp(SftpCommand::ListLocalWatches {
-                workspace_id,
-                ip,
-                title,
-                reply,
-            })
-        })
-        .await
+        validate_session(
+            &self.application,
+            &workspace_id,
+            Protocol::Sftp,
+            &ip,
+            &title,
+        )?;
+        self.application
+            .sftp()
+            .local_watches(&workspace_id)
+            .map(|watches| watches.into_iter().map(map_watch_summary).collect())
     }
 
     pub async fn list_terminals(&self) -> DataContextResult<Vec<TerminalSummary>> {
-        self.request(|reply| DataContextCommand::Ssh(SshCommand::ListTerminals { reply }))
-            .await
+        Ok(list_terminals(&self.application))
     }
 
     pub async fn select_terminal(
@@ -229,15 +354,8 @@ impl GuiContext {
         ip: String,
         title: String,
     ) -> DataContextResult<()> {
-        self.request(|reply| {
-            DataContextCommand::Ssh(SshCommand::SelectTerminal {
-                workspace_id,
-                ip,
-                title,
-                reply,
-            })
-        })
-        .await
+        validate_session(&self.application, &workspace_id, Protocol::Ssh, &ip, &title)?;
+        self.application.select_session(Some(workspace_id)).await
     }
 
     pub async fn read_terminal(
@@ -246,15 +364,19 @@ impl GuiContext {
         offset: usize,
         limit: usize,
     ) -> DataContextResult<TerminalReadPage> {
-        self.request(|reply| {
-            DataContextCommand::Ssh(SshCommand::ReadTerminal {
+        let workspace_id = resolve_terminal_id(&self.application, workspace_id)?;
+        self.application
+            .ssh()
+            .read(&workspace_id, offset, normalize_read_limit(limit))
+            .await
+            .map(|page| TerminalReadPage {
                 workspace_id,
-                offset,
-                limit,
-                reply,
+                text: page.text,
+                total_lines: page.total_lines,
+                offset: page.offset,
+                limit: page.limit,
+                has_more: page.has_more,
             })
-        })
-        .await
     }
 
     pub async fn send_text(
@@ -262,14 +384,11 @@ impl GuiContext {
         workspace_id: Option<String>,
         text: String,
     ) -> DataContextResult<()> {
-        self.request(|reply| {
-            DataContextCommand::Ssh(SshCommand::SendText {
-                workspace_id,
-                text,
-                reply,
-            })
-        })
-        .await
+        let workspace_id = resolve_terminal_id(&self.application, workspace_id)?;
+        self.application
+            .ssh()
+            .send_input(&workspace_id, text.into_bytes())
+            .await
     }
 
     pub async fn send_key(
@@ -280,139 +399,280 @@ impl GuiContext {
         alt: bool,
         shift: bool,
     ) -> DataContextResult<()> {
-        self.request(|reply| {
-            DataContextCommand::Ssh(SshCommand::SendKey {
-                workspace_id,
-                key,
-                control,
-                alt,
-                shift,
-                reply,
-            })
-        })
-        .await
-    }
-
-    async fn request<T>(
-        &self,
-        command: impl FnOnce(oneshot::Sender<DataContextResult<T>>) -> DataContextCommand,
-    ) -> DataContextResult<T> {
-        self.request_with_timeout(command, GUI_REQUEST_TIMEOUT)
+        let workspace_id = resolve_terminal_id(&self.application, workspace_id)?;
+        self.application
+            .ssh()
+            .send_key(&workspace_id, &key, control, alt, shift)
             .await
     }
 
-    async fn request_with_timeout<T>(
+    pub(crate) async fn send_terminal_input(
         &self,
-        command: impl FnOnce(oneshot::Sender<DataContextResult<T>>) -> DataContextCommand,
-        timeout: Duration,
-    ) -> DataContextResult<T> {
-        let (reply, response) = oneshot::channel();
-        let queue_capacity = self.commands.capacity();
-        let deadline = tokio::time::Instant::now() + timeout;
-        let command = command(reply);
-        let command_name = command.name();
-
-        if queue_capacity == 0 {
-            log::warn!(
-                "DataContext GUI command queue is full; command={command_name}, waiting for capacity"
-            );
-        }
-
-        tokio::time::timeout_at(deadline, self.commands.send(command))
+        workspace_id: String,
+        input: Vec<u8>,
+    ) -> DataContextResult<()> {
+        self.application
+            .ssh()
+            .send_input(&workspace_id, input)
             .await
-            .map_err(|_| {
-                log::warn!(
-                    "DataContext GUI command queue timed out after {:?}; command={command_name}, capacity_before_send={queue_capacity}",
-                    timeout
-                );
-                "DataContext GUI command queue timed out".to_owned()
-            })?
-            .map_err(|_| {
-                log::warn!("DataContext GUI command rejected: command={command_name}");
-                "DataContext GUI bridge is unavailable".to_owned()
-            })?;
+    }
 
-        log::debug!(
-            "DataContext GUI command dispatched: command={command_name}, capacity_after_send={}",
-            self.commands.capacity()
-        );
-
-        let response = tokio::time::timeout_at(deadline, response)
+    pub(crate) async fn resize_terminal(
+        &self,
+        workspace_id: String,
+        columns: u32,
+        rows: u32,
+    ) -> DataContextResult<()> {
+        self.application
+            .ssh()
+            .resize(&workspace_id, columns, rows)
             .await
-            .map_err(|_| {
-                log::warn!(
-                    "DataContext GUI response timed out after {:?}: command={command_name}",
-                    timeout
-                );
-                "DataContext GUI request timed out".to_owned()
-            })?
-            .map_err(|_| "DataContext GUI request was cancelled".to_owned())?;
+    }
 
-        log::debug!("DataContext GUI response received: command={command_name}");
-        response
+    pub(crate) async fn scroll_terminal(
+        &self,
+        workspace_id: String,
+        lines: i32,
+    ) -> DataContextResult<()> {
+        self.application.ssh().scroll(&workspace_id, lines).await
+    }
+
+    pub(crate) async fn scroll_terminal_to(
+        &self,
+        workspace_id: String,
+        offset: usize,
+    ) -> DataContextResult<()> {
+        self.application
+            .ssh()
+            .scroll_to(&workspace_id, offset)
+            .await
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
+fn selected_sftp_workspace(application: &ApplicationContext) -> DataContextResult<String> {
+    let workspace_id = application
+        .sessions()
+        .selected_id()
+        .ok_or_else(|| "当前没有选中的 SFTP 会话".to_owned())?;
+    validate_session_protocol(application, &workspace_id, Protocol::Sftp)?;
+    Ok(workspace_id)
+}
 
-    use tokio::sync::oneshot;
+fn resolve_terminal_id(
+    application: &ApplicationContext,
+    workspace_id: Option<String>,
+) -> DataContextResult<String> {
+    let workspace_id = workspace_id
+        .or_else(|| application.sessions().selected_id())
+        .ok_or_else(|| "当前没有选中的终端会话".to_owned())?;
+    validate_session_protocol(application, &workspace_id, Protocol::Ssh)?;
+    application
+        .ssh()
+        .snapshot(&workspace_id)
+        .map(|_| workspace_id)
+}
 
-    use super::super::bus::GUI_COMMAND_QUEUE_CAPACITY;
-    use super::gui_context_channel;
-
-    #[test]
-    fn gui_context_queue_keeps_the_bounded_capacity() {
-        let (context, _receiver) = gui_context_channel();
-
-        assert_eq!(context.commands.capacity(), GUI_COMMAND_QUEUE_CAPACITY);
+fn validate_session(
+    application: &ApplicationContext,
+    workspace_id: &str,
+    protocol: Protocol,
+    ip: &str,
+    title: &str,
+) -> DataContextResult<()> {
+    let profile = application
+        .sessions()
+        .get(workspace_id)
+        .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
+    if profile.protocol != protocol {
+        return Err(format!("会话协议不是 {protocol}: {workspace_id}"));
     }
-
-    #[tokio::test]
-    async fn gui_context_routes_commands_to_the_receiver() {
-        let (context, mut receiver) = gui_context_channel();
-        let request = tokio::spawn(async move { context.list_terminals().await });
-
-        let command = receiver.recv().await.expect("GUI command expected");
-        assert_eq!(command.name(), "ssh.list_terminals");
-
-        if let super::DataContextCommand::Ssh(super::SshCommand::ListTerminals { reply }) = command
-        {
-            reply
-                .send(Ok(Vec::new()))
-                .expect("request should still wait");
-        } else {
-            panic!("expected SSH terminal command");
-        }
-
-        assert!(request.await.expect("request task should finish").is_ok());
-    }
-
-    #[tokio::test]
-    async fn request_returns_an_error_when_the_gui_queue_is_full() {
-        let (context, _receiver) = gui_context_channel();
-
-        for _ in 0..GUI_COMMAND_QUEUE_CAPACITY {
-            let (reply, _response) = oneshot::channel();
-            context
-                .commands
-                .try_send(super::DataContextCommand::Ssh(
-                    super::SshCommand::ListTerminals { reply },
-                ))
-                .expect("the test queue should have capacity");
-        }
-
-        let result = context
-            .request_with_timeout(
-                |reply| super::DataContextCommand::Ssh(super::SshCommand::ListTerminals { reply }),
-                Duration::from_millis(20),
-            )
-            .await;
-
-        assert!(matches!(
-            result,
-            Err(error) if error == "DataContext GUI command queue timed out"
+    if profile.host != ip || profile.name != title {
+        return Err(format!(
+            "会话信息不匹配: {workspace_id}，请确认 ip 和 title"
         ));
     }
+    Ok(())
+}
+
+fn validate_session_protocol(
+    application: &ApplicationContext,
+    workspace_id: &str,
+    protocol: Protocol,
+) -> DataContextResult<()> {
+    let profile = application
+        .sessions()
+        .get(workspace_id)
+        .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
+    if profile.protocol != protocol {
+        return Err(format!("会话协议不是 {protocol}: {workspace_id}"));
+    }
+    Ok(())
+}
+
+fn list_terminals(application: &ApplicationContext) -> Vec<TerminalSummary> {
+    let selected_id = application.sessions().selected_id();
+    application
+        .sessions()
+        .list()
+        .into_iter()
+        .filter(|(_, profile)| profile.protocol == Protocol::Ssh)
+        .map(|(workspace_id, profile)| {
+            let status = application
+                .ssh()
+                .snapshot(&workspace_id)
+                .map(|data| terminal_status_name(&data.status).to_owned())
+                .unwrap_or_else(|_| "connecting".to_owned());
+            terminal_summary(workspace_id, profile, status, selected_id.as_deref())
+        })
+        .collect()
+}
+
+fn list_sftp_sessions(application: &ApplicationContext) -> Vec<TerminalSummary> {
+    let selected_id = application.sessions().selected_id();
+    application
+        .sessions()
+        .list()
+        .into_iter()
+        .filter(|(_, profile)| profile.protocol == Protocol::Sftp)
+        .map(|(workspace_id, profile)| {
+            let status = application
+                .sftp()
+                .snapshot(&workspace_id)
+                .map(|snapshot| sftp_status_name(snapshot.status).to_owned())
+                .unwrap_or_else(|_| "connecting".to_owned());
+            terminal_summary(workspace_id, profile, status, selected_id.as_deref())
+        })
+        .collect()
+}
+
+fn terminal_summary(
+    workspace_id: String,
+    profile: SessionProfile,
+    status: String,
+    selected_id: Option<&str>,
+) -> TerminalSummary {
+    TerminalSummary {
+        workspace_id: workspace_id.clone(),
+        profile_id: profile.id,
+        ip: profile.host.clone(),
+        title: profile.name.clone(),
+        host: profile.host,
+        protocol: profile.protocol.as_str().to_owned(),
+        status,
+        selected: selected_id == Some(workspace_id.as_str()),
+    }
+}
+
+fn map_remote_directory(snapshot: SftpSnapshot) -> SftpDirectorySummary {
+    SftpDirectorySummary {
+        path: snapshot.path,
+        entries: snapshot
+            .entries
+            .iter()
+            .map(|entry| SftpEntrySummary {
+                name: entry.name.clone(),
+                path: entry.path.clone(),
+                is_directory: entry.is_directory,
+                size: entry.size,
+                modified_at: entry.modified_at.map(u64::from),
+            })
+            .collect(),
+        loading: snapshot.loading,
+        error: snapshot.error,
+    }
+}
+
+fn map_local_directory(snapshot: LocalSnapshot) -> SftpDirectorySummary {
+    SftpDirectorySummary {
+        path: snapshot.path.display().to_string(),
+        entries: snapshot
+            .entries
+            .iter()
+            .map(|entry| SftpEntrySummary {
+                name: entry.name.clone(),
+                path: entry.path.display().to_string(),
+                is_directory: entry.is_directory,
+                size: entry.size,
+                modified_at: entry.modified_at.and_then(|modified_at| {
+                    modified_at
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|duration| duration.as_secs())
+                }),
+            })
+            .collect(),
+        loading: snapshot.loading,
+        error: snapshot.error,
+    }
+}
+
+fn map_transfer_summary(transfers: Vec<TransferRecord>) -> SftpTransferSummary {
+    SftpTransferSummary {
+        queued: transfers.len(),
+        transfers: transfers.into_iter().map(map_transfer_info).collect(),
+    }
+}
+
+fn map_transfer_info(transfer: TransferRecord) -> SftpTransferInfo {
+    let (source, is_directory) = match &transfer.request {
+        TransferRequest::Upload {
+            local_path,
+            is_directory,
+            ..
+        } => (local_path.display().to_string(), *is_directory),
+        TransferRequest::Download {
+            remote_path,
+            is_directory,
+            ..
+        } => (remote_path.clone(), *is_directory),
+    };
+    SftpTransferInfo {
+        id: transfer.id,
+        workspace_id: transfer.request.workspace_id().to_owned(),
+        name: transfer.name,
+        direction: transfer.direction,
+        source,
+        target: transfer.target,
+        is_directory,
+        progress: transfer.progress,
+        transferred_bytes: transfer.transferred_bytes,
+        total_bytes: transfer.total_bytes,
+        speed_bytes_per_second: transfer.speed,
+        status: transfer.status,
+        error: transfer.error,
+    }
+}
+
+fn map_watch_summary(summary: LocalWatchSummary) -> SftpWatchSummary {
+    SftpWatchSummary {
+        workspace_id: summary.workspace_id,
+        ip: summary.ip,
+        title: summary.title,
+        local_path: summary.local_path,
+        remote_path: summary.remote_path,
+        is_directory: summary.is_directory,
+        debounce_ms: summary.debounce_ms,
+    }
+}
+
+fn terminal_status_name(status: &TerminalStatus) -> &'static str {
+    match status {
+        TerminalStatus::Connecting => "connecting",
+        TerminalStatus::Connected => "connected",
+        TerminalStatus::Disconnected => "disconnected",
+        TerminalStatus::Failed => "failed",
+    }
+}
+
+fn sftp_status_name(status: SftpStatus) -> &'static str {
+    match status {
+        SftpStatus::Connecting => "connecting",
+        SftpStatus::Connected => "connected",
+        SftpStatus::Disconnected => "disconnected",
+        SftpStatus::Failed => "failed",
+    }
+}
+
+fn normalize_read_limit(limit: usize) -> usize {
+    if limit == 0 { 200 } else { limit.min(2_000) }
 }

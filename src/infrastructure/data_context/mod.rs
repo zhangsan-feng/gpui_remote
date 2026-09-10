@@ -5,5 +5,5 @@ use crate::{
 };
 
 pub(super) fn new(session: SessionStorageRepository) -> InfrastructureContext {
-    InfrastructureContext::new(profile_query::new(session))
+    InfrastructureContext::with_session(profile_query::new(session.clone()), session)
 }

@@ -17,8 +17,8 @@ use crate::{
     infrastructure::proxy::{ProxySettings, connect},
 };
 
-use super::super::{RemoteDeleteItem, SftpCommand, SftpEntry, SftpModel, SftpStatus};
 use super::conn::{SftpClientHandler, ssh_config};
+use super::{RemoteDeleteItem, SftpCommand, SftpEntry, SftpModel, SftpStatus};
 
 const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 

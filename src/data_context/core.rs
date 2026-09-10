@@ -1,10 +1,10 @@
-use super::{
-    GuiContext, GuiContextReceiver, InfrastructureContext, McpContext, gui_context_channel,
-};
+use super::{GuiContext, InfrastructureContext, McpContext};
+use crate::application::ApplicationContext;
 
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct DataContext {
+    application: ApplicationContext,
     mcp: McpContext,
     gui: GuiContext,
     infrastructure: InfrastructureContext,
@@ -12,18 +12,17 @@ pub struct DataContext {
 
 #[allow(dead_code)]
 impl DataContext {
-    pub fn new(infrastructure: InfrastructureContext) -> (Self, GuiContextReceiver) {
-        let (gui, gui_receiver) = gui_context_channel();
+    pub fn new(infrastructure: InfrastructureContext) -> Self {
+        let application = ApplicationContext::new(infrastructure.clone());
+        let gui = GuiContext::from_application(application.clone());
         let mcp = McpContext::new(gui.clone(), infrastructure.query_service());
 
-        (
-            Self {
-                mcp,
-                gui,
-                infrastructure,
-            },
-            gui_receiver,
-        )
+        Self {
+            application,
+            mcp,
+            gui,
+            infrastructure,
+        }
     }
 
     pub fn mcp(&self) -> McpContext {
@@ -36,5 +35,9 @@ impl DataContext {
 
     pub fn infrastructure(&self) -> InfrastructureContext {
         self.infrastructure.clone()
+    }
+
+    pub(crate) fn application(&self) -> ApplicationContext {
+        self.application.clone()
     }
 }

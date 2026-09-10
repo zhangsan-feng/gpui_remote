@@ -141,8 +141,8 @@ mod terminal_render {
                 .child(terminal_list)
                 .child(self.render_scrollbar(cx))
                 .on_prepaint(move |bounds, _, cx| {
-                    let _ = resize_view.update(cx, |this, _| {
-                        this.sync_pty_size(&resize_workspace_id, bounds.size, cell_width);
+                    let _ = resize_view.update(cx, |this, cx| {
+                        this.sync_pty_size(&resize_workspace_id, bounds.size, cell_width, cx);
                     });
                 })
                 .context_menu(move |menu, _, _| {
@@ -281,7 +281,7 @@ use gpui_kit::*;
 
 use crate::{
     component::{color::rgb_to_u32, theme},
-    domain::terminal::{TerminalSessionCommand, TerminalStatus},
+    domain::terminal::TerminalStatus,
     gui::workspace::ui::render_empty_workspace,
 };
 
@@ -324,13 +324,13 @@ impl TerminalView {
                 terminal.message.clone(),
             )
         };
-        self.scroll_handle
-            .sync(&frame, self.command_sender(&workspace_id));
+        self.scroll_handle.sync(&frame);
         self.sync_list(&workspace_id, frame.lines.len().max(1));
         let cell_width = terminal_cell_width(window);
 
         let focus = self.focus.clone();
-        let scroll_commands = self.command_sender(&workspace_id);
+        let scroll_workspace_id = workspace_id.clone();
+        let scroll_gui = self.gui.clone();
         let content = if status == TerminalStatus::Failed {
             render_connection_error(message).into_any_element()
         } else {
@@ -357,9 +357,14 @@ impl TerminalView {
                 let pixels = event.delta.pixel_delta(px(TERMINAL_LINE_HEIGHT)).y;
                 let lines = (f32::from(pixels) / TERMINAL_LINE_HEIGHT).round() as i32;
                 if lines != 0 {
-                    if let Some(commands) = &scroll_commands {
-                        let _ = commands.send(TerminalSessionCommand::Scroll { lines });
-                    }
+                    let gui = scroll_gui.clone();
+                    let workspace_id = scroll_workspace_id.clone();
+                    cx.spawn(async move |_cx| {
+                        if let Err(error) = gui.scroll_terminal(workspace_id, lines).await {
+                            log::debug!("滚动 SSH 终端失败: {error}");
+                        }
+                    })
+                    .detach();
                     cx.stop_propagation();
                 }
             })
@@ -393,6 +398,7 @@ impl TerminalView {
         workspace_id: &str,
         viewport: Size<Pixels>,
         cell_width: Pixels,
+        cx: &mut Context<Self>,
     ) {
         let text_width = f32::from(viewport.width)
             - terminal_render::GUTTER_WIDTH
@@ -404,7 +410,14 @@ impl TerminalView {
             .max(6.0) as u32;
         let pty_size = (workspace_id.to_owned(), columns, rows);
         if self.last_pty_size.as_ref() != Some(&pty_size) {
-            self.resize(workspace_id, columns, rows);
+            let gui = self.gui.clone();
+            let workspace_id = workspace_id.to_owned();
+            cx.spawn(async move |_this, _cx| {
+                if let Err(error) = gui.resize_terminal(workspace_id, columns, rows).await {
+                    log::debug!("调整 SSH 终端大小失败: {error}");
+                }
+            })
+            .detach();
             self.last_pty_size = Some(pty_size);
         }
     }

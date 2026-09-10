@@ -5,14 +5,12 @@ mod ui;
 
 use std::{collections::HashMap, sync::Arc};
 
+use crate::data_context::GuiContext;
 use gpui_kit::*;
 use serde::Deserialize;
-use tokio::sync::Notify;
 
-use core::TerminalRuntime;
+use core::TerminalModel;
 use internal::{TerminalPoint, TerminalScrollHandle, TerminalSelection};
-
-pub(in crate::gui::workspace) use external::encode_agent_key;
 
 const TERMINAL_KEY_CONTEXT: &str = "Terminal";
 const TERMINAL_FONT_FAMILY: &str = "Consolas";
@@ -33,10 +31,11 @@ struct CopyTerminal;
 struct PasteTerminal;
 
 pub(super) struct TerminalView {
-    terminals: HashMap<String, TerminalRuntime>,
+    models: HashMap<String, Arc<TerminalModel>>,
+    gui: GuiContext,
     selected_workspace_id: Option<String>,
-    updates: Arc<Notify>,
-    status_updates: Arc<Notify>,
+    updates: Arc<tokio::sync::Notify>,
+    status_updates: Arc<tokio::sync::Notify>,
     focus: FocusHandle,
     list_state: ListState,
     listed_workspace_id: Option<String>,
@@ -56,15 +55,16 @@ pub(in crate::gui::workspace) fn init(cx: &mut App) {
 }
 
 impl TerminalView {
-    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
-        let updates = Arc::new(Notify::new());
-        let status_updates = Arc::new(Notify::new());
+    pub(in crate::gui::workspace) fn new(gui: GuiContext, cx: &mut Context<Self>) -> Self {
+        let updates = gui.terminal_updates();
+        let status_updates = gui.terminal_status_updates();
         let list_state = ListState::new(0, ListAlignment::Top, px(256.))
             .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
         list_state.set_follow_mode(FollowMode::Tail);
 
         let this = Self {
-            terminals: HashMap::new(),
+            models: HashMap::new(),
+            gui,
             selected_workspace_id: None,
             updates,
             status_updates,

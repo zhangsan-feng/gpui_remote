@@ -29,6 +29,20 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) {
+        let workspace_ids = self.models.keys().cloned().collect::<Vec<_>>();
+        for workspace_id in workspace_ids {
+            let Ok(revision) = self.gui.terminal_revision(&workspace_id) else {
+                continue;
+            };
+            let Some(model) = self.models.get(&workspace_id) else {
+                continue;
+            };
+            if model.revision() != revision {
+                if let Ok(data) = self.gui.terminal_snapshot(&workspace_id) {
+                    model.replace(data, revision);
+                }
+            }
+        }
         let current_revision = self
             .selected_workspace_id
             .as_deref()

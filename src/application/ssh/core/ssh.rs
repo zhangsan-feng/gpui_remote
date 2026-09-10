@@ -18,7 +18,7 @@ mod core {
         runtime::run_connected_terminal_session,
     };
 
-    pub(in crate::gui::workspace::ssh) async fn run_ssh_session(
+    pub(crate) async fn run_ssh_session(
         profile: SessionProfile,
         command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
@@ -139,7 +139,7 @@ mod runtime {
 
     const REFRESH_INTERVAL: Duration = Duration::from_millis(33);
 
-    pub(super) async fn run_connected_terminal_session(
+    pub(crate) async fn run_connected_terminal_session(
         mut reader: ChannelReadHalf,
         writer: ChannelWriteHalf<client::Msg>,
         command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
@@ -287,7 +287,7 @@ mod runtime {
 
 use crate::infrastructure::storage::verify_host_key;
 
-pub(super) use core::run_ssh_session;
+pub(crate) use core::run_ssh_session;
 
 const DEFAULT_COLUMNS: u32 = 120;
 const DEFAULT_ROWS: u32 = 36;

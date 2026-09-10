@@ -6,7 +6,7 @@ mod color {
 
     use crate::domain::terminal::TerminalRgb;
 
-    pub(super) fn resolve_color(
+    pub(crate) fn resolve_color(
         color: Color,
         overrides: &Colors,
         foreground: bool,
@@ -22,31 +22,29 @@ mod color {
             color => color,
         };
         match color {
-            Color::Spec(rgb) => rgb.into(),
+            Color::Spec(rgb) => rgb_to_terminal_rgb(rgb),
             Color::Indexed(index) => overrides[index as usize]
-                .map(Into::into)
+                .map(rgb_to_terminal_rgb)
                 .unwrap_or_else(|| indexed_color(index)),
             Color::Named(named) => overrides[named]
-                .map(Into::into)
+                .map(rgb_to_terminal_rgb)
                 .unwrap_or_else(|| named_color(named)),
         }
     }
 
-    pub(super) fn is_default_background(color: Color) -> bool {
+    pub(crate) fn is_default_background(color: Color) -> bool {
         matches!(color, Color::Named(NamedColor::Background))
     }
 
-    impl From<Rgb> for TerminalRgb {
-        fn from(value: Rgb) -> Self {
-            Self {
-                red: value.r,
-                green: value.g,
-                blue: value.b,
-            }
+    fn rgb_to_terminal_rgb(value: Rgb) -> TerminalRgb {
+        TerminalRgb {
+            red: value.r,
+            green: value.g,
+            blue: value.b,
         }
     }
 
-    pub(in crate::gui::workspace::ssh) fn default_foreground() -> TerminalRgb {
+    pub(crate) fn default_foreground() -> TerminalRgb {
         TerminalRgb {
             red: 226,
             green: 232,
@@ -54,7 +52,7 @@ mod color {
         }
     }
 
-    pub(in crate::gui::workspace::ssh) fn default_background() -> TerminalRgb {
+    pub(crate) fn default_background() -> TerminalRgb {
         TerminalRgb {
             red: 20,
             green: 18,
@@ -168,7 +166,7 @@ mod core {
     };
 
     impl TerminalBuffer {
-        pub(in crate::gui::workspace::ssh) fn new(
+        pub(crate) fn new(
             commands: tokio::sync::mpsc::UnboundedSender<TerminalSessionCommand>,
         ) -> Self {
             Self::with_event_proxy(TerminalPtyProxy {
@@ -206,7 +204,7 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::ssh) fn process(&mut self, bytes: &[u8]) {
+        pub(crate) fn process(&mut self, bytes: &[u8]) {
             if bytes.is_empty() {
                 return;
             }
@@ -232,20 +230,20 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::ssh) fn resize(&mut self, columns: u32, rows: u32) {
+        pub(crate) fn resize(&mut self, columns: u32, rows: u32) {
             self.terminal.resize(TerminalSize {
                 columns: columns.max(2) as usize,
                 rows: rows.max(1) as usize,
             });
         }
 
-        pub(in crate::gui::workspace::ssh) fn scroll(&mut self, lines: i32) {
+        pub(crate) fn scroll(&mut self, lines: i32) {
             if lines != 0 {
                 self.terminal.scroll_display(Scroll::Delta(lines));
             }
         }
 
-        pub(in crate::gui::workspace::ssh) fn scroll_to(&mut self, offset: usize) {
+        pub(crate) fn scroll_to(&mut self, offset: usize) {
             let current_offset = self.terminal.grid().display_offset();
             let delta = offset as i64 - current_offset as i64;
             if delta != 0 {
@@ -255,10 +253,7 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::ssh) fn frame_reusing(
-            &mut self,
-            previous: Option<&TerminalFrame>,
-        ) -> TerminalFrame {
+        pub(crate) fn frame_reusing(&mut self, previous: Option<&TerminalFrame>) -> TerminalFrame {
             let screen_lines = self.terminal.screen_lines();
             let history_size = self
                 .terminal
@@ -323,11 +318,7 @@ mod core {
             }
         }
 
-        pub(in crate::gui::workspace::ssh) fn read_text(
-            &self,
-            offset: usize,
-            limit: usize,
-        ) -> TerminalHistoryPage {
+        pub(crate) fn read_text(&self, offset: usize, limit: usize) -> TerminalHistoryPage {
             let grid = self.terminal.grid();
             let total_lines = grid.total_lines();
             let offset = offset.min(total_lines);
@@ -539,7 +530,7 @@ impl EventListener for TerminalPtyProxy {
     }
 }
 
-pub(super) struct TerminalBuffer {
+pub(crate) struct TerminalBuffer {
     parser: ansi::Processor,
     terminal: Term<TerminalPtyProxy>,
     current_line_number: u64,

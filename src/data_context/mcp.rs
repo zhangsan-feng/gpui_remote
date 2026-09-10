@@ -122,9 +122,7 @@ impl McpContext {
         ip: String,
         title: String,
     ) -> DataContextResult<Vec<SftpWatchSummary>> {
-        self.gui
-            .list_sftp_local_watches(workspace_id, ip, title)
-            .await
+        self.gui.list_sftp_local_watches(workspace_id, ip, title)
     }
 
     pub async fn list_terminals(&self) -> DataContextResult<Vec<TerminalSummary>> {

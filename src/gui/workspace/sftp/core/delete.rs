@@ -1,7 +1,6 @@
 use gpui_kit::*;
 
-use super::super::{DeleteLocalEntry, DeleteRemoteEntry, SftpCommand, SftpView};
-use super::local;
+use super::super::{DeleteLocalEntry, DeleteRemoteEntry, SftpView};
 
 impl SftpView {
     pub(in crate::gui::workspace::sftp) fn delete_local_entry(
@@ -14,6 +13,9 @@ impl SftpView {
             return;
         }
         let paths = action.0.clone();
+        let Some(workspace_id) = self.selected_workspace_id.clone() else {
+            return;
+        };
         let current_directory = self.local.path.clone();
         self.local_selection.clear();
         self.local.loading = true;
@@ -25,40 +27,19 @@ impl SftpView {
         );
         cx.notify();
 
-        let refresh_directory = current_directory.clone();
+        let gui = self.gui.clone();
         cx.spawn(async move |this, cx| {
-            let result = tokio::task::spawn_blocking(move || {
-                let mut errors = Vec::new();
-                for path in paths {
-                    if let Err(error) = local::delete_local_path(&path) {
-                        log::warn!("SFTP 删除本地路径失败: {}: {error:#}", path.display());
-                        errors.push(format!("{}: {error:#}", path.display()));
-                    }
-                }
-                let directory = local::read_local_directory(&refresh_directory)?;
-                Ok::<_, anyhow::Error>((directory, errors))
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("删除本地路径任务失败: {error}"))
-            .and_then(|result| result);
-
+            let result = gui.delete_sftp_local_paths(workspace_id, paths).await;
             let _ = this.update(cx, |this, cx| {
                 if this.local.path != current_directory {
                     return;
                 }
                 this.local.loading = false;
-                match result {
-                    Ok(((path, entries), errors)) => {
-                        this.local.path = path;
-                        this.local.entries = std::sync::Arc::new(entries);
-                        this.local.error = (!errors.is_empty()).then(|| errors.join("\n"));
-                        cx.notify();
-                    }
-                    Err(error) => {
-                        this.local.error = Some(format!("{error:#}"));
-                        cx.notify();
-                    }
+                if let Err(error) = result {
+                    this.local.error = Some(error);
                 }
+                this.sync_application_state(&this.gui.clone());
+                cx.notify();
             });
         })
         .detach();
@@ -79,29 +60,30 @@ impl SftpView {
         let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
             return;
         };
-        let Some(runtime) = self.runtimes.get(workspace_id) else {
-            return;
-        };
         let items = action.items.clone();
         let count = items.len();
         let refresh_path = snapshot.path;
-        runtime.model.set_loading();
+        let gui = self.gui.clone();
         self.remote_selection.clear();
         log::debug!(
             "SFTP 批量删除远程路径加入队列: workspace_id={}, count={}, directory={refresh_path}",
             workspace_id,
             count
         );
-        if runtime
-            .commands
-            .send(SftpCommand::Delete {
-                items,
-                refresh_path,
-            })
-            .is_err()
-        {
-            runtime.model.set_error("SFTP 连接已关闭".to_owned());
-        }
+        let task_workspace_id = workspace_id.to_owned();
+        cx.spawn(async move |_this, _cx| {
+            let items = items
+                .into_iter()
+                .map(|item| crate::application::RemoteDeleteItem {
+                    path: item.path,
+                    is_directory: item.is_directory,
+                })
+                .collect();
+            if let Err(error) = gui.delete_sftp_remote(task_workspace_id, items).await {
+                log::warn!("SFTP 批量删除请求失败: {error}");
+            }
+        })
+        .detach();
         cx.notify();
     }
 }

@@ -36,6 +36,7 @@ pub struct SftpEntrySummary {
     pub path: String,
     pub is_directory: bool,
     pub size: u64,
+    pub modified_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]

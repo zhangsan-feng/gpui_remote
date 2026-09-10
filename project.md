@@ -1,124 +1,115 @@
-## 目录 / 文件职责
+# 项目架构
 
-- `Cargo.toml`：项目依赖、构建配置和开发构建优化；维护 gpui-kit 迁移后的直接依赖。
-- `Cargo.lock`：可复现的依赖解析结果；锁定 GPUI、platform、macros 和 HTTP client 的同批次版本。
-- `project.md`：记录项目目录和文件职责。
-- `src/build_info.rs`：提供构建时间等构建信息。
-- `src/main.rs`：应用入口、日志初始化、合并本地图标与 Kit 资源、HTTP client 注入、主窗口初始化。
-- `src/domain/`：会话、协议和终端等业务领域类型。
-- `src/global_state.rs`：全局会话状态类型、事件和 GPUI 全局状态访问。
-- `src/component/`：通用 UI 组件、颜色、可拖拽列表、可调整面板和窗口辅助工具。
-- `src/component/theme/`：主题数据、主题初始化、颜色配置和窗口背景外观。
-- `src/gui/`：主界面渲染入口和页面级 UI 组织。
-- `src/gui/sidebar_session/`：会话侧栏、会话输入、连接/编辑/删除操作和交互状态。
-- `src/gui/title_bar/`：标题栏、会话创建、设置入口及相关操作窗口。
-- `src/gui/title_bar/about_dialog/`：标题栏“关于”弹窗及构建时间展示。
-- `src/gui/title_bar/session_operation_window/`：SSH/SFTP 会话表单、输入状态和创建/编辑逻辑。
-- `src/gui/title_bar/settings_operation_window/`：应用设置表单、主题与 MCP 设置界面。
-- `src/gui/workspace/`：会话工作区、标签页、终端和 SFTP 内容布局。
-- `src/gui/workspace/ssh/`：SSH 终端 UI、输入、文本选择和运行时状态。
-- `src/gui/workspace/ssh/core/`：终端缓冲区、PTY、SSH 连接和终端核心数据流。
-- `src/gui/workspace/sftp/`：SFTP 列表、文件操作、选择与传输界面。
-- `src/gui/workspace/sftp/core/`：SFTP 本地/远程数据、连接和文件操作核心逻辑。
-- `src/gui/workspace/sftp/core/local_view.rs`：本地目录扫描、路径恢复与路径持久化。
-- `src/gui/workspace/sftp/core/delete.rs`：本地与远程批量删除编排、目录刷新和错误汇总。
-- `src/gui/workspace/sftp/ui/`：SFTP 本地/远程列表、选择和路径弹窗渲染。
-- `src/gui/workspace/sftp/ui/path_dialog_title_bar.rs`：SFTP 路径弹窗的私有标题栏和窗口控制。
-- `src/gui/workspace/top_session/`：工作区顶部会话标签及会话切换状态。
-- `src/data_context/`：GUI、MCP 与基础设施之间的核心中转层、命令总线、查询服务和中立 DTO。
-- `src/data_context/core.rs`：DataContext 组合根、上下文持有和核心生命周期。
-- `src/data_context/bus.rs`：命令、查询和事件通道的容量与生命周期配置。
-- `src/data_context/mcp.rs`：McpContext 对外提供的协议无关能力接口。
-- `src/data_context/gui.rs`：GuiContext、GUI receiver 和 GUI 命令适配。
-- `src/data_context/infrastructure.rs`：InfrastructureContext 与基础设施 ports 的组合。
-- `src/data_context/command.rs`：中立的数据上下文命令类型。
-- `src/data_context/query.rs`：查询 port 与查询服务。
-- `src/data_context/model.rs`：跨 GUI/MCP/Infrastructure 使用的中立 DTO。
-- `src/data_context/event.rs`：数据上下文事件类型和订阅扩展点。
-- `src/infrastructure/agent_mcp/`：MCP HTTP/RPC adapter、server、tools 和控制器。
-- `src/infrastructure/data_context/`：DataContext ports 的 SQLite 等基础设施适配器。
-- `src/infrastructure/proxy/`：代理连接建立和异步双向流抽象。
-- `src/infrastructure/storage/`：SQLite 会话存储、已知主机密钥和持久化基础设施。
+## 分层职责
 
-## 当前项目架构
+项目采用 `GUI -> DataContext -> ApplicationContext -> SSH/SFTP` 的数据流。
 
-项目采用“GUI 主导、DataContext 中转、MCP 外部适配、Infrastructure 提供基础能力”的分层结构。`DataContext` 是 MCP 与 GUI 之间的核心边界，不直接替代 Workspace，也不承载 GUI 的普通交互逻辑。
+- `domain`：会话、协议、终端快照等业务类型，不依赖 GUI 和基础设施。
+- `gui`：GPUI 视图、交互、选区、滚动、拖拽、弹窗和只读投影。GUI 不持有 SSH/SFTP 连接、任务、传输或监听运行时。
+- `data_context`：GUI 与 MCP 的统一中转层，负责调用 `ApplicationContext`、校验会话、转换 DTO 和暴露通知句柄。
+- `application`：应用级 API 和会话生命周期。SSH、SFTP 子模块在这里持有各自的数据面、任务、快照、传输和监听状态。
+- `infrastructure`：SQLite、代理、MCP HTTP/RPC 等基础设施适配器。
+- `component`：主题、列表、面板、窗口等通用 UI 组件。
 
-### 分层职责
+GUI 的异步操作从 `cx.spawn` 进入 `GuiContext`；应用模块内部使用 Tokio 管理任务，阻塞磁盘、SQLite 和密钥加载使用 `spawn_blocking`。
 
-- `domain`：定义会话、终端和协议等业务基础类型，不依赖 GUI、MCP 或具体基础设施。
-- `gui`：负责桌面界面和用户交互。普通 GUI 输入直接在 `Workspace`、`Ssh`、`Sftp` 等实体内处理，保持实时交互，不经过 `DataContext`。
-- `data_context`：负责跨边界的数据协调。`DataContext` 持有 `GuiContext`、`McpContext` 和 `InfrastructureContext`，向外提供中立 DTO、命令、查询和事件类型。
-- `infrastructure/agent_mcp`：MCP 的 HTTP/RPC 适配层，负责认证、服务生命周期、工具注册和协议转换，不直接操作 GUI Entity。
-- `infrastructure/data_context`：实现 DataContext 的基础设施 ports，当前通过 SQLite Repository 提供连接配置查询。
-- `infrastructure/storage`：提供 SQLite 持久化、会话配置和 SSH 已知主机密钥等能力。
-- `component`：提供主题、布局、列表、面板和窗口等通用 UI 能力。
-
-### DataContext 内部关系
+## 主要数据流
 
 ```text
-DataContext
-├── GuiContext
-│   ├── 有界 Tokio mpsc 命令队列
-│   └── oneshot 请求响应
-├── McpContext
-│   ├── 对 MCP 暴露协议无关的操作接口
-│   └── 将操作转发给 GuiContext 或 QueryService
-└── InfrastructureContext
-    └── 持有基础设施查询 ports 和 QueryService
+用户操作 / MCP 请求
+        |
+        v
+   DataContext
+   |         |
+ GuiContext McpContext
+        |
+        v
+ApplicationContext
+   |          |
+   v          v
+SshApplication SftpApplication
+   |          |
+ SSH runtime  SFTP runtime / transfer / watcher
 ```
 
-当前 `GuiContext` 命令队列容量为 256，单次请求超时为 10 秒。`McpContext::list_profiles` 通过 `QueryService` 查询基础设施，不进入 GUI 命令队列；会话、终端和 SFTP 操作则通过 `GuiContext` 进入 Workspace。
+SSH 和 SFTP 模块各自保存真实数据。GUI 通过快照、revision 和 `Notify` 获取投影，不反向访问模块内部存储。
 
-### 主要数据流
+会话打开、关闭和选择由 `ApplicationContext` 统一协调；GUI 的标签页和全局交互状态仍由 `global_state` 驱动，具体数据操作都经 `GuiContext` 转发。
 
-#### GUI 用户操作
+## 项目目录与文件职责
 
-```text
-用户输入
-  → GUI UI
-  → Workspace / SSH / SFTP Entity
-  → SSH、SFTP 或本地状态
-  → GPUI 刷新界面
-```
+- `Cargo.toml` / `Cargo.lock`：依赖和可复现构建配置。
+- `src/main.rs`：应用入口、日志、资源、全局 Storage 和 GPUI 初始化。
+- `src/domain/`：会话、协议、终端领域类型。
+- `src/global_state.rs`：GUI 会话投影事件和全局状态访问。
+- `src/component/`：通用 UI 组件、主题、列表、面板和窗口工具。
 
-GUI 自己的输入和展示仍在 Workspace 内部闭环，保证输入实时性；`DataContext` 不介入普通 GUI 操作。
+### `src/application/`
 
-#### MCP 请求
+- `mod.rs`：声明应用子模块并导出 `ApplicationContext`、应用级类型。
+- `core.rs`：组装基础设施、会话、SSH 和 SFTP，并提供打开/关闭/选择会话及路径持久化 API。
+- `session.rs`：维护跨协议会话元数据和选择状态。
+- `event.rs`：应用会话事件类型。
+- `ssh/mod.rs`：SSH 模块入口。
+- `ssh/core/mod.rs`：SSH 核心类型和子模块声明。
+- `ssh/core/service.rs`：SSH runtime 管理、输入、尺寸、滚动、读取和通知 API。
+- `ssh/core/pty.rs`：PTY runtime 生命周期和任务回收。
+- `ssh/core/ssh.rs`：SSH 连接、认证、读写循环和终端输入处理。
+- `ssh/core/buffer.rs`：ANSI 解析、终端缓冲、历史读取和帧快照生成。
+- `ssh/core/key.rs`：终端按键编码。
+- `sftp/mod.rs`：SFTP 模块入口和对外类型导出。
+- `sftp/core/mod.rs`：SFTP 快照、传输模型、命令和运行时类型。
+- `sftp/core/service.rs`：SFTP 会话、目录、传输、删除、重试和监听编排。
+- `sftp/core/conn.rs`：SFTP SSH 连接、认证和主机密钥校验。
+- `sftp/core/remote.rs`：远程目录读取、删除、上传和下载。
+- `sftp/core/local.rs`：本地目录扫描和本地删除。
+- `sftp/core/watcher.rs`：本地文件监听、防抖和自动上传。
+- `sftp/core/path.rs`：本地默认路径和路径工具。
 
-```text
-MCP Agent
-  → Streamable HTTP /mcp
-  → AgentTerminalMcp tools
-  → McpContext
-  ├── QueryService → Infrastructure → SQLite
-  └── GuiContext → bounded mpsc → Workspace::start_data_context
-                              → SSH / SFTP Entity
-                              → oneshot 最终结果
-```
+### `src/data_context/`
 
-MCP 工具当前采用单次请求、单次最终结果模型。HTTP 层可以使用 Streamable HTTP，但工具不会返回增量结果流。SFTP 上传和下载会先排队并返回传输信息，后续通过 `list_sftp_transfers` 查询状态、进度和错误。
+- `mod.rs`：中转层模块声明、DTO 导出和统一结果类型。
+- `core.rs`：组装 `ApplicationContext`、`GuiContext`、`McpContext` 和基础设施句柄。
+- `gui.rs`：GUI API facade；所有终端、SFTP、传输和监听调用转到 `ApplicationContext`。
+- `mcp.rs`：MCP API facade；与 GUI 共用同一个 `ApplicationContext`。
+- `infrastructure.rs`：基础设施查询和会话存储 port 的组合。
+- `query.rs`：Profile 查询服务。
+- `model.rs`：GUI/MCP 使用的只读 DTO。
+- `event.rs`：数据上下文事件扩展类型。
 
-### 初始化与生命周期
+### `src/gui/`
+
+- `home/`：首页和应用级页面。
+- `sidebar_session/`：会话侧栏和配置交互。
+- `title_bar/`：标题栏、设置和连接表单。
+- `workspace/mod.rs`：Workspace 初始化、注入共享 `GuiContext` 和 Render 入口。
+- `workspace/core.rs`：Workspace 核心状态和布局协调。
+- `workspace/external.rs`：Workspace 对外事件订阅，将全局会话事件转成 DataContext 调用。
+- `workspace/internal.rs`：状态栏和 UI 内部协调。
+- `workspace/ui.rs`：Workspace 渲染。
+- `workspace/ssh/`：SSH 终端 UI、键盘、选区、滚动和 GUI 投影同步。
+- `workspace/sftp/`：SFTP 列表、选择、拖拽、路径弹窗和 GUI 投影同步。
+- `workspace/top_session/`：顶部会话标签和 GUI 会话选择。
+
+`gui` 内的 `core.rs` 负责交互编排，`ui.rs` 负责渲染，`external.rs` 负责对外暴露的 GUI 适配，`mod.rs` 负责类型、子模块、初始化和 Render 入口。
+
+### `src/infrastructure/`
+
+- `storage/`：SQLite 会话、SFTP 路径和已知主机密钥存储。
+- `data_context/`：为 DataContext 提供 SQLite 查询和会话存储实现。
+- `proxy/`：代理连接和异步双向流。
+- `agent_mcp/`：MCP controller、HTTP/RPC server、工具和设置；初始化共享 DataContext。
+
+## 初始化与生命周期
 
 ```text
 main
-  → 初始化日志、HTTP Client、GPUI 和全局 Storage
-  → 创建 HomeView
-  → 创建 Workspace
-  → infrastructure::agent_mcp::start
-      → 创建 InfrastructureContext
-      → 创建 DataContext 和 GuiContextReceiver
-      → 启动 MCP Controller / Streamable HTTP Server
-  → Workspace::start_data_context 消费 GUI 命令
+  -> Storage / GPUI
+  -> Workspace
+  -> infrastructure::agent_mcp::start
+  -> DataContext::new
+  -> ApplicationContext::new
+  -> TerminalView / SftpView 共用 GuiContext
 ```
 
-MCP 服务由 `AgentMcpController` 管理启停和配置；Workspace 持有 GUI 侧 receiver，并在 GPUI 生命周期内消费来自 MCP 的命令。MCP 服务关闭或 Workspace 不可用时，命令通过超时、取消或错误返回结束。
-
-GUi
-    -> data_context -> ApplicationContext -> 数据
-    -> data_context -> InfrastructureContext -> 数据
-Mcp -> data_context -> ApplicationContext -> 数据
-    -> data_context -> InfrastructureContext -> 数据
-
-
+`agent_mcp::start` 使用 `OnceLock` 保证同一进程复用同一个 `DataContext` 和 `ApplicationContext`。会话关闭时由应用层先停止 SSH/SFTP runtime、传输和监听任务，再移除会话元数据。

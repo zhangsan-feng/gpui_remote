@@ -3,24 +3,22 @@ mod external;
 mod internal;
 mod ui;
 
-use self::{core::LocalWatch, ui::MultiSelection};
+use self::ui::MultiSelection;
 
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex, RwLock},
-    time::{Instant, SystemTime},
+    sync::{Arc, RwLock},
+    time::SystemTime,
 };
 
 use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui_kit::*;
 use serde::Deserialize;
-use tokio::{
-    sync::{Notify, mpsc, oneshot},
-    task::JoinHandle,
-};
+use tokio::sync::Notify;
 
 use crate::component::theme;
+use crate::data_context::{GuiContext, SftpWatchSummary};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SftpStatus {
@@ -59,42 +57,13 @@ struct LocalSnapshot {
 #[derive(Clone, Debug)]
 struct TransferRecord {
     id: u64,
+    workspace_id: String,
     name: String,
     direction: String,
     target: String,
-    request: TransferRequest,
     progress: f32,
-    transferred_bytes: u64,
-    total_bytes: u64,
     speed: u64,
-    started_at: Option<Instant>,
-    speed_updated_at: Option<Instant>,
     status: String,
-    error: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-enum TransferRequest {
-    Upload {
-        workspace_id: String,
-        local_path: PathBuf,
-        is_directory: bool,
-    },
-    Download {
-        workspace_id: String,
-        remote_path: String,
-        file_name: String,
-        total_size: u64,
-        is_directory: bool,
-    },
-}
-
-impl TransferRequest {
-    fn workspace_id(&self) -> &str {
-        match self {
-            Self::Upload { workspace_id, .. } | Self::Download { workspace_id, .. } => workspace_id,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -120,48 +89,20 @@ impl Default for SftpSnapshot {
 
 struct SftpModel {
     snapshot: RwLock<SftpSnapshot>,
-    transfers: Arc<RwLock<Vec<TransferRecord>>>,
-    cancelled_transfers: RwLock<HashSet<u64>>,
-    updates: Arc<Notify>,
-    status_updates: Arc<Notify>,
-    transfer_ui_throttle: Arc<Mutex<Option<Instant>>>,
 }
 
-enum SftpCommand {
-    LoadDirectory(String),
-    Upload {
-        transfer_id: u64,
-        local_path: PathBuf,
-        remote_path: String,
-        refresh_path: String,
-    },
-    Download {
-        transfer_id: u64,
-        remote_path: String,
-        local_path: PathBuf,
-        total_size: u64,
-        is_directory: bool,
-        complete: oneshot::Sender<bool>,
-    },
-    Delete {
-        items: Vec<RemoteDeleteItem>,
-        refresh_path: String,
-    },
-    Disconnect,
-}
-
-struct SftpRuntime {
+struct SftpProjection {
     profile_id: String,
     profile_ip: String,
     profile_title: String,
     model: Arc<SftpModel>,
-    commands: mpsc::UnboundedSender<SftpCommand>,
-    task: JoinHandle<()>,
 }
 
 pub(in crate::gui::workspace) struct SftpView {
-    runtimes: HashMap<String, SftpRuntime>,
-    local_watchers: HashMap<String, HashMap<PathBuf, LocalWatch>>,
+    gui: GuiContext,
+    projections: HashMap<String, SftpProjection>,
+    local_watchers: HashMap<String, HashMap<PathBuf, SftpWatchSummary>>,
+    remote_revisions: HashMap<String, u64>,
     local_restore_requests: HashSet<String>,
     persisted_remote_paths: HashMap<String, String>,
     selected_workspace_id: Option<String>,
@@ -173,13 +114,11 @@ pub(in crate::gui::workspace) struct SftpView {
     remote_selection: MultiSelection<String>,
     transfers: Arc<RwLock<Vec<TransferRecord>>>,
     transfer_context_id: Option<u64>,
-    next_transfer_id: u64,
     local_list_state: ListState,
     remote_list_state: ListState,
     transfer_list_state: ListState,
     updates: Arc<Notify>,
     status_updates: Arc<Notify>,
-    transfer_ui_throttle: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Clone)]
@@ -328,10 +267,9 @@ impl Render for DragPreviewRemoteToLocalItem {
 }
 
 impl SftpView {
-    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
-        let updates = Arc::new(Notify::new());
-        let status_updates = Arc::new(Notify::new());
-        let transfer_ui_throttle = Arc::new(Mutex::new(None));
+    pub(in crate::gui::workspace) fn new(gui: GuiContext, cx: &mut Context<Self>) -> Self {
+        let updates = gui.sftp_updates();
+        let status_updates = gui.sftp_status_updates();
         let local_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let remote_list_state =
@@ -339,10 +277,15 @@ impl SftpView {
         let transfer_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let model_updates = updates.clone();
+        let sync_gui = gui.clone();
         cx.spawn(async move |this, cx| {
             loop {
                 model_updates.notified().await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                let result = this.update(cx, |this, cx| {
+                    this.sync_application_state(&sync_gui);
+                    cx.notify();
+                });
+                if result.is_err() {
                     break;
                 }
             }
@@ -350,8 +293,10 @@ impl SftpView {
         .detach();
 
         let this = Self {
-            runtimes: HashMap::new(),
+            gui,
+            projections: HashMap::new(),
             local_watchers: HashMap::new(),
+            remote_revisions: HashMap::new(),
             local_restore_requests: HashSet::new(),
             persisted_remote_paths: HashMap::new(),
             selected_workspace_id: None,
@@ -368,13 +313,11 @@ impl SftpView {
             remote_selection: MultiSelection::default(),
             transfers: Arc::new(RwLock::new(Vec::new())),
             transfer_context_id: None,
-            next_transfer_id: 1,
             local_list_state,
             remote_list_state,
             transfer_list_state,
             updates,
             status_updates,
-            transfer_ui_throttle,
         };
         this.start_subscribe(cx);
         this
@@ -390,9 +333,5 @@ impl Render for SftpView {
 impl Drop for SftpView {
     fn drop(&mut self) {
         self.stop_all_local_watchers();
-        for (_, runtime) in self.runtimes.drain() {
-            let _ = runtime.commands.send(SftpCommand::Disconnect);
-            runtime.task.abort();
-        }
     }
 }

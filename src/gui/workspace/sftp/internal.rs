@@ -7,11 +7,11 @@ use super::{SftpSnapshot, SftpView};
 impl SftpView {
     pub(super) fn selected_snapshot(&self) -> Option<SftpSnapshot> {
         let workspace_id = self.selected_workspace_id.as_deref()?;
-        Some(self.runtimes.get(workspace_id)?.model.snapshot())
+        Some(self.projections.get(workspace_id)?.model.snapshot())
     }
 
     pub(super) fn open_directory(&mut self, path: String, cx: &mut Context<Self>) {
-        self.load_directory(path);
+        self.load_directory(path, cx);
         cx.notify();
     }
 
@@ -22,7 +22,7 @@ impl SftpView {
     ) {
         let current_path = self.selected_snapshot().map(|snapshot| snapshot.path);
         let should_persist = should_persist_remote_path(current_path.as_deref(), &path);
-        self.load_directory(path.clone());
+        self.load_directory(path.clone(), cx);
         if should_persist {
             self.persist_remote_directory(&path, cx);
         }
@@ -65,7 +65,7 @@ impl SftpView {
         let Some(snapshot) = self.selected_snapshot() else {
             return;
         };
-        self.load_directory(parent_path(&snapshot.path));
+        self.load_directory(parent_path(&snapshot.path), cx);
         cx.notify();
     }
 
@@ -73,7 +73,7 @@ impl SftpView {
         let Some(snapshot) = self.selected_snapshot() else {
             return;
         };
-        self.load_directory(snapshot.path);
+        self.load_directory(snapshot.path, cx);
         cx.notify();
     }
 

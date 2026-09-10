@@ -1,4 +1,3 @@
-mod agent_mcp;
 mod core;
 mod external;
 mod internal;
@@ -9,12 +8,14 @@ mod ui;
 
 use gpui_kit::*;
 
+use crate::data_context::GuiContext;
 use crate::domain::session::Protocol;
 use sftp::SftpView;
 use ssh::TerminalView;
 use top_session::WorkspaceSession;
 
 pub struct Workspace {
+    gui: GuiContext,
     workspace: Entity<WorkspaceSession>,
     terminal: Entity<TerminalView>,
     sftp: Entity<SftpView>,
@@ -25,17 +26,18 @@ impl Workspace {
     pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         ssh::init(cx);
 
-        let gui_receiver = crate::infrastructure::agent_mcp::start(
+        let data_context = crate::infrastructure::agent_mcp::start(
             cx.global::<crate::infrastructure::storage::Storage>()
                 .session
                 .clone(),
         );
 
         let workspace = cx.new(|cx| WorkspaceSession::new(cx));
-        let terminal = cx.new(TerminalView::new);
-        let sftp = cx.new(SftpView::new);
+        let terminal = cx.new(|cx| TerminalView::new(data_context.gui(), cx));
+        let sftp = cx.new(|cx| SftpView::new(data_context.gui(), cx));
 
         let this = Self {
+            gui: data_context.gui(),
             workspace,
             terminal,
             sftp,
@@ -43,7 +45,6 @@ impl Workspace {
         };
         this.start_status_watchers(cx);
         this.start_subscribe(cx);
-        this.start_data_context(gui_receiver, cx);
         this.refresh_session_statuses(cx);
         this
     }

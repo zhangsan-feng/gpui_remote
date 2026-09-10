@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context as _, Result};
 
-use super::super::LocalEntry;
+use super::LocalEntry;
 
 pub(super) fn read_local_directory(path: &Path) -> Result<(PathBuf, Vec<LocalEntry>)> {
     let path = path

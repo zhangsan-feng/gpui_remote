@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
-    application::agent_mcp::{AgentMcpProfileQuery, ProfileSummary},
+    data_context::{ProfileQuery, ProfileSummary},
     infrastructure::storage::SessionStorageRepository,
 };
 
-pub(super) fn new(session: SessionStorageRepository) -> Arc<dyn AgentMcpProfileQuery> {
+pub(super) fn new(session: SessionStorageRepository) -> Arc<dyn ProfileQuery> {
     Arc::new(SqliteProfileQuery { session })
 }
 
@@ -13,7 +13,7 @@ struct SqliteProfileQuery {
     session: SessionStorageRepository,
 }
 
-impl AgentMcpProfileQuery for SqliteProfileQuery {
+impl ProfileQuery for SqliteProfileQuery {
     fn list_profiles(&self) -> Result<Vec<ProfileSummary>, String> {
         self.session
             .list()

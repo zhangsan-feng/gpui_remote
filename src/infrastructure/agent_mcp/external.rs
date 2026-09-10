@@ -1,22 +1,22 @@
 use std::sync::OnceLock;
 
 use crate::{
-    application::agent_mcp::{AgentMcpClient, AgentMcpDataFlow, AgentMcpQueryService},
+    data_context::{DataContext, GuiContextReceiver},
+    infrastructure::data_context as infrastructure_context,
     infrastructure::storage::SessionStorageRepository,
 };
 
-use super::{McpSettings, core, profile_query};
+use super::{McpSettings, core};
 
 static CONTROLLER: OnceLock<core::AgentMcpController> = OnceLock::new();
 
-pub fn start(client: AgentMcpClient, session: SessionStorageRepository) {
-    let profile_query = profile_query::new(session);
-    let queries = AgentMcpQueryService::new(profile_query);
-    let data_flow = AgentMcpDataFlow::new(client, queries);
-    let controller = core::AgentMcpController::new(data_flow);
+pub fn start(session: SessionStorageRepository) -> GuiContextReceiver {
+    let infrastructure = infrastructure_context::new(session);
+    let (data_context, gui_receiver) = DataContext::new(infrastructure);
+    let controller = core::AgentMcpController::new(data_context);
     if CONTROLLER.set(controller).is_err() {
         log::warn!("Agent MCP service was already initialized");
-        return;
+        return gui_receiver;
     }
 
     if let Some(controller) = CONTROLLER.get() {
@@ -25,6 +25,8 @@ pub fn start(client: AgentMcpClient, session: SessionStorageRepository) {
             log::error!("启动 Agent MCP 服务失败: {error}");
         }
     }
+
+    gui_receiver
 }
 
 pub fn settings() -> McpSettings {

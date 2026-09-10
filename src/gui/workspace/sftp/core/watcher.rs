@@ -10,7 +10,7 @@ use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watche
 use tokio::sync::{mpsc, oneshot};
 
 use super::super::{SftpView, StopWatchingLocalPath, WatchLocalPath};
-use crate::application::agent_mcp::SftpWatchSummary;
+use crate::data_context::SftpWatchSummary;
 
 const WATCH_DEBOUNCE: Duration = Duration::from_secs(2);
 

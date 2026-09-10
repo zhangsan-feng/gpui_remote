@@ -7,11 +7,11 @@ use rmcp::transport::streamable_http_server::{
 };
 use tokio::net::TcpListener;
 
-use crate::application::agent_mcp::AgentMcpDataFlow;
+use crate::data_context::McpContext;
 
 use super::{McpSettings, auth::require_bearer_token, tools::AgentTerminalMcp};
 
-pub(super) async fn run(data_flow: AgentMcpDataFlow, settings: McpSettings) -> Result<()> {
+pub(super) async fn run(mcp_context: McpContext, settings: McpSettings) -> Result<()> {
     let token: Arc<str> = settings.token.clone().into();
 
     let config = StreamableHttpServerConfig::default()
@@ -19,7 +19,7 @@ pub(super) async fn run(data_flow: AgentMcpDataFlow, settings: McpSettings) -> R
         .with_json_response(true);
     let service: StreamableHttpService<AgentTerminalMcp, LocalSessionManager> =
         StreamableHttpService::new(
-            move || Ok(AgentTerminalMcp::new(data_flow.clone())),
+            move || Ok(AgentTerminalMcp::new(mcp_context.clone())),
             Default::default(),
             config,
         );

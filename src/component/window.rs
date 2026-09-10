@@ -1,5 +1,3 @@
-use crate::gui;
-use gpui_kit::component::Root;
 use gpui_kit::*;
 
 pub fn window_center(window: &mut Window, window_size: Size<Pixels>) -> WindowBounds {

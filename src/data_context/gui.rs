@@ -5,53 +5,51 @@ use tokio::sync::{mpsc, oneshot};
 use crate::domain::session::Protocol;
 
 use super::{
-    AgentMcpCommand, AgentSftpCommand, AgentSshCommand, SftpDirectorySummary, SftpTransferInfo,
-    SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
-    command::AgentMcpResult,
+    DataContextCommand, DataContextResult, SftpCommand, SftpDirectorySummary, SftpTransferInfo,
+    SftpTransferSummary, SftpWatchSummary, SshCommand, TerminalReadPage, TerminalSummary,
 };
 
-const CHANNEL_CAPACITY: usize = 256;
-const BRIDGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+use super::bus::{GUI_COMMAND_QUEUE_CAPACITY, GUI_REQUEST_TIMEOUT};
 
 #[derive(Clone)]
-pub struct AgentMcpClient {
-    commands: mpsc::Sender<AgentMcpCommand>,
+pub struct GuiContext {
+    commands: mpsc::Sender<DataContextCommand>,
 }
 
-pub struct AgentMcpReceiver {
-    commands: mpsc::Receiver<AgentMcpCommand>,
+pub struct GuiContextReceiver {
+    commands: mpsc::Receiver<DataContextCommand>,
 }
 
-pub fn agent_mcp_channel() -> (AgentMcpClient, AgentMcpReceiver) {
-    let (commands, receiver) = mpsc::channel(CHANNEL_CAPACITY);
+pub fn gui_context_channel() -> (GuiContext, GuiContextReceiver) {
+    let (commands, receiver) = mpsc::channel(GUI_COMMAND_QUEUE_CAPACITY);
     (
-        AgentMcpClient { commands },
-        AgentMcpReceiver { commands: receiver },
+        GuiContext { commands },
+        GuiContextReceiver { commands: receiver },
     )
 }
 
-impl AgentMcpReceiver {
-    pub async fn recv(&mut self) -> Option<AgentMcpCommand> {
+impl GuiContextReceiver {
+    pub async fn recv(&mut self) -> Option<DataContextCommand> {
         self.commands.recv().await
     }
 }
 
-impl AgentMcpClient {
+impl GuiContext {
     pub async fn open_session(
         &self,
         profile_id: String,
         protocol: Protocol,
         ip: String,
         title: String,
-    ) -> AgentMcpResult<String> {
+    ) -> DataContextResult<String> {
         self.request(|reply| match protocol {
-            Protocol::Ssh => AgentMcpCommand::Ssh(AgentSshCommand::Open {
+            Protocol::Ssh => DataContextCommand::Ssh(SshCommand::Open {
                 profile_id,
                 ip,
                 title,
                 reply,
             }),
-            Protocol::Sftp => AgentMcpCommand::Sftp(AgentSftpCommand::Open {
+            Protocol::Sftp => DataContextCommand::Sftp(SftpCommand::Open {
                 profile_id,
                 ip,
                 title,
@@ -61,13 +59,13 @@ impl AgentMcpClient {
         .await
     }
 
-    pub async fn list_sftp_local(&self) -> AgentMcpResult<SftpDirectorySummary> {
-        self.request(|reply| AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }))
+    pub async fn list_sftp_local(&self) -> DataContextResult<SftpDirectorySummary> {
+        self.request(|reply| DataContextCommand::Sftp(SftpCommand::ListLocal { reply }))
             .await
     }
 
-    pub async fn list_sftp_sessions(&self) -> AgentMcpResult<Vec<TerminalSummary>> {
-        self.request(|reply| AgentMcpCommand::Sftp(AgentSftpCommand::ListSessions { reply }))
+    pub async fn list_sftp_sessions(&self) -> DataContextResult<Vec<TerminalSummary>> {
+        self.request(|reply| DataContextCommand::Sftp(SftpCommand::ListSessions { reply }))
             .await
     }
 
@@ -77,9 +75,9 @@ impl AgentMcpClient {
         ip: String,
         title: String,
         path: String,
-    ) -> AgentMcpResult<()> {
+    ) -> DataContextResult<()> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeLocalDirectory {
+            DataContextCommand::Sftp(SftpCommand::ChangeLocalDirectory {
                 workspace_id,
                 ip,
                 title,
@@ -93,9 +91,9 @@ impl AgentMcpClient {
     pub async fn list_sftp_remote(
         &self,
         workspace_id: String,
-    ) -> AgentMcpResult<SftpDirectorySummary> {
+    ) -> DataContextResult<SftpDirectorySummary> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListRemote {
+            DataContextCommand::Sftp(SftpCommand::ListRemote {
                 workspace_id,
                 reply,
             })
@@ -109,9 +107,9 @@ impl AgentMcpClient {
         ip: String,
         title: String,
         path: String,
-    ) -> AgentMcpResult<()> {
+    ) -> DataContextResult<()> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeRemoteDirectory {
+            DataContextCommand::Sftp(SftpCommand::ChangeRemoteDirectory {
                 workspace_id,
                 ip,
                 title,
@@ -126,9 +124,9 @@ impl AgentMcpClient {
         &self,
         workspace_id: String,
         local_paths: Vec<String>,
-    ) -> AgentMcpResult<SftpTransferSummary> {
+    ) -> DataContextResult<SftpTransferSummary> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::Upload {
+            DataContextCommand::Sftp(SftpCommand::Upload {
                 workspace_id,
                 local_paths,
                 reply,
@@ -141,9 +139,9 @@ impl AgentMcpClient {
         &self,
         workspace_id: String,
         remote_paths: Vec<String>,
-    ) -> AgentMcpResult<SftpTransferSummary> {
+    ) -> DataContextResult<SftpTransferSummary> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::Download {
+            DataContextCommand::Sftp(SftpCommand::Download {
                 workspace_id,
                 remote_paths,
                 reply,
@@ -155,9 +153,9 @@ impl AgentMcpClient {
     pub async fn list_sftp_transfers(
         &self,
         workspace_id: String,
-    ) -> AgentMcpResult<Vec<SftpTransferInfo>> {
+    ) -> DataContextResult<Vec<SftpTransferInfo>> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListTransfers {
+            DataContextCommand::Sftp(SftpCommand::ListTransfers {
                 workspace_id,
                 reply,
             })
@@ -171,9 +169,9 @@ impl AgentMcpClient {
         ip: String,
         title: String,
         local_path: String,
-    ) -> AgentMcpResult<SftpWatchSummary> {
+    ) -> DataContextResult<SftpWatchSummary> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::WatchLocal {
+            DataContextCommand::Sftp(SftpCommand::WatchLocal {
                 workspace_id,
                 ip,
                 title,
@@ -190,9 +188,9 @@ impl AgentMcpClient {
         ip: String,
         title: String,
         local_path: String,
-    ) -> AgentMcpResult<()> {
+    ) -> DataContextResult<()> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::StopWatchingLocal {
+            DataContextCommand::Sftp(SftpCommand::StopWatchingLocal {
                 workspace_id,
                 ip,
                 title,
@@ -208,9 +206,9 @@ impl AgentMcpClient {
         workspace_id: String,
         ip: String,
         title: String,
-    ) -> AgentMcpResult<Vec<SftpWatchSummary>> {
+    ) -> DataContextResult<Vec<SftpWatchSummary>> {
         self.request(|reply| {
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListLocalWatches {
+            DataContextCommand::Sftp(SftpCommand::ListLocalWatches {
                 workspace_id,
                 ip,
                 title,
@@ -220,8 +218,8 @@ impl AgentMcpClient {
         .await
     }
 
-    pub async fn list_terminals(&self) -> AgentMcpResult<Vec<TerminalSummary>> {
-        self.request(|reply| AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }))
+    pub async fn list_terminals(&self) -> DataContextResult<Vec<TerminalSummary>> {
+        self.request(|reply| DataContextCommand::Ssh(SshCommand::ListTerminals { reply }))
             .await
     }
 
@@ -230,9 +228,9 @@ impl AgentMcpClient {
         workspace_id: String,
         ip: String,
         title: String,
-    ) -> AgentMcpResult<()> {
+    ) -> DataContextResult<()> {
         self.request(|reply| {
-            AgentMcpCommand::Ssh(AgentSshCommand::SelectTerminal {
+            DataContextCommand::Ssh(SshCommand::SelectTerminal {
                 workspace_id,
                 ip,
                 title,
@@ -247,9 +245,9 @@ impl AgentMcpClient {
         workspace_id: Option<String>,
         offset: usize,
         limit: usize,
-    ) -> AgentMcpResult<TerminalReadPage> {
+    ) -> DataContextResult<TerminalReadPage> {
         self.request(|reply| {
-            AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal {
+            DataContextCommand::Ssh(SshCommand::ReadTerminal {
                 workspace_id,
                 offset,
                 limit,
@@ -263,9 +261,9 @@ impl AgentMcpClient {
         &self,
         workspace_id: Option<String>,
         text: String,
-    ) -> AgentMcpResult<()> {
+    ) -> DataContextResult<()> {
         self.request(|reply| {
-            AgentMcpCommand::Ssh(AgentSshCommand::SendText {
+            DataContextCommand::Ssh(SshCommand::SendText {
                 workspace_id,
                 text,
                 reply,
@@ -281,9 +279,9 @@ impl AgentMcpClient {
         control: bool,
         alt: bool,
         shift: bool,
-    ) -> AgentMcpResult<()> {
+    ) -> DataContextResult<()> {
         self.request(|reply| {
-            AgentMcpCommand::Ssh(AgentSshCommand::SendKey {
+            DataContextCommand::Ssh(SshCommand::SendKey {
                 workspace_id,
                 key,
                 control,
@@ -297,17 +295,17 @@ impl AgentMcpClient {
 
     async fn request<T>(
         &self,
-        command: impl FnOnce(oneshot::Sender<AgentMcpResult<T>>) -> AgentMcpCommand,
-    ) -> AgentMcpResult<T> {
-        self.request_with_timeout(command, BRIDGE_REQUEST_TIMEOUT)
+        command: impl FnOnce(oneshot::Sender<DataContextResult<T>>) -> DataContextCommand,
+    ) -> DataContextResult<T> {
+        self.request_with_timeout(command, GUI_REQUEST_TIMEOUT)
             .await
     }
 
     async fn request_with_timeout<T>(
         &self,
-        command: impl FnOnce(oneshot::Sender<AgentMcpResult<T>>) -> AgentMcpCommand,
+        command: impl FnOnce(oneshot::Sender<DataContextResult<T>>) -> DataContextCommand,
         timeout: Duration,
-    ) -> AgentMcpResult<T> {
+    ) -> DataContextResult<T> {
         let (reply, response) = oneshot::channel();
         let queue_capacity = self.commands.capacity();
         let deadline = tokio::time::Instant::now() + timeout;
@@ -316,7 +314,7 @@ impl AgentMcpClient {
 
         if queue_capacity == 0 {
             log::warn!(
-                "MCP GUI bridge command queue is full; command={command_name}, waiting for capacity"
+                "DataContext GUI command queue is full; command={command_name}, waiting for capacity"
             );
         }
 
@@ -324,18 +322,18 @@ impl AgentMcpClient {
             .await
             .map_err(|_| {
                 log::warn!(
-                    "MCP GUI bridge command queue timed out after {:?}; command={command_name}, capacity_before_send={queue_capacity}",
+                    "DataContext GUI command queue timed out after {:?}; command={command_name}, capacity_before_send={queue_capacity}",
                     timeout
                 );
-                "GUI MCP command queue timed out".to_owned()
+                "DataContext GUI command queue timed out".to_owned()
             })?
             .map_err(|_| {
-                log::warn!("MCP GUI bridge command rejected: command={command_name}");
-                "GUI MCP bridge is unavailable".to_owned()
+                log::warn!("DataContext GUI command rejected: command={command_name}");
+                "DataContext GUI bridge is unavailable".to_owned()
             })?;
 
         log::debug!(
-            "MCP GUI bridge command dispatched: command={command_name}, capacity_after_send={}",
+            "DataContext GUI command dispatched: command={command_name}, capacity_after_send={}",
             self.commands.capacity()
         );
 
@@ -343,71 +341,78 @@ impl AgentMcpClient {
             .await
             .map_err(|_| {
                 log::warn!(
-                    "MCP GUI bridge response timed out after {:?}: command={command_name}",
+                    "DataContext GUI response timed out after {:?}: command={command_name}",
                     timeout
                 );
-                "GUI MCP request timed out".to_owned()
+                "DataContext GUI request timed out".to_owned()
             })?
-            .map_err(|_| "GUI MCP request was cancelled".to_owned())?;
+            .map_err(|_| "DataContext GUI request was cancelled".to_owned())?;
 
-        log::debug!("MCP GUI bridge response received: command={command_name}");
+        log::debug!("DataContext GUI response received: command={command_name}");
         response
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::time::Duration;
+
+    use tokio::sync::oneshot;
+
+    use super::super::bus::GUI_COMMAND_QUEUE_CAPACITY;
+    use super::gui_context_channel;
+
+    #[test]
+    fn gui_context_queue_keeps_the_bounded_capacity() {
+        let (context, _receiver) = gui_context_channel();
+
+        assert_eq!(context.commands.capacity(), GUI_COMMAND_QUEUE_CAPACITY);
+    }
 
     #[tokio::test]
-    async fn list_sftp_sessions_routes_to_the_sftp_command() {
-        let (client, mut receiver) = agent_mcp_channel();
-        let request = tokio::spawn(async move { client.list_sftp_sessions().await });
+    async fn gui_context_routes_commands_to_the_receiver() {
+        let (context, mut receiver) = gui_context_channel();
+        let request = tokio::spawn(async move { context.list_terminals().await });
 
-        let command = receiver
-            .recv()
-            .await
-            .expect("SFTP session request expected");
-        match command {
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListSessions { reply }) => {
-                reply
-                    .send(Ok(Vec::new()))
-                    .expect("request should still be waiting");
-            }
-            _ => panic!("expected an SFTP session list command"),
+        let command = receiver.recv().await.expect("GUI command expected");
+        assert_eq!(command.name(), "ssh.list_terminals");
+
+        if let super::DataContextCommand::Ssh(super::SshCommand::ListTerminals { reply }) = command
+        {
+            reply
+                .send(Ok(Vec::new()))
+                .expect("request should still wait");
+        } else {
+            panic!("expected SSH terminal command");
         }
 
         assert!(request.await.expect("request task should finish").is_ok());
     }
 
-    #[test]
-    fn agent_mcp_channel_buffers_256_commands() {
-        let (client, _receiver) = agent_mcp_channel();
-
-        assert_eq!(client.commands.capacity(), 256);
-    }
-
     #[tokio::test]
-    async fn request_returns_an_error_when_the_command_queue_is_full() {
-        let (client, _receiver) = agent_mcp_channel();
+    async fn request_returns_an_error_when_the_gui_queue_is_full() {
+        let (context, _receiver) = gui_context_channel();
 
-        for _ in 0..CHANNEL_CAPACITY {
+        for _ in 0..GUI_COMMAND_QUEUE_CAPACITY {
             let (reply, _response) = oneshot::channel();
-            client
+            context
                 .commands
-                .try_send(AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals {
-                    reply,
-                }))
+                .try_send(super::DataContextCommand::Ssh(
+                    super::SshCommand::ListTerminals { reply },
+                ))
                 .expect("the test queue should have capacity");
         }
 
-        let result = client
+        let result = context
             .request_with_timeout(
-                |reply| AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }),
-                std::time::Duration::from_millis(20),
+                |reply| super::DataContextCommand::Ssh(super::SshCommand::ListTerminals { reply }),
+                Duration::from_millis(20),
             )
             .await;
 
-        assert!(matches!(result, Err(error) if error == "GUI MCP command queue timed out"));
+        assert!(matches!(
+            result,
+            Err(error) if error == "DataContext GUI command queue timed out"
+        ));
     }
 }

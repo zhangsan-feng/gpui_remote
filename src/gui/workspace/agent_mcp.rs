@@ -3,8 +3,8 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::{
-    application::agent_mcp::{
-        AgentMcpCommand, AgentMcpReceiver, AgentSftpCommand, AgentSshCommand, TerminalReadPage,
+    data_context::{
+        DataContextCommand, GuiContextReceiver, SftpCommand, SshCommand, TerminalReadPage,
         TerminalSummary,
     },
     domain::{
@@ -22,7 +22,11 @@ const MAX_READ_LIMIT: usize = 2_000;
 const TERMINAL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl Workspace {
-    pub(super) fn start_agent_mcp(&self, mut receiver: AgentMcpReceiver, cx: &mut Context<Self>) {
+    pub(super) fn start_data_context(
+        &self,
+        mut receiver: GuiContextReceiver,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |this, cx| {
             log::debug!("Agent MCP GUI bridge loop started");
 
@@ -46,7 +50,7 @@ impl Workspace {
                 }
 
                 match command {
-                    AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal {
+                    DataContextCommand::Ssh(SshCommand::ReadTerminal {
                         workspace_id,
                         offset,
                         limit,
@@ -95,7 +99,7 @@ impl Workspace {
                     }
                     command => {
                         if this
-                            .update(cx, |this, cx| this.handle_agent_command(command, cx))
+                            .update(cx, |this, cx| this.handle_data_context_command(command, cx))
                             .is_err()
                         {
                             log::warn!("Agent MCP GUI bridge stopped: workspace is unavailable");
@@ -114,9 +118,9 @@ impl Workspace {
         .detach();
     }
 
-    fn handle_agent_command(&mut self, command: AgentMcpCommand, cx: &mut Context<Self>) {
+    fn handle_data_context_command(&mut self, command: DataContextCommand, cx: &mut Context<Self>) {
         match command {
-            AgentMcpCommand::Ssh(AgentSshCommand::Open {
+            DataContextCommand::Ssh(SshCommand::Open {
                 profile_id,
                 ip,
                 title,
@@ -125,7 +129,7 @@ impl Workspace {
                 let result = self.open_agent_session(profile_id, Protocol::Ssh, ip, title, cx);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::Open {
+            DataContextCommand::Sftp(SftpCommand::Open {
                 profile_id,
                 ip,
                 title,
@@ -134,7 +138,7 @@ impl Workspace {
                 let result = self.open_agent_session(profile_id, Protocol::Sftp, ip, title, cx);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListSessions { reply }) => {
+            DataContextCommand::Sftp(SftpCommand::ListSessions { reply }) => {
                 let selected_id = self.workspace.read(cx).selected_id();
                 let sessions = self
                     .workspace
@@ -163,11 +167,11 @@ impl Workspace {
                     .collect();
                 let _ = reply.send(Ok(sessions));
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListLocal { reply }) => {
+            DataContextCommand::Sftp(SftpCommand::ListLocal { reply }) => {
                 let result = Ok(self.sftp.read(cx).mcp_local_directory());
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeLocalDirectory {
+            DataContextCommand::Sftp(SftpCommand::ChangeLocalDirectory {
                 workspace_id,
                 ip,
                 title,
@@ -182,14 +186,14 @@ impl Workspace {
                     .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListRemote {
+            DataContextCommand::Sftp(SftpCommand::ListRemote {
                 workspace_id,
                 reply,
             }) => {
                 let result = self.sftp.read(cx).mcp_remote_directory(&workspace_id);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ChangeRemoteDirectory {
+            DataContextCommand::Sftp(SftpCommand::ChangeRemoteDirectory {
                 workspace_id,
                 ip,
                 title,
@@ -204,7 +208,7 @@ impl Workspace {
                     .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::Upload {
+            DataContextCommand::Sftp(SftpCommand::Upload {
                 workspace_id,
                 local_paths,
                 reply,
@@ -217,7 +221,7 @@ impl Workspace {
                     .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::Download {
+            DataContextCommand::Sftp(SftpCommand::Download {
                 workspace_id,
                 remote_paths,
                 reply,
@@ -230,14 +234,14 @@ impl Workspace {
                     .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListTransfers {
+            DataContextCommand::Sftp(SftpCommand::ListTransfers {
                 workspace_id,
                 reply,
             }) => {
                 let result = self.sftp.read(cx).mcp_transfers(&workspace_id);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::WatchLocal {
+            DataContextCommand::Sftp(SftpCommand::WatchLocal {
                 workspace_id,
                 ip,
                 title,
@@ -265,7 +269,7 @@ impl Workspace {
                     }
                 }
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::StopWatchingLocal {
+            DataContextCommand::Sftp(SftpCommand::StopWatchingLocal {
                 workspace_id,
                 ip,
                 title,
@@ -280,7 +284,7 @@ impl Workspace {
                     .map_err(|_| "工作区已关闭".to_owned());
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Sftp(AgentSftpCommand::ListLocalWatches {
+            DataContextCommand::Sftp(SftpCommand::ListLocalWatches {
                 workspace_id,
                 ip,
                 title,
@@ -292,7 +296,7 @@ impl Workspace {
                     .mcp_list_local_watches(&workspace_id, &ip, &title);
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Ssh(AgentSshCommand::ListTerminals { reply }) => {
+            DataContextCommand::Ssh(SshCommand::ListTerminals { reply }) => {
                 let selected_id = self.workspace.read(cx).selected_id();
                 let terminals = self
                     .workspace
@@ -321,7 +325,7 @@ impl Workspace {
                     .collect();
                 let _ = reply.send(Ok(terminals));
             }
-            AgentMcpCommand::Ssh(AgentSshCommand::SelectTerminal {
+            DataContextCommand::Ssh(SshCommand::SelectTerminal {
                 workspace_id,
                 ip,
                 title,
@@ -348,7 +352,7 @@ impl Workspace {
                 };
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Ssh(AgentSshCommand::SendText {
+            DataContextCommand::Ssh(SshCommand::SendText {
                 workspace_id,
                 text,
                 reply,
@@ -362,7 +366,7 @@ impl Workspace {
                     });
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Ssh(AgentSshCommand::SendKey {
+            DataContextCommand::Ssh(SshCommand::SendKey {
                 workspace_id,
                 key,
                 control,
@@ -384,7 +388,7 @@ impl Workspace {
                     });
                 let _ = reply.send(result);
             }
-            AgentMcpCommand::Ssh(AgentSshCommand::ReadTerminal { .. }) => unreachable!(),
+            DataContextCommand::Ssh(SshCommand::ReadTerminal { .. }) => unreachable!(),
         }
     }
 

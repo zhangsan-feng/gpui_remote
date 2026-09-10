@@ -2,13 +2,13 @@ use rmcp::{
     ErrorData, Json,
     handler::server::wrapper::Parameters,
     schemars::{self, JsonSchema},
-    tool, tool_router,
+    tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::agent_mcp::{
-        AgentMcpDataFlow, ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
+    data_context::{
+        McpContext, ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
         SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
     },
     domain::session::Protocol,
@@ -16,11 +16,11 @@ use crate::{
 
 #[derive(Clone)]
 pub(super) struct AgentTerminalMcp {
-    data_flow: AgentMcpDataFlow,
+    data_flow: McpContext,
 }
 
 impl AgentTerminalMcp {
-    pub(super) fn new(data_flow: AgentMcpDataFlow) -> Self {
+    pub(super) fn new(data_flow: McpContext) -> Self {
         Self { data_flow }
     }
 }
@@ -207,7 +207,7 @@ struct ActionOutput {
     success: bool,
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl AgentTerminalMcp {
     #[tool(
         description = "List saved connection profiles. Returns profile id, title, ip, host, and protocol."
@@ -456,6 +456,11 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 }
+
+#[tool_handler(
+    instructions = "This MCP server uses single-request/single-final-result tool semantics. The HTTP transport may be Streamable HTTP, but each tool invocation returns one final result and does not stream incremental output. Long-running SFTP transfers are queued by upload_sftp or download_sftp; use list_sftp_transfers to query their later status and progress."
+)]
+impl rmcp::ServerHandler for AgentTerminalMcp {}
 
 impl From<OpenSessionProtocol> for Protocol {
     fn from(protocol: OpenSessionProtocol) -> Self {

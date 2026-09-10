@@ -3,10 +3,7 @@ mod external;
 mod internal;
 mod ui;
 
-use self::{
-    core::{LocalWatch, default_desktop_path},
-    ui::MultiSelection,
-};
+use self::{core::LocalWatch, ui::MultiSelection};
 
 use std::{
     collections::{HashMap, HashSet},
@@ -395,18 +392,6 @@ impl SftpView {
             status_updates,
             transfer_ui_throttle,
         };
-        cx.spawn(async move |this, cx| {
-            let path = tokio::task::spawn_blocking(default_desktop_path)
-                .await
-                .unwrap_or_else(|error| {
-                    log::warn!("解析默认本地目录任务失败: {error}");
-                    PathBuf::from(".")
-                });
-            let _ = this.update(cx, |this, cx| {
-                this.load_local_directory(path, cx);
-            });
-        })
-        .detach();
         this.start_subscribe(cx);
         this
     }

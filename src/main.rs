@@ -3,9 +3,9 @@
     windows_subsystem = "windows"
 )]
 
-mod application;
 mod build_info;
 mod component;
+mod data_context;
 mod domain;
 mod global_state;
 mod gui;
@@ -49,10 +49,7 @@ pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) -> [WorkerGuard
         //     metadata.level() == Level::Info && !metadata.target().starts_with("symphonia")
         // })
         .level(log::LevelFilter::Info)
-        .level_for(
-            "gpui_remote::application::agent_mcp",
-            log::LevelFilter::Debug,
-        )
+        .level_for("gpui_remote::data_context", log::LevelFilter::Debug)
         .level_for(
             "gpui_remote::gui::workspace::agent_mcp",
             log::LevelFilter::Debug,

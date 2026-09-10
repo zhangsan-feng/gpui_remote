@@ -4,7 +4,7 @@ use gpui_kit::*;
 use tokio::sync::{Notify, oneshot};
 
 use crate::{
-    application::agent_mcp::{
+    data_context::{
         SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo, SftpTransferSummary,
         SftpWatchSummary,
     },

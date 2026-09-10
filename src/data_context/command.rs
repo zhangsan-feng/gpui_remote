@@ -1,43 +1,43 @@
 use tokio::sync::oneshot;
 
-use super::{
+use super::model::{
     SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary, SftpWatchSummary,
     TerminalReadPage, TerminalSummary,
 };
 
-pub type AgentMcpResult<T> = Result<T, String>;
+pub type DataContextResult<T> = Result<T, String>;
 
-pub enum AgentMcpCommand {
-    Ssh(AgentSshCommand),
-    Sftp(AgentSftpCommand),
+pub enum DataContextCommand {
+    Ssh(SshCommand),
+    Sftp(SftpCommand),
 }
 
-pub enum AgentSshCommand {
+pub enum SshCommand {
     Open {
         profile_id: String,
         ip: String,
         title: String,
-        reply: oneshot::Sender<AgentMcpResult<String>>,
+        reply: oneshot::Sender<DataContextResult<String>>,
     },
     ListTerminals {
-        reply: oneshot::Sender<AgentMcpResult<Vec<TerminalSummary>>>,
+        reply: oneshot::Sender<DataContextResult<Vec<TerminalSummary>>>,
     },
     SelectTerminal {
         workspace_id: String,
         ip: String,
         title: String,
-        reply: oneshot::Sender<AgentMcpResult<()>>,
+        reply: oneshot::Sender<DataContextResult<()>>,
     },
     ReadTerminal {
         workspace_id: Option<String>,
         offset: usize,
         limit: usize,
-        reply: oneshot::Sender<AgentMcpResult<TerminalReadPage>>,
+        reply: oneshot::Sender<DataContextResult<TerminalReadPage>>,
     },
     SendText {
         workspace_id: Option<String>,
         text: String,
-        reply: oneshot::Sender<AgentMcpResult<()>>,
+        reply: oneshot::Sender<DataContextResult<()>>,
     },
     SendKey {
         workspace_id: Option<String>,
@@ -45,78 +45,78 @@ pub enum AgentSshCommand {
         control: bool,
         alt: bool,
         shift: bool,
-        reply: oneshot::Sender<AgentMcpResult<()>>,
+        reply: oneshot::Sender<DataContextResult<()>>,
     },
 }
 
-pub enum AgentSftpCommand {
+pub enum SftpCommand {
     Open {
         profile_id: String,
         ip: String,
         title: String,
-        reply: oneshot::Sender<AgentMcpResult<String>>,
+        reply: oneshot::Sender<DataContextResult<String>>,
     },
     ListSessions {
-        reply: oneshot::Sender<AgentMcpResult<Vec<TerminalSummary>>>,
+        reply: oneshot::Sender<DataContextResult<Vec<TerminalSummary>>>,
     },
     ListLocal {
-        reply: oneshot::Sender<AgentMcpResult<SftpDirectorySummary>>,
+        reply: oneshot::Sender<DataContextResult<SftpDirectorySummary>>,
     },
     ChangeLocalDirectory {
         workspace_id: String,
         ip: String,
         title: String,
         path: String,
-        reply: oneshot::Sender<AgentMcpResult<()>>,
+        reply: oneshot::Sender<DataContextResult<()>>,
     },
     ListRemote {
         workspace_id: String,
-        reply: oneshot::Sender<AgentMcpResult<SftpDirectorySummary>>,
+        reply: oneshot::Sender<DataContextResult<SftpDirectorySummary>>,
     },
     ChangeRemoteDirectory {
         workspace_id: String,
         ip: String,
         title: String,
         path: String,
-        reply: oneshot::Sender<AgentMcpResult<()>>,
+        reply: oneshot::Sender<DataContextResult<()>>,
     },
     Upload {
         workspace_id: String,
         local_paths: Vec<String>,
-        reply: oneshot::Sender<AgentMcpResult<SftpTransferSummary>>,
+        reply: oneshot::Sender<DataContextResult<SftpTransferSummary>>,
     },
     Download {
         workspace_id: String,
         remote_paths: Vec<String>,
-        reply: oneshot::Sender<AgentMcpResult<SftpTransferSummary>>,
+        reply: oneshot::Sender<DataContextResult<SftpTransferSummary>>,
     },
     ListTransfers {
         workspace_id: String,
-        reply: oneshot::Sender<AgentMcpResult<Vec<SftpTransferInfo>>>,
+        reply: oneshot::Sender<DataContextResult<Vec<SftpTransferInfo>>>,
     },
     WatchLocal {
         workspace_id: String,
         ip: String,
         title: String,
         local_path: String,
-        reply: oneshot::Sender<AgentMcpResult<SftpWatchSummary>>,
+        reply: oneshot::Sender<DataContextResult<SftpWatchSummary>>,
     },
     StopWatchingLocal {
         workspace_id: String,
         ip: String,
         title: String,
         local_path: String,
-        reply: oneshot::Sender<AgentMcpResult<()>>,
+        reply: oneshot::Sender<DataContextResult<()>>,
     },
     ListLocalWatches {
         workspace_id: String,
         ip: String,
         title: String,
-        reply: oneshot::Sender<AgentMcpResult<Vec<SftpWatchSummary>>>,
+        reply: oneshot::Sender<DataContextResult<Vec<SftpWatchSummary>>>,
     },
 }
 
-impl AgentMcpCommand {
+impl DataContextCommand {
     pub fn is_cancelled(&self) -> bool {
         match self {
             Self::Ssh(command) => command.is_cancelled(),
@@ -132,7 +132,7 @@ impl AgentMcpCommand {
     }
 }
 
-impl AgentSshCommand {
+impl SshCommand {
     fn is_cancelled(&self) -> bool {
         match self {
             Self::Open { reply, .. } => reply.is_closed(),
@@ -156,7 +156,7 @@ impl AgentSshCommand {
     }
 }
 
-impl AgentSftpCommand {
+impl SftpCommand {
     fn is_cancelled(&self) -> bool {
         match self {
             Self::Open { reply, .. } => reply.is_closed(),

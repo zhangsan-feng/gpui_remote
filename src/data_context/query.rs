@@ -1,36 +1,36 @@
 use std::sync::Arc;
 
-use super::ProfileSummary;
+use super::model::ProfileSummary;
 
-pub trait AgentMcpProfileQuery: Send + Sync + 'static {
+pub trait ProfileQuery: Send + Sync + 'static {
     fn list_profiles(&self) -> Result<Vec<ProfileSummary>, String>;
 }
 
 #[derive(Clone)]
-pub struct AgentMcpQueryService {
-    profile_query: Arc<dyn AgentMcpProfileQuery>,
+pub struct QueryService {
+    profile_query: Arc<dyn ProfileQuery>,
 }
 
-impl AgentMcpQueryService {
-    pub fn new(profile_query: Arc<dyn AgentMcpProfileQuery>) -> Self {
+impl QueryService {
+    pub fn new(profile_query: Arc<dyn ProfileQuery>) -> Self {
         Self { profile_query }
     }
 
     pub async fn list_profiles(&self) -> Result<Vec<ProfileSummary>, String> {
         let started_at = std::time::Instant::now();
         let profile_query = Arc::clone(&self.profile_query);
-        log::debug!("MCP data flow query started: command=profiles.list");
+        log::debug!("DataContext query started: command=profiles.list");
         let result = tokio::task::spawn_blocking(move || profile_query.list_profiles())
             .await
-            .map_err(|error| format!("MCP profile query task failed: {error}"))?;
+            .map_err(|error| format!("DataContext profile query task failed: {error}"))?;
         match &result {
             Ok(profiles) => log::debug!(
-                "MCP data flow query finished: command=profiles.list, count={}, elapsed_ms={}",
+                "DataContext query finished: command=profiles.list, count={}, elapsed_ms={}",
                 profiles.len(),
                 started_at.elapsed().as_millis()
             ),
             Err(error) => log::warn!(
-                "MCP data flow query failed: command=profiles.list, elapsed_ms={}, error={error}",
+                "DataContext query failed: command=profiles.list, elapsed_ms={}, error={error}",
                 started_at.elapsed().as_millis()
             ),
         }
@@ -42,11 +42,12 @@ impl AgentMcpQueryService {
 mod tests {
     use std::sync::Arc;
 
-    use super::{AgentMcpProfileQuery, AgentMcpQueryService, ProfileSummary};
+    use super::{ProfileQuery, QueryService};
+    use crate::data_context::ProfileSummary;
 
     struct StaticProfileQuery;
 
-    impl AgentMcpProfileQuery for StaticProfileQuery {
+    impl ProfileQuery for StaticProfileQuery {
         fn list_profiles(&self) -> Result<Vec<ProfileSummary>, String> {
             Ok(vec![ProfileSummary {
                 id: "profile-1".to_owned(),
@@ -59,7 +60,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_profiles_runs_through_the_query_service() {
-        let service = AgentMcpQueryService::new(Arc::new(StaticProfileQuery));
+        let service = QueryService::new(Arc::new(StaticProfileQuery));
 
         let profiles = service
             .list_profiles()

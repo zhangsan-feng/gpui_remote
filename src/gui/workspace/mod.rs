@@ -9,7 +9,7 @@ mod ui;
 
 use gpui_kit::*;
 
-use crate::{domain::session::Protocol, infrastructure::storage::Storage};
+use crate::domain::session::Protocol;
 use sftp::SftpView;
 use ssh::TerminalView;
 use top_session::WorkspaceSession;
@@ -25,11 +25,10 @@ impl Workspace {
     pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         ssh::init(cx);
 
-        let (agent_mcp_client, agent_mcp_receiver) =
-            crate::application::agent_mcp::agent_mcp_channel();
-        crate::infrastructure::agent_mcp::start(
-            agent_mcp_client,
-            cx.global::<Storage>().session.clone(),
+        let gui_receiver = crate::infrastructure::agent_mcp::start(
+            cx.global::<crate::infrastructure::storage::Storage>()
+                .session
+                .clone(),
         );
 
         let workspace = cx.new(|cx| WorkspaceSession::new(cx));
@@ -44,7 +43,7 @@ impl Workspace {
         };
         this.start_status_watchers(cx);
         this.start_subscribe(cx);
-        this.start_agent_mcp(agent_mcp_receiver, cx);
+        this.start_data_context(gui_receiver, cx);
         this.refresh_session_statuses(cx);
         this
     }

@@ -1,4 +1,5 @@
 use gpui_kit::{App, AppContext};
+use std::time::Instant;
 
 use crate::application::ApplicationContext;
 
@@ -19,12 +20,26 @@ pub(crate) fn start_mcp_bridge(cx: &mut App, mut bridge: McpBridgeReceiver) {
                         break;
                     };
                     let request_id = command.request_id.clone();
-                    log::debug!("MCP bridge command received: request_id={request_id}");
+                    let command_name = command.command.name();
+                    let workspace_id = command.command.workspace_id().unwrap_or("control").to_owned();
+                    let queue_ms = command.queued_at.elapsed().as_millis();
+                    log::debug!(
+                        "MCP bridge command received: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, queue_ms={queue_ms}"
+                    );
+                    let dispatch_started = Instant::now();
                     let result = dispatch::dispatch(&application, command.command).await;
+                    let application_ms = dispatch_started.elapsed().as_millis();
+                    let total_ms = command.queued_at.elapsed().as_millis();
+                    let application_failed = result.is_err();
+                    if application_failed {
+                        log::warn!(
+                            "MCP bridge application error: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, queue_ms={queue_ms}, application_ms={application_ms}, total_ms={total_ms}"
+                        );
+                    }
                     if command.response_tx.send(super::types::ResponseEnvelope { request_id: request_id.clone(), result }).is_err() {
-                        log::debug!("MCP bridge response receiver dropped: request_id={request_id}");
+                        log::debug!("MCP bridge response receiver dropped: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, queue_ms={queue_ms}, application_ms={application_ms}, total_ms={total_ms}");
                     } else {
-                        log::debug!("MCP bridge response sent: request_id={request_id}");
+                        log::debug!("MCP bridge response sent: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, queue_ms={queue_ms}, application_ms={application_ms}, total_ms={total_ms}");
                     }
                 }
                 event = application_events.recv() => {

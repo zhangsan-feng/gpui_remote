@@ -129,13 +129,13 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - 增加 `ApplicationCommand::name(&self) -> &'static str`，用于统一日志字段。
 - 日志字段固定包含 `request_id`、`command`、`workspace_id`（无会话命令记录 `control`）、`queue_ms`、`application_ms`、`total_ms`。
 
-- [ ] 在 `McpBridgeEndpoint::request` 创建 envelope 时记录 `Instant::now()`。
-- [ ] 在 adapter 或 router 收到命令时记录全局入口排队时间。
-- [ ] 在 application dispatch 前后记录 application 执行时间和总耗时。
-- [ ] 让响应发送失败只记录 debug 日志，不影响其他 worker。
-- [ ] 对 channel 满载、receiver 关闭、application 返回错误分别记录 warn/error，并带上 request ID。
-- [ ] 运行一次 `cargo check`，确认日志计时不持有任何 GPUI 上下文到 MCP handler。
-- [ ] 提交：`chore: instrument mcp command latency`。
+- [x] 在 `McpBridgeEndpoint::request` 创建 envelope 时记录 `Instant::now()`。
+- [x] 在 adapter 或 router 收到命令时记录全局入口排队时间。
+- [x] 在 application dispatch 前后记录 application 执行时间和总耗时。
+- [x] 让响应发送失败只记录 debug 日志，不影响其他 worker。
+- [x] 对 channel 满载、receiver 关闭、application 返回错误分别记录 warn/error，并带上 request ID。
+- [x] 运行一次 `cargo check`，确认日志计时不持有任何 GPUI 上下文到 MCP handler。
+- [x] 提交：`chore: instrument mcp command latency`。
 
 ### Task 3：把 MCP 会话操作改成显式 workspace_id
 

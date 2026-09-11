@@ -37,15 +37,36 @@ impl McpBridgeEndpoint {
         command: ApplicationCommand,
     ) -> ApplicationResult<ApplicationResponse> {
         let request_id = Uuid::new_v4().to_string();
+        let command_name = command.name();
+        let workspace_id = command.workspace_id().unwrap_or("control").to_owned();
+        let queued_at = std::time::Instant::now();
         let (response_tx, response_rx) = oneshot::channel();
-        self.command_tx
-            .send(CommandEnvelope {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.command_tx.send(CommandEnvelope {
                 request_id: request_id.clone(),
                 command,
                 response_tx,
-            })
-            .await
-            .map_err(|_| "MCP application bridge 已关闭".to_owned())?;
+                queued_at,
+            }),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) => {
+                log::warn!(
+                    "MCP bridge ingress closed: request_id={request_id}, command={command_name}, workspace_id={workspace_id}"
+                );
+                return Err("MCP application bridge 已关闭".to_owned());
+            }
+            Err(_) => {
+                let queue_ms = queued_at.elapsed().as_millis();
+                log::warn!(
+                    "MCP bridge ingress queue full: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, queue_ms={queue_ms}"
+                );
+                return Err("MCP application bridge 队列已满".to_owned());
+            }
+        }
         let response = response_rx
             .await
             .map_err(|_| "MCP application bridge 未返回响应".to_owned())?;

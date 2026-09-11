@@ -1,18 +1,18 @@
 use anyhow::{Context as _, Result};
-use gpui_kit::Context;
+use gpui_kit::{AppContext, Context};
 
-use crate::{domain::session::SessionProfile, infrastructure::storage::Storage};
+use crate::{domain::session::SessionProfile, infrastructure::InfrastructureContext};
 
 use super::SessionComponent;
 
 impl SessionComponent {
     pub(super) fn load_sessions(&self, cx: &Context<Self>) -> Result<Vec<SessionProfile>> {
-        cx.global::<Storage>().session.list()
+        cx.read_global::<InfrastructureContext, _>(|infrastructure, _| infrastructure.session())
+            .list()
     }
 
     pub(super) fn query_session(&self, id: &str, cx: &Context<Self>) -> Result<SessionProfile> {
-        cx.global::<Storage>()
-            .session
+        cx.read_global::<InfrastructureContext, _>(|infrastructure, _| infrastructure.session())
             .list()?
             .into_iter()
             .find(|session| session.id == id)
@@ -20,6 +20,7 @@ impl SessionComponent {
     }
 
     pub(super) fn remove_session(&self, id: &str, cx: &Context<Self>) -> Result<()> {
-        cx.global::<Storage>().session.delete(id)
+        cx.read_global::<InfrastructureContext, _>(|infrastructure, _| infrastructure.session())
+            .delete(id)
     }
 }

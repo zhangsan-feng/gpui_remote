@@ -5,7 +5,7 @@ mod external;
 mod server;
 mod tools;
 
-pub use external::{apply_settings, settings, start};
+pub(crate) use external::AgentMcpRuntime;
 
 use serde::{Deserialize, Serialize};
 

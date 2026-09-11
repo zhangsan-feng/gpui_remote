@@ -1,34 +1,28 @@
-use std::sync::OnceLock;
-
 use super::{McpSettings, bridge::McpBridgeEndpoint, core};
 
-static CONTROLLER: OnceLock<core::AgentMcpController> = OnceLock::new();
+pub(crate) struct AgentMcpRuntime {
+    controller: core::AgentMcpController,
+}
 
-pub fn start(bridge: McpBridgeEndpoint) {
-    let controller = core::AgentMcpController::new(bridge);
-    if CONTROLLER.set(controller).is_err() {
-        log::warn!("Agent MCP service was already initialized");
-        return;
+impl AgentMcpRuntime {
+    pub(crate) fn new(bridge: McpBridgeEndpoint) -> Self {
+        Self {
+            controller: core::AgentMcpController::new(bridge),
+        }
     }
 
-    if let Some(controller) = CONTROLLER.get() {
+    pub(crate) fn start(&self) {
         let settings = core::load_settings();
-        if let Err(error) = controller.apply(settings) {
+        if let Err(error) = self.controller.apply(settings) {
             log::error!("启动 Agent MCP 服务失败: {error}");
         }
     }
-}
 
-pub fn settings() -> McpSettings {
-    CONTROLLER
-        .get()
-        .map(core::AgentMcpController::settings)
-        .unwrap_or_else(core::load_settings)
-}
+    pub(crate) fn settings(&self) -> McpSettings {
+        self.controller.settings()
+    }
 
-pub fn apply_settings(settings: McpSettings) -> Result<McpSettings, String> {
-    let Some(controller) = CONTROLLER.get() else {
-        return Err("MCP 服务尚未初始化".to_owned());
-    };
-    controller.apply(settings)
+    pub(crate) fn apply_settings(&self, settings: McpSettings) -> Result<McpSettings, String> {
+        self.controller.apply(settings)
+    }
 }

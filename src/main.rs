@@ -167,9 +167,7 @@ async fn main() {
                 );
 
                 app.new(|cx| {
-                    let storage = infrastructure::storage::Storage::new();
-                    let infrastructure = infrastructure::new(storage.session.clone());
-                    cx.set_global(storage);
+                    let infrastructure = infrastructure::new();
                     cx.set_global(infrastructure);
                     info!("infrastructure_global_registered");
 
@@ -177,10 +175,13 @@ async fn main() {
                     cx.set_global(application);
                     info!("application_global_registered");
 
-                    let (mcp_bridge, mcp_receiver) = infrastructure::agent_mcp::bridge::new();
-                    info!("mcp_bridge_ready");
-                    infrastructure::agent_mcp::bridge::start_mcp_bridge(cx, mcp_receiver);
-                    infrastructure::agent_mcp::start(mcp_bridge);
+                    let infrastructure = cx
+                        .read_global::<infrastructure::InfrastructureContext, _>(
+                            |infrastructure, _| infrastructure.clone(),
+                        );
+                    if let Err(error) = infrastructure.start_mcp(cx) {
+                        log::error!("启动基础设施 MCP 失败: {error}");
+                    }
 
                     let global_state = cx.new(|_| GlobalState {});
                     cx.set_global(GlobalStateHandle(global_state));

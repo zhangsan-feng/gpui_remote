@@ -4,7 +4,7 @@
 
 **Goal:** 按照 GPUI/Zed 官方的数据流模型重构项目：由 GPUI `App` 持有全局根状态，使用 `Global` 暴露应用级句柄，使用 `Entity<T>` 持有可观察状态和模块间数据流；GUI 与 MCP 都通过 application 层访问 SSH/SFTP，MCP 不持有或操作任何 GPUI 上下文。
 
-**Architecture:** `App` 是唯一的 GPUI 状态所有者。`ApplicationContext` 与 `InfrastructureContext` 作为注册到 `App` 的轻量 Global 根句柄；它们内部只组合实体句柄、线程安全端口和基础设施依赖，不把 UI、MCP 或底层服务对象的地址向上暴露。GUI 在自己的 `cx` 中读取 Global，再对 application entity 执行 `read/update/observe/subscribe`；异步 IO 由 GPUI 的 `cx.spawn` 启动，完成后回到 entity 更新状态并 `cx.notify()`。MCP 只拥有线程安全的类型化命令/响应 bridge，通过 GPUI 适配器触发同一套 application API。
+**Architecture:** `App` 是唯一的 GPUI 状态所有者。`ApplicationContext` 与 `InfrastructureContext` 作为注册到 `App` 的轻量 Global 根句柄；`InfrastructureContext` 内部组合 storage、profile query、MCP bridge/runtime 等基础设施依赖，application context 只读取并持有其共享句柄。两者都不把 UI 或 GUI 对象向下暴露。GUI 在自己的 `cx` 中读取 Global，再对 application entity 执行 `read/update/observe/subscribe`；异步 IO 由 GPUI 的 `cx.spawn` 启动，完成后回到 entity 更新状态并 `cx.notify()`。MCP 只拥有线程安全的类型化命令/响应 bridge，通过由 `InfrastructureContext` 启动的 GPUI 适配器触发同一套 application API。
 
 **Tech Stack:** Rust、GPUI 0.2.x、gpui-kit 0.6、Tokio、现有 SSH/SFTP application 模块、现有 MCP server。
 
@@ -49,7 +49,7 @@ GPUI App
   │    └─ Entity<SftpStore>
   │    └─ application 级命令/通知端口
   └─ Global<InfrastructureContext>
-       └─ storage / profile query / proxy / runtime 等基础设施句柄
+       └─ storage / profile query / proxy / MCP bridge/runtime 等基础设施句柄
 
 GUI view/action
   └─ 本层 cx.read_global<ApplicationContext>()
@@ -110,7 +110,7 @@ src/
 │  └─ sftp/                          # SFTP store、目录、传输、watch、快照和命令
 ├─ infrastructure/
 │  ├─ mod.rs                         # 基础设施子模块和初始化入口
-│  ├─ context.rs                     # InfrastructureContext 与基础设施 Global
+│  ├─ context.rs                     # InfrastructureContext：storage、MCP runtime 与基础设施 Global
 │  ├─ profile_query.rs               # profile 查询端口/实现
 │  ├─ storage/                       # session/profile 持久化
 │  ├─ proxy/                         # 网络代理
@@ -126,7 +126,7 @@ src/
 │  ├─ workspace/                      # workspace entity/view 与 application 投影
 │  └─ ...                             # 只负责交互、订阅和渲染
 ├─ global_state.rs                    # UI GlobalState entity 和 UI 事件；不承载业务数据
-└─ main.rs                            # 初始化基础设施、application、Global、bridge、GUI
+└─ main.rs                            # 注册基础设施/application Global 并创建 GUI
 ```
 
 `src/data_context` 和 `src/infrastructure/data_context` 已删除；profile query 组合位于 `src/infrastructure/context.rs` 与 `src/infrastructure/profile_query.rs`。如果某个目标文件超过 800 行，按 session、ssh、sftp、bridge 等责任拆成目录，`mod.rs` 只保留声明、导出和初始化。
@@ -145,6 +145,7 @@ src/
 - [x] 将 application 共用模型、映射、校验和查询边界从 `src/data_context` 迁出。
 - [x] 建立 `ApplicationStoreGraph`，由 `Entity<SessionStore>`、`Entity<SshStore>`、`Entity<SftpStore>` 作为 App 持有的根句柄，并完成两个 Global 注册。
 - [x] 建立不携带 GPUI 上下文的 MCP 类型化 bridge 和 infrastructure 内 GPUI 适配器。
+- [x] 将 storage、MCP bridge receiver 和 MCP runtime 的生命周期收敛到 `InfrastructureContext`，`main.rs` 不再直接组装它们。
 - [x] 迁移 GUI 读写和订阅链，GUI component 不再保存 application context 字段。
 - [ ] 完成 application entity 状态更新/订阅深化、通知过滤和 GUI/MCP 手工回归。
 
@@ -254,7 +255,7 @@ src/
 
 **Interfaces:**
 
-- App 初始化顺序固定为：创建 `InfrastructureContext` -> 创建 application entity/store 图 -> 创建 `ApplicationContext` -> `cx.set_global(InfrastructureContext)` -> `cx.set_global(ApplicationContext)` -> 建立 bridge adapter -> 启动 MCP -> 创建 GUI。
+- App 初始化顺序固定为：创建 `InfrastructureContext`（内部组装 storage/MCP） -> `cx.set_global(InfrastructureContext)` -> 创建 application entity/store 图及 `ApplicationContext` -> `cx.set_global(ApplicationContext)` -> 从 `InfrastructureContext` 启动 bridge adapter/MCP -> 创建 GUI。
 - GUI 使用示例统一为本层读取：
 
 ```rust
@@ -272,7 +273,8 @@ let infrastructure = cx.read_global::<InfrastructureContext>().clone();
 - [x] 在 `main.rs` 的 GPUI app 初始化阶段完成两个 Global 的唯一注册。
 - [x] 将 `GlobalState` 限定为窗口/UI 状态，移除其中的 application data mirror 和旧 data facade 依赖。
 - [x] 调整 Home/Workspace 创建函数，使其不接收旧 context 或 application service 地址。
-- [x] 检查启动闭包和 `cx.new` 闭包中的 GPUI 上下文生命周期，确保 Global 注册早于 MCP/GUI 创建。
+- [x] 检查启动闭包和 `cx.new` 闭包中的 GPUI 上下文生命周期，确保两个 Global 注册早于 MCP/GUI 创建。
+- [x] 将 `main.rs` 的 storage/MCP 组装替换为 `InfrastructureContext::new` 与 `InfrastructureContext::start_mcp`，GUI 的 storage/MCP 配置访问统一从 `cx.read_global` 获取基础设施上下文。
 - [x] 保留日志初始化，并补充 `application_global_registered`、`infrastructure_global_registered` 等关键启动日志。
 
 ### Task 6：建立不携带 GPUI 上下文的 MCP bridge

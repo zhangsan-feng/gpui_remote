@@ -6,7 +6,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 
-use crate::{component::theme, infrastructure::agent_mcp};
+use crate::{component::theme, infrastructure::InfrastructureContext};
 
 mod core;
 mod external;
@@ -77,7 +77,8 @@ impl SettingsOperationWindow {
                 .step(1.)
                 .default_value(wallpaper_opacity_value)
         });
-        let mcp_settings = agent_mcp::settings();
+        let mcp_settings = cx
+            .read_global::<InfrastructureContext, _>(|infrastructure, _| infrastructure.settings());
         cx.subscribe(
             &color_picker,
             |_, _, event: &ColorPickerEvent, cx| match event {

@@ -6,20 +6,22 @@ use crate::component::window::window_center_options;
 use crate::{
     domain::session::{NewSession, SessionProfile},
     global_state::{GlobalEvent, read_global_state},
-    infrastructure::storage::Storage,
+    infrastructure::InfrastructureContext,
 };
 
 impl SessionOperationWindow {
     pub(super) fn persist(&self, draft: NewSession, cx: &App) -> Result<GlobalEvent> {
         match &self.mode {
             SessionFormMode::Create => cx
-                .global::<Storage>()
-                .session
+                .read_global::<InfrastructureContext, _>(|infrastructure, _| {
+                    infrastructure.session()
+                })
                 .insert(draft)
                 .map(|_| GlobalEvent::CreateSession),
             SessionFormMode::Edit { id } => cx
-                .global::<Storage>()
-                .session
+                .read_global::<InfrastructureContext, _>(|infrastructure, _| {
+                    infrastructure.session()
+                })
                 .update(id, draft)
                 .map(|_| GlobalEvent::UpdateSession),
         }

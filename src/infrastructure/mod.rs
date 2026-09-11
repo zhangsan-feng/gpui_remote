@@ -6,6 +6,6 @@ pub mod storage;
 
 pub(crate) use context::InfrastructureContext;
 
-pub(crate) fn new(session: storage::SessionStorageRepository) -> InfrastructureContext {
-    InfrastructureContext::new(session)
+pub(crate) fn new() -> InfrastructureContext {
+    InfrastructureContext::new()
 }

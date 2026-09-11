@@ -103,11 +103,7 @@ impl ApplicationContext {
         ip: String,
         title: String,
     ) -> ApplicationResult<String> {
-        let session = self
-            .inner
-            .infrastructure
-            .session()
-            .ok_or_else(|| "会话存储不可用".to_owned())?;
+        let session = self.inner.infrastructure.session();
         let lookup_id = profile_id.clone();
         let profile = tokio::task::spawn_blocking(move || session.find(&lookup_id))
             .await
@@ -134,11 +130,7 @@ impl ApplicationContext {
                     .await?
             }
             Protocol::Sftp => {
-                let session = self
-                    .inner
-                    .infrastructure
-                    .session()
-                    .ok_or_else(|| "会话存储不可用".to_owned())?;
+                let session = self.inner.infrastructure.session();
                 let state_id = profile.id.clone();
                 let state = tokio::task::spawn_blocking(move || session.sftp_state(&state_id))
                     .await
@@ -218,11 +210,7 @@ impl ApplicationContext {
         if profile.protocol != Protocol::Sftp {
             return Err(format!("会话协议不是 SFTP: {workspace_id}"));
         }
-        let session = self
-            .inner
-            .infrastructure
-            .session()
-            .ok_or_else(|| "会话存储不可用".to_owned())?;
+        let session = self.inner.infrastructure.session();
         let profile_id = profile.id;
         let path = path.into();
         tokio::task::spawn_blocking(move || match (local, path) {

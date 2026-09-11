@@ -13,7 +13,7 @@ GPUI App
   │    ├─ Entity<SshStore>
   │    └─ Entity<SftpStore>
   └─ Global<InfrastructureContext>
-       └─ storage / profile query / proxy / runtime
+       └─ storage / profile query / proxy / MCP runtime
 
 GUI 使用层
   -> 本层 cx.read_global<ApplicationContext>()
@@ -48,7 +48,7 @@ application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能
 ## 目录与文件职责
 
 - `Cargo.toml` / `Cargo.lock`：依赖和可复现构建配置。
-- `src/main.rs`：日志、资源、GPUI App 初始化、两个 Global 注册、bridge adapter 启动和 GUI/MCP 启动顺序。
+- `src/main.rs`：日志、资源、GPUI App 初始化、两个 Global 注册，以及通过 `InfrastructureContext` 启动 GUI/MCP。
 - `src/domain/`：会话、协议和终端领域模型。
 - `src/global_state.rs`：UI GlobalState entity 与 UI 事件，不承载业务数据。
 - `src/component/`：通用主题、列表、面板、窗口和布局组件。
@@ -70,7 +70,7 @@ application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能
 ### `src/infrastructure/`
 
 - `mod.rs`：基础设施子模块声明和 `InfrastructureContext` 初始化入口。
-- `context.rs`：基础设施依赖组合与 GPUI `Global` 实现。
+- `context.rs`：统一持有 storage、profile query、MCP bridge/runtime，并实现 GPUI `Global`。
 - `profile_query.rs`：profile 查询 port 和具体实现适配。
 - `storage/`：SQLite session/profile、SFTP 路径和已知主机密钥存储。
 - `proxy/`：网络代理与异步双向流。
@@ -97,14 +97,12 @@ GUI 组件在自己的 GPUI `cx` 中读取需要的 Global，不通过父组件�
 
 ```text
 main
-  -> 初始化 storage / proxy / runtime
-  -> 创建 InfrastructureContext
+  -> 创建并注册 InfrastructureContext（内部初始化 storage / proxy / MCP runtime）
   -> 创建 application entity/store 图
   -> 创建 ApplicationContext
   -> cx.set_global(InfrastructureContext)
   -> cx.set_global(ApplicationContext)
-  -> 创建 GPUI bridge adapter
-  -> 启动 MCP Tokio task
+  -> InfrastructureContext 启动 GPUI bridge adapter 和 MCP Tokio task
   -> 创建 GUI
 ```
 

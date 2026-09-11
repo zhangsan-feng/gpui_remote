@@ -1,6 +1,6 @@
 use gpui_kit::*;
 
-use crate::infrastructure::agent_mcp::{self, McpSettings};
+use crate::infrastructure::{InfrastructureContext, agent_mcp::McpSettings};
 
 use super::SettingsOperationWindow;
 
@@ -165,11 +165,13 @@ impl SettingsOperationWindow {
         } else if token.is_empty() {
             Err("MCP Token 不能为空".to_owned())
         } else {
-            agent_mcp::apply_settings(McpSettings {
-                enabled: self.mcp_enabled,
-                host,
-                port: port.expect("MCP 端口已校验"),
-                token,
+            cx.read_global::<InfrastructureContext, _>(|infrastructure, _| {
+                infrastructure.apply_settings(McpSettings {
+                    enabled: self.mcp_enabled,
+                    host,
+                    port: port.expect("MCP 端口已校验"),
+                    token,
+                })
             })
         };
 

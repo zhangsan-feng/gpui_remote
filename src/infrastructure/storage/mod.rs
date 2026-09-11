@@ -2,21 +2,18 @@ mod derive;
 mod known_hosts;
 mod repository;
 
-use gpui_kit::Global;
 use known_hosts::HostPubKey;
 use russh::keys::ssh_key::PublicKey;
 
 pub(crate) use repository::session_repository::SessionStorageRepository;
 
-pub struct Storage {
-    pub session: SessionStorageRepository,
-    pub host_pub_key: HostPubKey,
+pub(crate) struct Storage {
+    pub(crate) session: SessionStorageRepository,
+    pub(crate) host_pub_key: HostPubKey,
 }
 
-impl Global for Storage {}
-
 impl Storage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             session: SessionStorageRepository::new().expect("sqlite init failed"),
             host_pub_key: HostPubKey {},

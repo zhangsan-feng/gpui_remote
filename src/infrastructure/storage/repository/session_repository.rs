@@ -32,7 +32,7 @@ impl SessionStorageRepository {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    pub fn list(&self) -> Result<Vec<SessionProfile>> {
+    pub fn list_sessions(&self) -> Result<Vec<SessionProfile>> {
         let drive = self.lock_drive();
         let mut statement = drive.connection.prepare(
             "SELECT id, protocol, name, host, port, username, password,
@@ -46,7 +46,7 @@ impl SessionStorageRepository {
             .context("read sessions from SQLite")
     }
 
-    pub fn find(&self, id: &str) -> Result<Option<SessionProfile>> {
+    pub fn find_session(&self, id: &str) -> Result<Option<SessionProfile>> {
         let drive = self.lock_drive();
         drive
             .connection
@@ -62,7 +62,7 @@ impl SessionStorageRepository {
             .context("find top_session in SQLite")
     }
 
-    pub fn insert(&self, draft: NewSession) -> Result<SessionProfile> {
+    pub fn insert_session(&self, draft: NewSession) -> Result<SessionProfile> {
         let profile = SessionProfile {
             id: Uuid::new_v4().to_string(),
             protocol: draft.protocol,
@@ -102,7 +102,7 @@ impl SessionStorageRepository {
         Ok(profile)
     }
 
-    pub fn update(&self, id: &str, draft: NewSession) -> Result<SessionProfile> {
+    pub fn update_session(&self, id: &str, draft: NewSession) -> Result<SessionProfile> {
         let drive = self.lock_drive();
         let created_at: String = drive
             .connection
@@ -150,7 +150,7 @@ impl SessionStorageRepository {
         Ok(profile)
     }
 
-    pub fn delete(&self, id: &str) -> Result<()> {
+    pub fn delete_session(&self, id: &str) -> Result<()> {
         let drive = self.lock_drive();
         drive
             .connection
@@ -159,7 +159,7 @@ impl SessionStorageRepository {
         Ok(())
     }
 
-    pub fn sftp_state(&self, id: &str) -> Result<Option<SftpSessionState>> {
+    pub fn read_sftp_state(&self, id: &str) -> Result<Option<SftpSessionState>> {
         let drive = self.lock_drive();
         drive
             .connection

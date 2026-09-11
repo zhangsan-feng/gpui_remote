@@ -325,6 +325,13 @@ impl TerminalView {
                 terminal.message.clone(),
             )
         };
+        if self.focus_pending && status != TerminalStatus::Failed {
+            self.focus_pending = false;
+            let focus = self.focus.clone();
+            window.on_next_frame(move |window, cx| {
+                focus.focus(window, cx);
+            });
+        }
         self.scroll_handle.sync(&frame);
         self.sync_list(&workspace_id, frame.lines.len().max(1));
         let cell_width = terminal_cell_width(window);

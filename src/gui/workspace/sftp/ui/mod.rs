@@ -7,7 +7,7 @@ mod selection;
 pub(super) use select_path_dialog::PathTarget;
 pub(super) use selection::MultiSelection;
 
-use super::{CancelTransfer, RetryTransfer, SftpSnapshot, SftpView, TransferRecord};
+use super::{CancelTransfer, RetryTransfer, SftpView};
 use gpui_kit::component::{
     ActiveTheme, Icon, IconName, Sizable, h_flex,
     menu::ContextMenuExt,
@@ -17,6 +17,7 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
+use crate::application::model::{SftpTransferInfo, SftpWorkspaceSnapshot};
 use crate::component::theme;
 
 const TRANSFER_PANEL_RATIO: f32 = 1. / 3.;
@@ -30,20 +31,16 @@ impl SftpView {
                 .into_any_element();
         };
         sync_list_state(&self.local_list_state, self.local.entries.len());
-        sync_list_state(&self.remote_list_state, snapshot.entries.len());
-        let transfers = self
-            .transfers
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        sync_list_state(&self.remote_list_state, snapshot.remote.entries.len());
+        let transfers = self.transfers.clone();
         sync_list_state(&self.transfer_list_state, transfers.len());
         self.browser(snapshot, transfers, cx).into_any_element()
     }
 
     fn browser(
         &self,
-        snapshot: SftpSnapshot,
-        transfers: Vec<TransferRecord>,
+        snapshot: SftpWorkspaceSnapshot,
+        transfers: Vec<SftpTransferInfo>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let colors = theme::CustomerUiTheme::colors(cx);
@@ -141,7 +138,7 @@ impl SftpView {
 
     fn transfer_panel(
         &self,
-        transfers: Vec<TransferRecord>,
+        transfers: Vec<SftpTransferInfo>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let colors = cx.theme();
@@ -243,8 +240,6 @@ impl SftpView {
                 let record = menu_view
                     .read(menu_cx)
                     .transfers
-                    .read()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .iter()
                     .find(|record| record.id == transfer_id)
                     .cloned();
@@ -270,7 +265,7 @@ impl SftpView {
     }
 
     fn transfer_row(
-        record: TransferRecord,
+        record: SftpTransferInfo,
         view: WeakEntity<SftpView>,
         cx: &App,
     ) -> impl IntoElement {
@@ -322,7 +317,7 @@ impl SftpView {
                 div()
                     .w(px(100.))
                     .text_color(colors.muted_foreground)
-                    .child(Self::format_transfer_speed(record.speed)),
+                    .child(Self::format_transfer_speed(record.speed_bytes_per_second)),
             )
             .child(div().w(px(86.)).child(record.status))
             .on_mouse_down(MouseButton::Right, move |_, _, cx| {

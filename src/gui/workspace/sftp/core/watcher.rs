@@ -15,16 +15,29 @@ impl SftpView {
         workspace_id: &str,
         local_path: &Path,
     ) -> bool {
-        self.local_watchers
+        self.projections
             .get(workspace_id)
-            .is_some_and(|watches| watches.contains_key(local_path))
+            .is_some_and(|projection| {
+                projection
+                    .snapshot
+                    .watches
+                    .iter()
+                    .any(|watch| Path::new(&watch.local_path) == local_path)
+            })
     }
 
     pub(in crate::gui::workspace::sftp) fn local_watched_paths(&self) -> HashSet<PathBuf> {
         self.selected_workspace_id
             .as_deref()
-            .and_then(|workspace_id| self.local_watchers.get(workspace_id))
-            .map(|watches| watches.keys().cloned().collect())
+            .and_then(|workspace_id| self.projections.get(workspace_id))
+            .map(|projection| {
+                projection
+                    .snapshot
+                    .watches
+                    .iter()
+                    .map(|watch| PathBuf::from(&watch.local_path))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -57,21 +70,17 @@ impl SftpView {
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
             match application
-                .watch_sftp_local(
-                    task_workspace_id.clone(),
+                .start_sftp_local_watch(
+                    task_workspace_id,
                     profile_ip,
                     profile_title,
                     local_path_text,
                 )
                 .await
             {
-                Ok(summary) => {
+                Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        let local_path = PathBuf::from(&summary.local_path);
-                        this.local_watchers
-                            .entry(task_workspace_id)
-                            .or_default()
-                            .insert(local_path, summary);
+                        this.refresh_from_application(cx);
                         cx.notify();
                     });
                 }
@@ -101,22 +110,12 @@ impl SftpView {
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
             match application
-                .stop_sftp_local_watch(
-                    workspace_id.clone(),
-                    profile_ip,
-                    profile_title,
-                    local_path_text,
-                )
+                .stop_sftp_local_watch(workspace_id, profile_ip, profile_title, local_path_text)
                 .await
             {
                 Ok(()) => {
                     let _ = this.update(cx, |this, cx| {
-                        if let Some(watches) = this.local_watchers.get_mut(&workspace_id) {
-                            watches.remove(&local_path);
-                            if watches.is_empty() {
-                                this.local_watchers.remove(&workspace_id);
-                            }
-                        }
+                        this.refresh_from_application(cx);
                         cx.notify();
                     });
                 }
@@ -126,14 +125,18 @@ impl SftpView {
         .detach();
     }
 
-    pub(in crate::gui::workspace::sftp) fn stop_local_watchers_for_workspace(
+    pub(in crate::gui::workspace::sftp) fn clear_local_watch_projection_for_workspace(
         &mut self,
         workspace_id: &str,
     ) {
-        self.local_watchers.remove(workspace_id);
+        if let Some(projection) = self.projections.get_mut(workspace_id) {
+            projection.snapshot.watches.clear();
+        }
     }
 
-    pub(in crate::gui::workspace::sftp) fn stop_all_local_watchers(&mut self) {
-        self.local_watchers.clear();
+    pub(in crate::gui::workspace::sftp) fn clear_all_local_watch_projections(&mut self) {
+        for projection in self.projections.values_mut() {
+            projection.snapshot.watches.clear();
+        }
     }
 }

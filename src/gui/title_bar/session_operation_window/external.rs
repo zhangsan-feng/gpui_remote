@@ -4,33 +4,27 @@ use gpui_kit::*;
 use super::{SessionFormMode, SessionOperationWindow};
 use crate::component::window::window_center_options;
 use crate::{
+    application::ApplicationContext,
     domain::session::{NewSession, SessionProfile},
-    global_state::{GlobalEvent, read_global_state},
-    infrastructure::InfrastructureContext,
+    global_state::GlobalEvent,
 };
 
 impl SessionOperationWindow {
-    pub(super) fn persist(&self, draft: NewSession, cx: &App) -> Result<GlobalEvent> {
-        match &self.mode {
-            SessionFormMode::Create => cx
-                .read_global::<InfrastructureContext, _>(|infrastructure, _| {
-                    infrastructure.session()
-                })
-                .insert(draft)
-                .map(|_| GlobalEvent::CreateSession),
-            SessionFormMode::Edit { id } => cx
-                .read_global::<InfrastructureContext, _>(|infrastructure, _| {
-                    infrastructure.session()
-                })
-                .update(id, draft)
-                .map(|_| GlobalEvent::UpdateSession),
-        }
-    }
-
-    pub(super) fn publish_change(&self, event: GlobalEvent, cx: &mut Context<Self>) {
-        read_global_state(cx).update(cx, |_, cx| {
-            cx.emit(event);
-        });
+    pub(super) async fn save_session(
+        mode: SessionFormMode,
+        draft: NewSession,
+        application: ApplicationContext,
+    ) -> Result<GlobalEvent> {
+        let result = match &mode {
+            SessionFormMode::Create => application.create_session(draft).await,
+            SessionFormMode::Edit { id } => application.update_session(id.clone(), draft).await,
+        };
+        result
+            .map(|_| match mode {
+                SessionFormMode::Create => GlobalEvent::CreateSession,
+                SessionFormMode::Edit { .. } => GlobalEvent::UpdateSession,
+            })
+            .map_err(anyhow::Error::msg)
     }
 }
 

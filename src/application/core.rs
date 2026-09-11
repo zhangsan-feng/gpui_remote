@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::{domain::session::Protocol, infrastructure::InfrastructureContext};
+use crate::{
+    domain::session::{NewSession, Protocol, SessionProfile},
+    infrastructure::InfrastructureContext,
+};
 use gpui_kit::{App, AppContext, Global};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -86,16 +89,6 @@ impl ApplicationContext {
         self.inner.sftp.clone()
     }
 
-    pub(crate) async fn profile_query(
-        &self,
-    ) -> ApplicationResult<Vec<super::model::ProfileSummary>> {
-        self.inner
-            .infrastructure
-            .query_service()
-            .list_profiles()
-            .await
-    }
-
     pub async fn open_session(
         &self,
         profile_id: String,
@@ -103,13 +96,7 @@ impl ApplicationContext {
         ip: String,
         title: String,
     ) -> ApplicationResult<String> {
-        let session = self.inner.infrastructure.session();
-        let lookup_id = profile_id.clone();
-        let profile = tokio::task::spawn_blocking(move || session.find(&lookup_id))
-            .await
-            .map_err(|error| format!("读取连接配置任务失败: {error}"))?
-            .map_err(|error| format!("读取连接配置失败: {error:#}"))?
-            .ok_or_else(|| format!("连接配置不存在: {profile_id}"))?;
+        let profile = self.find_session_profile(profile_id.clone()).await?;
         if profile.host != ip || profile.name != title {
             return Err(format!(
                 "连接配置与 ip/title 不匹配: {profile_id}，请确认 ip 和 title"
@@ -118,7 +105,12 @@ impl ApplicationContext {
         let mut profile = profile;
         profile.protocol = protocol;
         let workspace_id = Uuid::new_v4().to_string();
-        if self.inner.sessions.get(&workspace_id).is_some() {
+        if self
+            .inner
+            .sessions
+            .profile_for_workspace(&workspace_id)
+            .is_some()
+        {
             return Err(format!("会话已打开: {workspace_id}"));
         }
 
@@ -130,9 +122,9 @@ impl ApplicationContext {
                     .await?
             }
             Protocol::Sftp => {
-                let session = self.inner.infrastructure.session();
+                let session = self.inner.infrastructure.session_repository();
                 let state_id = profile.id.clone();
-                let state = tokio::task::spawn_blocking(move || session.sftp_state(&state_id))
+                let state = tokio::task::spawn_blocking(move || session.read_sftp_state(&state_id))
                     .await
                     .map_err(|error| format!("读取 SFTP 会话状态任务失败: {error}"))?
                     .map_err(|error| format!("读取 SFTP 会话状态失败: {error:#}"))?
@@ -166,7 +158,7 @@ impl ApplicationContext {
         let profile = self
             .inner
             .sessions
-            .get(workspace_id)
+            .profile_for_workspace(workspace_id)
             .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
         match profile.protocol {
             Protocol::Ssh => self.inner.ssh.close(workspace_id).await?,
@@ -177,6 +169,92 @@ impl ApplicationContext {
 
     pub async fn select_session(&self, workspace_id: Option<String>) -> ApplicationResult<()> {
         self.inner.sessions.select(workspace_id).await
+    }
+
+    pub(crate) async fn list_session_profiles(&self) -> ApplicationResult<Vec<SessionProfile>> {
+        let repository = self.inner.infrastructure.session_repository();
+        tokio::task::spawn_blocking(move || repository.list_sessions())
+            .await
+            .map_err(|error| format!("读取连接配置任务失败: {error}"))?
+            .map_err(|error| format!("读取连接配置失败: {error:#}"))
+    }
+
+    pub(crate) async fn find_session_profile(
+        &self,
+        id: String,
+    ) -> ApplicationResult<SessionProfile> {
+        let repository = self.inner.infrastructure.session_repository();
+        let missing_id = id.clone();
+        tokio::task::spawn_blocking(move || repository.find_session(&id))
+            .await
+            .map_err(|error| format!("查询连接配置任务失败: {error}"))?
+            .map_err(|error| format!("查询连接配置失败: {error:#}"))?
+            .ok_or_else(|| format!("连接配置不存在: {missing_id}"))
+    }
+
+    pub(crate) async fn create_session(
+        &self,
+        draft: NewSession,
+    ) -> ApplicationResult<SessionProfile> {
+        let repository = self.inner.infrastructure.session_repository();
+        tokio::task::spawn_blocking(move || repository.insert_session(draft))
+            .await
+            .map_err(|error| format!("创建连接配置任务失败: {error}"))?
+            .map_err(|error| format!("创建连接配置失败: {error:#}"))
+    }
+
+    pub(crate) async fn update_session(
+        &self,
+        id: String,
+        draft: NewSession,
+    ) -> ApplicationResult<SessionProfile> {
+        let repository = self.inner.infrastructure.session_repository();
+        tokio::task::spawn_blocking(move || repository.update_session(&id, draft))
+            .await
+            .map_err(|error| format!("更新连接配置任务失败: {error}"))?
+            .map_err(|error| format!("更新连接配置失败: {error:#}"))
+    }
+
+    pub(crate) async fn delete_session(&self, id: String) -> ApplicationResult<()> {
+        let repository = self.inner.infrastructure.session_repository();
+        tokio::task::spawn_blocking(move || repository.delete_session(&id))
+            .await
+            .map_err(|error| format!("删除连接配置任务失败: {error}"))?
+            .map_err(|error| format!("删除连接配置失败: {error:#}"))
+    }
+
+    pub(crate) fn current_mcp_settings(&self) -> super::model::McpSettings {
+        let settings = self.inner.infrastructure.current_mcp_settings();
+        super::model::McpSettings {
+            enabled: settings.enabled,
+            host: settings.host,
+            port: settings.port,
+            token: settings.token,
+        }
+    }
+
+    pub(crate) async fn update_mcp_settings(
+        &self,
+        settings: super::model::McpSettings,
+    ) -> ApplicationResult<super::model::McpSettings> {
+        let infrastructure = self.inner.infrastructure.clone();
+        let settings = crate::infrastructure::agent_mcp::McpSettings {
+            enabled: settings.enabled,
+            host: settings.host,
+            port: settings.port,
+            token: settings.token,
+        };
+        let settings =
+            tokio::task::spawn_blocking(move || infrastructure.update_mcp_settings(settings))
+                .await
+                .map_err(|error| format!("更新 MCP 配置任务失败: {error}"))?
+                .map_err(|error| format!("更新 MCP 配置失败: {error}"))?;
+        Ok(super::model::McpSettings {
+            enabled: settings.enabled,
+            host: settings.host,
+            port: settings.port,
+            token: settings.token,
+        })
     }
 
     pub async fn update_sftp_local_path(
@@ -205,12 +283,12 @@ impl ApplicationContext {
         let profile = self
             .inner
             .sessions
-            .get(workspace_id)
+            .profile_for_workspace(workspace_id)
             .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
         if profile.protocol != Protocol::Sftp {
             return Err(format!("会话协议不是 SFTP: {workspace_id}"));
         }
-        let session = self.inner.infrastructure.session();
+        let session = self.inner.infrastructure.session_repository();
         let profile_id = profile.id;
         let path = path.into();
         tokio::task::spawn_blocking(move || match (local, path) {

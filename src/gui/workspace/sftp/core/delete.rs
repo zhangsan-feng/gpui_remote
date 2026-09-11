@@ -18,7 +18,7 @@ impl SftpView {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
-        let current_directory = self.local.path.clone();
+        let current_directory = std::path::PathBuf::from(&self.local.path);
         self.local_selection.clear();
         self.local.loading = true;
         self.local.error = None;
@@ -36,14 +36,14 @@ impl SftpView {
                 .delete_sftp_local_paths(workspace_id, paths)
                 .await;
             let _ = this.update(cx, |this, cx| {
-                if this.local.path != current_directory {
+                if this.local.path != current_directory.display().to_string() {
                     return;
                 }
                 this.local.loading = false;
                 if let Err(error) = result {
                     this.local.error = Some(error);
                 }
-                this.sync_application_state(cx);
+                this.refresh_from_application(cx);
                 cx.notify();
             });
         })
@@ -67,7 +67,7 @@ impl SftpView {
         };
         let items = action.items.clone();
         let count = items.len();
-        let refresh_path = snapshot.path;
+        let refresh_path = snapshot.remote.path;
         let application =
             cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         self.remote_selection.clear();
@@ -86,7 +86,7 @@ impl SftpView {
                 })
                 .collect();
             if let Err(error) = application
-                .delete_sftp_remote(task_workspace_id, items)
+                .delete_sftp_remote_paths(task_workspace_id, items)
                 .await
             {
                 log::warn!("SFTP 批量删除请求失败: {error}");

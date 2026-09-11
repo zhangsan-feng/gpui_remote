@@ -40,7 +40,7 @@ mod lifecycle {
                 match event {
                     GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
                         if profile.protocol == crate::domain::session::Protocol::Ssh {
-                            this.connect_projection(workspace_id.clone(), profile.clone());
+                            this.initialize_projection(workspace_id.clone(), profile.clone());
                         }
                         return;
                     }
@@ -59,11 +59,12 @@ mod lifecycle {
             .detach();
         }
 
-        pub(in crate::gui::workspace::ssh) fn connect_projection(
+        pub(in crate::gui::workspace::ssh) fn initialize_projection(
             &mut self,
             workspace_id: String,
             profile: SessionProfile,
         ) {
+            self.focus_pending = true;
             self.models.insert(
                 workspace_id,
                 Arc::new(super::super::core::TerminalModel::new(TerminalData {

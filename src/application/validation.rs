@@ -7,7 +7,10 @@ pub(crate) fn validate_terminal_workspace(
     workspace_id: &str,
 ) -> ApplicationResult<()> {
     validate_session_protocol(application, workspace_id, Protocol::Ssh)?;
-    application.ssh().snapshot(workspace_id).map(|_| ())
+    application
+        .ssh()
+        .terminal_snapshot(workspace_id)
+        .map(|_| ())
 }
 
 pub(crate) fn validate_session(
@@ -19,7 +22,7 @@ pub(crate) fn validate_session(
 ) -> ApplicationResult<()> {
     let profile = application
         .sessions()
-        .get(workspace_id)
+        .profile_for_workspace(workspace_id)
         .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
     if profile.protocol != protocol {
         return Err(format!("会话协议不是 {protocol}: {workspace_id}"));
@@ -39,7 +42,7 @@ pub(crate) fn validate_session_protocol(
 ) -> ApplicationResult<()> {
     let profile = application
         .sessions()
-        .get(workspace_id)
+        .profile_for_workspace(workspace_id)
         .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
     if profile.protocol != protocol {
         return Err(format!("会话协议不是 {protocol}: {workspace_id}"));

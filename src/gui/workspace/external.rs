@@ -21,12 +21,18 @@ impl Workspace {
                 let title = profile.name.clone();
                 let profile = profile.clone();
                 let global_state = global_state.clone();
+                log::debug!(
+                    "GUI 打开会话事件收到: profile_id={profile_id}, protocol={protocol}, host={ip}, title={title}"
+                );
                 cx.spawn(async move |_this, cx| {
                     match application
                         .open_session(profile_id.clone(), protocol, ip, title)
                         .await
                     {
                         Ok(workspace_id) => {
+                            log::debug!(
+                                "GUI 打开会话完成，发布 workspace opened: workspace_id={workspace_id}, profile_id={profile_id}, protocol={protocol}"
+                            );
                             global_state.update(cx, |_, cx| {
                                 cx.emit(GlobalEvent::WorkspaceSessionOpened(workspace_id, profile));
                             });

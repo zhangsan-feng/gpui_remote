@@ -1,5 +1,13 @@
 use serde::Serialize;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct McpSettings {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub token: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ProfileSummary {
     pub id: String,
@@ -39,7 +47,7 @@ pub struct SftpEntrySummary {
     pub modified_at: Option<u64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct SftpDirectorySummary {
     pub path: String,
     pub entries: Vec<SftpEntrySummary>,
@@ -79,4 +87,33 @@ pub struct SftpWatchSummary {
     pub remote_path: String,
     pub is_directory: bool,
     pub debounce_ms: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SftpWorkspaceSnapshot {
+    pub remote: SftpDirectorySummary,
+    pub local: SftpDirectorySummary,
+    pub transfers: Vec<SftpTransferInfo>,
+    pub watches: Vec<SftpWatchSummary>,
+    pub status: String,
+    pub remote_revision: u64,
+}
+
+impl Default for SftpWorkspaceSnapshot {
+    fn default() -> Self {
+        Self {
+            remote: SftpDirectorySummary {
+                loading: true,
+                ..SftpDirectorySummary::default()
+            },
+            local: SftpDirectorySummary {
+                loading: true,
+                ..SftpDirectorySummary::default()
+            },
+            transfers: Vec::new(),
+            watches: Vec::new(),
+            status: "connecting".to_owned(),
+            remote_revision: 0,
+        }
+    }
 }

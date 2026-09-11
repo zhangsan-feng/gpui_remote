@@ -14,6 +14,7 @@ impl TerminalView {
             return;
         }
         self.selected_workspace_id = workspace_id;
+        self.focus_pending = self.selected_workspace_id.is_some();
         self.reset_active_view();
         cx.notify();
     }

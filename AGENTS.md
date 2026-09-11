@@ -1,8 +1,10 @@
 
 ## 项目约束
+
 UI 样式参考 [Tailwind CSS](https://tailwindcss.com/)
 图标设计与语义参考 [Lucide](https://lucide.dev/)；优先复用项目已有的 Lucide 图标资源，避免引入重复图标依赖。
 
+不要编写测试用例这是gui 项目 单例测试不出整体问题
 gui 模块 个责任边界
 core.rs (核心功能 数据流向)
 ui.rs渲染

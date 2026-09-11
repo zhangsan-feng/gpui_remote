@@ -22,5 +22,5 @@ impl Storage {
 }
 
 pub(crate) fn verify_host_key(endpoint: &str, public_key: &PublicKey) -> anyhow::Result<bool> {
-    HostPubKey {}.verify_or_remember(endpoint, public_key)
+    HostPubKey {}.verify_or_update(endpoint, public_key)
 }

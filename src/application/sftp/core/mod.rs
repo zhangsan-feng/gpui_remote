@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use tokio::sync::{Notify, mpsc, oneshot};
+use tokio::sync::{Notify, oneshot};
 
 pub(crate) use path::default_desktop_path;
 pub(crate) use service::SftpApplication;
@@ -365,16 +365,8 @@ impl SftpModel {
     }
 }
 
-struct SftpRuntime {
-    profile_ip: String,
-    profile_title: String,
-    model: Arc<SftpModel>,
-    commands: mpsc::UnboundedSender<SftpCommand>,
-    task: tokio::task::JoinHandle<()>,
-}
-
 enum SftpCommand {
-    LoadDirectory(String),
+    ChangeRemoteDirectory(String),
     Upload {
         transfer_id: u64,
         local_path: PathBuf,
@@ -402,8 +394,8 @@ pub(crate) struct RemoteDeleteItem {
     pub(crate) is_directory: bool,
 }
 
-pub(crate) fn read_local_directory(path: &Path) -> anyhow::Result<(PathBuf, Vec<LocalEntry>)> {
-    local::read_local_directory(path)
+pub(crate) fn scan_local_directory(path: &Path) -> anyhow::Result<(PathBuf, Vec<LocalEntry>)> {
+    local::scan_local_directory(path)
 }
 
 pub(crate) fn delete_local_path(path: &Path) -> anyhow::Result<()> {

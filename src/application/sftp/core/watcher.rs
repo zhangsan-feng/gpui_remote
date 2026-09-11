@@ -44,7 +44,7 @@ impl LocalWatchRuntime {
     }
 }
 
-pub(crate) async fn create(
+pub(crate) async fn listen_local_directory(
     app: SftpApplication,
     workspace_id: String,
     ip: String,

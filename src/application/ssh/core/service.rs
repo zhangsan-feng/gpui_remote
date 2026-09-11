@@ -107,7 +107,10 @@ impl SshApplication {
         alt: bool,
         shift: bool,
     ) -> Result<(), String> {
-        let application_cursor = self.snapshot(workspace_id)?.frame.application_cursor;
+        let application_cursor = self
+            .terminal_snapshot(workspace_id)?
+            .frame
+            .application_cursor;
         let normalized_key = key.to_ascii_lowercase();
         let input = if let Some(sequence) = encode_special_key(&normalized_key, application_cursor)
         {
@@ -155,7 +158,7 @@ impl SshApplication {
             .map_err(|_| format!("SSH 历史读取已取消: {workspace_id}"))
     }
 
-    pub fn snapshot(&self, workspace_id: &str) -> Result<TerminalData, String> {
+    pub fn terminal_snapshot(&self, workspace_id: &str) -> Result<TerminalData, String> {
         self.inner
             .runtimes
             .read()
@@ -165,7 +168,7 @@ impl SshApplication {
             .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
     }
 
-    pub fn revision(&self, workspace_id: &str) -> Result<u64, String> {
+    pub fn terminal_revision(&self, workspace_id: &str) -> Result<u64, String> {
         self.inner
             .runtimes
             .read()

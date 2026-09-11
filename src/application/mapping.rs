@@ -13,16 +13,16 @@ use super::{
 };
 
 pub(crate) fn list_terminals(application: &ApplicationContext) -> Vec<TerminalSummary> {
-    let selected_id = application.sessions().selected_id();
+    let selected_id = application.sessions().selected_workspace_id();
     application
         .sessions()
-        .list()
+        .list_workspaces()
         .into_iter()
         .filter(|(_, profile)| profile.protocol == Protocol::Ssh)
         .map(|(workspace_id, profile)| {
             let status = application
                 .ssh()
-                .snapshot(&workspace_id)
+                .terminal_snapshot(&workspace_id)
                 .map(|data| terminal_status_name(&data.status).to_owned())
                 .unwrap_or_else(|_| "connecting".to_owned());
             terminal_summary(workspace_id, profile, status, selected_id.as_deref())
@@ -31,21 +31,30 @@ pub(crate) fn list_terminals(application: &ApplicationContext) -> Vec<TerminalSu
 }
 
 pub(crate) fn list_sftp_sessions(application: &ApplicationContext) -> Vec<TerminalSummary> {
-    let selected_id = application.sessions().selected_id();
+    let selected_id = application.sessions().selected_workspace_id();
     application
         .sessions()
-        .list()
+        .list_workspaces()
         .into_iter()
         .filter(|(_, profile)| profile.protocol == Protocol::Sftp)
         .map(|(workspace_id, profile)| {
             let status = application
                 .sftp()
-                .snapshot(&workspace_id)
+                .sftp_remote_snapshot(&workspace_id)
                 .map(|snapshot| sftp_status_name(snapshot.status).to_owned())
                 .unwrap_or_else(|_| "connecting".to_owned());
             terminal_summary(workspace_id, profile, status, selected_id.as_deref())
         })
         .collect()
+}
+
+pub(crate) fn map_profile_summary(profile: SessionProfile) -> super::model::ProfileSummary {
+    super::model::ProfileSummary {
+        id: profile.id,
+        title: profile.name,
+        host: profile.host,
+        protocol: profile.protocol.as_str().to_owned(),
+    }
 }
 
 pub(crate) fn map_remote_directory(snapshot: SftpSnapshot) -> SftpDirectorySummary {

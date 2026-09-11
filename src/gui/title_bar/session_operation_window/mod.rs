@@ -23,6 +23,7 @@ enum FormSection {
     Proxy,
 }
 
+#[derive(Clone)]
 enum SessionFormMode {
     Create,
     Edit { id: String },

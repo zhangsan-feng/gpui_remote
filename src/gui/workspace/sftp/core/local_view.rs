@@ -7,15 +7,15 @@ use crate::application::ApplicationContext;
 use super::super::SftpView;
 
 impl SftpView {
-    pub(in crate::gui::workspace::sftp) fn load_local_directory(
+    pub(in crate::gui::workspace::sftp) fn change_local_directory(
         &mut self,
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        self.load_local_directory_inner(path, cx);
+        self.change_local_directory_inner(path, cx);
     }
 
-    fn load_local_directory_inner(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    fn change_local_directory_inner(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
@@ -25,16 +25,11 @@ impl SftpView {
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
         self.local_selection.clear();
-        self.local.path = path.clone();
+        self.local.path = path.display().to_string();
         self.local.loading = true;
         self.local.error = None;
         self.local_list_state.reset_with_uniform_height(0, px(38.));
         cx.notify();
-        log::debug!(
-            "SFTP 本地目录扫描开始: workspace={}, path={}",
-            workspace_id,
-            path.display()
-        );
 
         let application =
             cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
@@ -56,7 +51,7 @@ impl SftpView {
                     this.local.loading = false;
                     this.local.error = Some(error);
                 }
-                this.sync_application_state(cx);
+                this.refresh_from_application(cx);
                 cx.notify();
             });
         })
@@ -83,7 +78,7 @@ impl SftpView {
             log::debug!("SFTP 本地目录恢复请求已处理，跳过重复恢复: workspace={workspace_id}");
             return;
         }
-        self.sync_application_state(cx);
+        self.refresh_from_application(cx);
         self.local_selection.clear();
         self.local_list_state.reset_with_uniform_height(0, px(38.));
         self.local_restore_requests.remove(workspace_id);
@@ -112,10 +107,7 @@ impl SftpView {
             path.display()
         );
         cx.spawn(async move |_this, _cx| {
-            match application
-                .persist_sftp_local_path(workspace_id, path)
-                .await
-            {
+            match application.save_sftp_local_path(workspace_id, path).await {
                 Ok(()) => log::debug!("SFTP 本地目录保存完成: session={profile_id}"),
                 Err(error) => log::warn!("保存 SFTP 本地目录失败，会话 {profile_id}: {error}"),
             }

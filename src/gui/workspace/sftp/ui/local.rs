@@ -1,6 +1,6 @@
 use super::super::{
-    DeleteLocalEntry, DragPreviewRemoteToLocalItem, LocalEntry, LocalSnapshot, SftpView,
-    StopWatchingLocalPath, UploadLocalEntry, WatchLocalPath,
+    DeleteLocalEntry, DragPreviewRemoteToLocalItem, SftpView, StopWatchingLocalPath,
+    UploadLocalEntry, WatchLocalPath,
 };
 use super::PathTarget;
 use std::path::PathBuf;
@@ -16,12 +16,13 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
+use crate::application::model::{SftpDirectorySummary, SftpEntrySummary};
 use crate::component::theme;
 
 impl SftpView {
     pub(super) fn local_panel(
         &self,
-        snapshot: LocalSnapshot,
+        snapshot: SftpDirectorySummary,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let colors = cx.theme();
@@ -39,8 +40,9 @@ impl SftpView {
                     .get(index)
                     .cloned()
                     .map(|entry| {
-                        let selected = selection.contains(&entry.path);
-                        let watched = watched_paths.contains(&entry.path);
+                        let path = PathBuf::from(&entry.path);
+                        let selected = selection.contains(&path);
+                        let watched = watched_paths.contains(&path);
                         Self::local_row(
                             entry,
                             view.clone(),
@@ -85,11 +87,7 @@ impl SftpView {
                             .label("刷新")
                             .on_click(cx.listener(Self::refresh_local)),
                     )
-                    .child(self.path_bar(
-                        snapshot.path.display().to_string(),
-                        PathTarget::Local,
-                        cx,
-                    ))
+                    .child(self.path_bar(snapshot.path.clone(), PathTarget::Local, cx))
                     .when(snapshot.loading, |this| {
                         this.child(
                             div()
@@ -172,7 +170,7 @@ impl SftpView {
     }
 
     fn local_row(
-        entry: LocalEntry,
+        entry: SftpEntrySummary,
         view: WeakEntity<SftpView>,
         selected: bool,
         watched: bool,
@@ -182,7 +180,7 @@ impl SftpView {
         let colors = cx.theme();
         let ui_colors = theme::CustomerUiTheme::colors(cx);
         let watched_background = Self::watched_row_background(cx);
-        let path = entry.path.clone();
+        let path = PathBuf::from(&entry.path);
         let is_directory = entry.is_directory;
         let drag_paths = if selected {
             selected_paths
@@ -197,7 +195,7 @@ impl SftpView {
         let release_out_view = view.clone();
         let release_path = path.clone();
         h_flex()
-            .id(format!("sftp-local-{}", entry.path.display()))
+            .id(format!("sftp-local-{}", entry.path))
             .h(px(38.))
             .px_3()
             .gap_2()

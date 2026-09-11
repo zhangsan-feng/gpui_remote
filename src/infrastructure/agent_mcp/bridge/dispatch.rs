@@ -12,7 +12,7 @@ pub(crate) async fn dispatch(
 ) -> ApplicationResult<ApplicationResponse> {
     match command {
         ApplicationCommand::ListProfiles => application
-            .list_profiles()
+            .list_profile_summaries()
             .await
             .map(ApplicationResponse::Profiles),
         ApplicationCommand::OpenSession {
@@ -29,11 +29,11 @@ pub(crate) async fn dispatch(
             .await
             .map(|_| ApplicationResponse::Empty),
         ApplicationCommand::ListSftpSessions => application
-            .list_sftp_sessions()
+            .list_sftp_workspace_summaries()
             .await
             .map(ApplicationResponse::TerminalSummaries),
         ApplicationCommand::ListSftpLocal { workspace_id } => application
-            .list_sftp_local(workspace_id)
+            .read_sftp_local_directory(workspace_id)
             .await
             .map(ApplicationResponse::SftpDirectory),
         ApplicationCommand::ChangeSftpLocalDirectory {
@@ -46,7 +46,7 @@ pub(crate) async fn dispatch(
             .await
             .map(|_| ApplicationResponse::Empty),
         ApplicationCommand::ListSftpRemote { workspace_id } => application
-            .list_sftp_remote(workspace_id)
+            .read_sftp_remote_directory(workspace_id)
             .await
             .map(ApplicationResponse::SftpDirectory),
         ApplicationCommand::ChangeSftpRemoteDirectory {
@@ -73,7 +73,7 @@ pub(crate) async fn dispatch(
             .await
             .map(ApplicationResponse::SftpTransferSummary),
         ApplicationCommand::ListSftpTransfers { workspace_id } => application
-            .list_sftp_transfers(workspace_id)
+            .read_sftp_transfer_records(workspace_id)
             .await
             .map(ApplicationResponse::SftpTransferInfos),
         ApplicationCommand::WatchSftpLocal {
@@ -82,7 +82,7 @@ pub(crate) async fn dispatch(
             title,
             local_path,
         } => application
-            .watch_sftp_local(workspace_id, ip, title, local_path)
+            .start_sftp_local_watch(workspace_id, ip, title, local_path)
             .await
             .map(ApplicationResponse::SftpWatch),
         ApplicationCommand::StopSftpLocalWatch {
@@ -99,7 +99,7 @@ pub(crate) async fn dispatch(
             ip,
             title,
         } => application
-            .list_sftp_local_watches(workspace_id, ip, title)
+            .sftp_local_watch_summaries(workspace_id, ip, title)
             .map(ApplicationResponse::SftpWatches),
         ApplicationCommand::ListTerminals => application
             .list_terminals()

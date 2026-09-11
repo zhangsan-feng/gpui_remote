@@ -1,5 +1,5 @@
-use anyhow::{Error, Result};
-use gpui_kit::{Context, Window};
+use anyhow::Error;
+use gpui_kit::{AppContext, Context, Window};
 
 use crate::{
     domain::session::Protocol, gui::title_bar::session_operation_window::open_edit_session_window,
@@ -8,15 +8,6 @@ use crate::{
 use super::{ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent};
 
 impl SessionComponent {
-    pub(super) fn reload_session(&mut self, cx: &mut Context<Self>) -> Result<()> {
-        self.sessions = self.load_sessions(cx)?;
-        self.core_err = None;
-        self.render_item(cx);
-        self.refer_item(cx);
-        cx.notify();
-        Ok(())
-    }
-
     pub(super) fn create_active_session(
         &mut self,
         action: &ConnectSession,
@@ -36,7 +27,7 @@ impl SessionComponent {
     }
 
     pub(super) fn create_active_session_by_id(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        match self.query_session(session_id, cx) {
+        match self.find_session_in_projection(session_id) {
             Ok(profile) => self.open_workspace(profile, cx),
             Err(error) => self.set_error(error, cx),
         }
@@ -48,7 +39,7 @@ impl SessionComponent {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match self.query_session(&action.0, cx) {
+        match self.find_session_in_projection(&action.0) {
             Ok(profile) => open_edit_session_window(profile, cx.entity(), window, cx),
             Err(error) => self.set_error(error, cx),
         }
@@ -60,12 +51,19 @@ impl SessionComponent {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Err(error) = self
-            .remove_session(&action.0, cx)
-            .and_then(|()| self.reload_session(cx))
-        {
-            self.set_error(error, cx);
-        }
+        let application =
+            cx.read_global::<crate::application::ApplicationContext, _>(|application, _| {
+                application.clone()
+            });
+        let session_id = action.0.clone();
+        cx.spawn(async move |this, cx| {
+            let result = application.delete_session(session_id).await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(()) => this.refresh_sessions(cx),
+                Err(error) => this.set_error(Error::msg(error), cx),
+            });
+        })
+        .detach();
     }
 
     pub(super) fn set_error(&mut self, error: Error, cx: &mut Context<Self>) {
@@ -79,7 +77,7 @@ impl SessionComponent {
         protocol: Protocol,
         cx: &mut Context<Self>,
     ) {
-        match self.query_session(session_id, cx) {
+        match self.find_session_in_projection(session_id) {
             Ok(mut profile) => {
                 profile.protocol = protocol;
                 self.open_workspace(profile, cx);

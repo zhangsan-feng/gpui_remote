@@ -306,12 +306,7 @@ impl russh::client::Handler for ClientHandler {
         let endpoint = self.endpoint.clone();
         let public_key = server_public_key.clone();
         match tokio::task::spawn_blocking(move || verify_host_key(&endpoint, &public_key)).await {
-            Ok(Ok(accepted)) => {
-                if !accepted {
-                    log::info!("SSH host key changed for {}", self.endpoint);
-                }
-                Ok(accepted)
-            }
+            Ok(Ok(accepted)) => Ok(accepted),
             Ok(Err(error)) => {
                 log::info!("SSH host key verification failed: {error:#}");
                 Ok(false)

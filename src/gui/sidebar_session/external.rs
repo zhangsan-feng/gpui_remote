@@ -19,14 +19,19 @@ impl SessionComponent {
                 }
                 _ => return,
             }
-            if let Err(error) = this.reload_session(cx) {
-                this.set_error(error, cx);
-            }
+            this.refresh_sessions(cx);
         })
         .detach();
     }
 
     pub(super) fn open_workspace(&self, profile: SessionProfile, cx: &mut Context<Self>) {
+        log::debug!(
+            "GUI 发送打开会话事件: profile_id={}, protocol={}, host={}, title={}",
+            profile.id,
+            profile.protocol,
+            profile.host,
+            profile.name
+        );
         read_global_state(cx).update(cx, |_, cx| {
             cx.emit(GlobalEvent::OpenWorkspaceSession(profile));
         });

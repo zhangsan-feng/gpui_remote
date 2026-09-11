@@ -8,7 +8,7 @@ const KNOWN_HOSTS_PATH: &str = "data/known_hosts.json";
 pub struct HostPubKey {}
 
 impl HostPubKey {
-    pub fn verify_or_remember(&self, endpoint: &str, public_key: &PublicKey) -> Result<bool> {
+    pub fn verify_or_update(&self, endpoint: &str, public_key: &PublicKey) -> Result<bool> {
         let path = Path::new(KNOWN_HOSTS_PATH);
         let mut known_hosts = if path.exists() {
             serde_json::from_slice::<BTreeMap<String, String>>(
@@ -19,8 +19,15 @@ impl HostPubKey {
             BTreeMap::new()
         };
         let fingerprint = public_key.fingerprint(HashAlg::Sha256).to_string();
+        if let Some(expected) = known_hosts.get(endpoint)
+            && expected == &fingerprint
+        {
+            return Ok(true);
+        }
         if let Some(expected) = known_hosts.get(endpoint) {
-            return Ok(expected == &fingerprint);
+            log::warn!(
+                "SSH host key changed for {endpoint}; updating known host fingerprint from {expected} to {fingerprint}"
+            );
         }
 
         if let Some(parent) = path.parent() {

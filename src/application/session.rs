@@ -11,7 +11,7 @@ use super::{ApplicationEvent, ApplicationResult};
 
 struct SessionState {
     sessions: RwLock<HashMap<String, SessionProfile>>,
-    selected_id: RwLock<Option<String>>,
+    selected_workspace_id: RwLock<Option<String>>,
     events: broadcast::Sender<ApplicationEvent>,
 }
 
@@ -25,7 +25,7 @@ impl SessionApplication {
         Self {
             inner: Arc::new(SessionState {
                 sessions: RwLock::new(HashMap::new()),
-                selected_id: RwLock::new(None),
+                selected_workspace_id: RwLock::new(None),
                 events,
             }),
         }
@@ -68,7 +68,7 @@ impl SessionApplication {
 
         let was_selected = self
             .inner
-            .selected_id
+            .selected_workspace_id
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_deref()
@@ -99,16 +99,16 @@ impl SessionApplication {
             }
         }
 
-        let mut selected_id = self
+        let mut selected_workspace_id = self
             .inner
-            .selected_id
+            .selected_workspace_id
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if *selected_id == workspace_id {
+        if *selected_workspace_id == workspace_id {
             return Ok(());
         }
-        *selected_id = workspace_id.clone();
-        drop(selected_id);
+        *selected_workspace_id = workspace_id.clone();
+        drop(selected_workspace_id);
 
         let _ = self
             .inner
@@ -117,7 +117,7 @@ impl SessionApplication {
         Ok(())
     }
 
-    pub fn get(&self, workspace_id: &str) -> Option<SessionProfile> {
+    pub fn profile_for_workspace(&self, workspace_id: &str) -> Option<SessionProfile> {
         self.inner
             .sessions
             .read()
@@ -126,7 +126,7 @@ impl SessionApplication {
             .cloned()
     }
 
-    pub fn list(&self) -> Vec<(String, SessionProfile)> {
+    pub fn list_workspaces(&self) -> Vec<(String, SessionProfile)> {
         let mut sessions = self
             .inner
             .sessions
@@ -139,9 +139,9 @@ impl SessionApplication {
         sessions
     }
 
-    pub fn selected_id(&self) -> Option<String> {
+    pub fn selected_workspace_id(&self) -> Option<String> {
         self.inner
-            .selected_id
+            .selected_workspace_id
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()

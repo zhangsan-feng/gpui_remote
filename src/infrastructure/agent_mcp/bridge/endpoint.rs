@@ -94,7 +94,7 @@ impl McpBridgeEndpoint {
         self.notification_tx.subscribe()
     }
 
-    pub(crate) async fn list_profiles(&self) -> ApplicationResult<Vec<ProfileSummary>> {
+    pub(crate) async fn read_profile_summaries(&self) -> ApplicationResult<Vec<ProfileSummary>> {
         match self.request(ApplicationCommand::ListProfiles).await? {
             ApplicationResponse::Profiles(profiles) => Ok(profiles),
             _ => Err("MCP application bridge 返回了错误的 profiles 响应".to_owned()),
@@ -122,7 +122,9 @@ impl McpBridgeEndpoint {
         }
     }
 
-    pub(crate) async fn list_sftp_sessions(&self) -> ApplicationResult<Vec<TerminalSummary>> {
+    pub(crate) async fn read_sftp_workspace_summaries(
+        &self,
+    ) -> ApplicationResult<Vec<TerminalSummary>> {
         match self.request(ApplicationCommand::ListSftpSessions).await? {
             ApplicationResponse::TerminalSummaries(sessions) => Ok(sessions),
             _ => Err("MCP application bridge 返回了错误的 SFTP 会话响应".to_owned()),
@@ -134,7 +136,7 @@ impl McpBridgeEndpoint {
             .await
     }
 
-    pub(crate) async fn list_sftp_local(
+    pub(crate) async fn read_sftp_local_directory(
         &self,
         workspace_id: String,
     ) -> ApplicationResult<SftpDirectorySummary> {
@@ -163,7 +165,7 @@ impl McpBridgeEndpoint {
         .await
     }
 
-    pub(crate) async fn list_sftp_remote(
+    pub(crate) async fn read_sftp_remote_directory(
         &self,
         workspace_id: String,
     ) -> ApplicationResult<SftpDirectorySummary> {
@@ -226,7 +228,7 @@ impl McpBridgeEndpoint {
         }
     }
 
-    pub(crate) async fn list_sftp_transfers(
+    pub(crate) async fn read_sftp_transfer_records(
         &self,
         workspace_id: String,
     ) -> ApplicationResult<Vec<SftpTransferInfo>> {
@@ -239,7 +241,7 @@ impl McpBridgeEndpoint {
         }
     }
 
-    pub(crate) async fn watch_sftp_local(
+    pub(crate) async fn start_sftp_local_watch(
         &self,
         workspace_id: String,
         ip: String,
@@ -276,7 +278,7 @@ impl McpBridgeEndpoint {
         .await
     }
 
-    pub(crate) async fn list_sftp_local_watches(
+    pub(crate) async fn read_sftp_local_watch_summaries(
         &self,
         workspace_id: String,
         ip: String,

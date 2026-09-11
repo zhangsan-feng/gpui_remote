@@ -41,6 +41,11 @@ impl WorkspaceSession {
         profile: SessionProfile,
         cx: &mut Context<Self>,
     ) {
+        log::debug!(
+            "GUI workspace tab opened: workspace_id={workspace_id}, profile_id={}, protocol={}",
+            profile.id,
+            profile.protocol
+        );
         self.sessions.push(OpenedWorkspaceSession {
             id: workspace_id.clone(),
             profile,

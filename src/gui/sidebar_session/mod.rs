@@ -31,6 +31,7 @@ pub struct SessionComponent {
     sessions: Vec<SessionProfile>,
     core_err: Option<Error>,
     search_input: Entity<InputState>,
+    refresh_generation: u64,
 }
 
 impl SessionComponent {
@@ -40,6 +41,7 @@ impl SessionComponent {
             sessions: Vec::new(),
             core_err: None,
             search_input: cx.new(|cx| InputState::new(window, cx).placeholder("搜索会话")),
+            refresh_generation: 0,
         };
         cx.subscribe(&this.search_input, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -49,9 +51,7 @@ impl SessionComponent {
         })
         .detach();
         this.start_subscribe(cx);
-        if let Err(error) = this.reload_session(cx) {
-            this.core_err = Some(error);
-        }
+        this.refresh_sessions(cx);
         this
     }
 }

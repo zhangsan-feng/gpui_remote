@@ -2,7 +2,7 @@
 
 ## 架构目标
 
-项目使用 GPUI Global 作为应用级共享入口。`ApplicationContext` 是应用层根句柄，负责会话、SSH、SFTP 和应用事件；`InfrastructureContext` 是基础设施根句柄，负责存储、profile 查询和 MCP runtime。代理连接由 `infrastructure/proxy` 模块提供适配，协议 application 模块按需使用。
+项目使用 GPUI Global 作为应用级共享入口。`ApplicationContext` 是应用层根句柄，负责会话、SSH、SFTP 和应用事件；`InfrastructureContext` 是基础设施根句柄，负责存储和 MCP runtime。代理连接由 `infrastructure/proxy` 模块提供适配，协议 application 模块按需使用。
 
 当前没有 `DataContext`、`GuiContext` 或 `McpContext` 中间 facade。每一层在自己的 GPUI 上下文中通过 `cx.read_global` 读取需要的 Global，不通过父组件或构造函数层层传递上下文。
 
@@ -11,7 +11,7 @@
 - GUI 和 MCP 都只能通过 ApplicationContext API 访问数据面。
 - SSH、SFTP 以及未来新增协议的数据和 runtime 仍由各自 application 模块维护。
 - MCP 不操作 GUI，不读取 GUI selected 状态，也不持有 GUI entity、channel 或地址。
-- InfrastructureContext 收敛 storage、profile query 和 MCP 服务生命周期；`main.rs` 只负责初始化、注册 Global 和启动入口。
+- InfrastructureContext 收敛 storage repository 和 MCP 服务生命周期；`main.rs` 只负责初始化、注册 Global 和启动入口。
 - 发生问题时先查看日志；日志不足时先在调用边界补充 debug 日志，再根据证据修改实现，不凭猜测重构。
 
 ## 总体数据流
@@ -26,7 +26,7 @@ GPUI App
   │
   └─ Global<InfrastructureContext>
        ├─ Storage
-       ├─ ProfileQuery
+       ├─ SessionRepository
        └─ AgentMcpRuntime
 
 infrastructure/proxy
@@ -83,11 +83,11 @@ bridge 的命令/通知循环使用 `tokio::spawn` 运行在 Tokio runtime 中�
 
 ### application
 
-提供应用用例、业务状态、会话生命周期、SSH/SFTP 数据面、统一返回模型和 application event。application API 必须显式接收 `workspace_id`，不能从 GUI selected 状态推导 MCP 目标。
+提供应用用例、业务状态、会话生命周期、SSH/SFTP 数据面、统一返回模型和 application event。`ApplicationContext::sftp_workspace_snapshot(workspace_id)` 聚合远程目录、本地目录、传输记录和 watcher 摘要；application API 必须显式接收 `workspace_id`，不能从 GUI selected 状态推导 MCP 目标。
 
 ### infrastructure
 
-提供 SQLite 存储、profile 查询、代理、MCP HTTP 协议边界和 bridge runtime。infrastructure 可以读取 ApplicationContext，但 MCP tool/server 不持有 ApplicationContext。
+提供 SQLite 存储 repository、代理、MCP HTTP 协议边界和 bridge runtime。MCP bridge adapter 读取 ApplicationContext Global，并把命令转发到 application facade；GUI 不读取 InfrastructureContext。
 
 ### gui
 
@@ -110,9 +110,9 @@ bridge 的命令/通知循环使用 `tokio::spawn` 运行在 Tokio runtime 中�
 | `src/main.rs` | 初始化日志、资源和 GPUI App，注册 `InfrastructureContext`、`ApplicationContext`，启动 MCP 和 GUI。 |
 | `Cargo.toml` / `Cargo.lock` | Rust 依赖和可复现构建配置。 |
 | `AGENTS.md` | 项目约束和协作规则。 |
-| `plan.md` | 阶段性计划文件；当前阶段完成后保持清空，新的计划按需求重新建立。 |
+| `plan.md` | 当前全局 code review 的执行计划、完成进度和验证记录。 |
 | `project.md` | 当前架构、数据流、目录职责和排查约定。 |
-| `scripts/` | 手工回归和压力工具，不属于 GUI 运行时。 |
+| `scripts/` | 手工回归和压力工具，不属于 GUI 运行时；`mcp_common.go` 提供公共 MCP 客户端，`mcp_ssh.go`、`mcp_sftp.go`、`mcp_concurrent.go` 分别提供单次 SSH、单次 SFTP 和并发场景入口。 |
 
 ### `src/application/`
 
@@ -128,15 +128,14 @@ bridge 的命令/通知循环使用 `tokio::spawn` 运行在 Tokio runtime 中�
 | `event.rs` | application entity 事件和会话生命周期事件。 |
 | `session/` | 会话创建、关闭、选择和摘要。 |
 | `ssh/` | SSH store、终端快照、PTY、输入、resize、滚动和通知。 |
-| `sftp/` | SFTP store、目录、路径、传输、删除、取消、重试和 watch。 |
+| `sftp/` | SFTP store、目录、路径、传输、删除、取消、重试和 watch。`core/service/mod.rs` 负责生命周期和共享状态，`service/directory.rs` 负责目录与 listener，`service/transfer.rs` 负责传输；`remote.rs` 负责远程扫描，`watcher.rs` 负责 watcher runtime。GUI 使用 application 的 `SftpWorkspaceSnapshot`，只保留交互 projection。 |
 
 ### `src/infrastructure/`
 
 | 文件/目录 | 主要功能 |
 | --- | --- |
 | `mod.rs` | 基础设施子模块声明和初始化入口。 |
-| `context.rs` | `InfrastructureContext`，统一持有 storage、profile query 和 MCP runtime。 |
-| `profile_query.rs` | profile 查询 port 和具体适配实现。 |
+| `context.rs` | `InfrastructureContext`，统一持有 storage repository 和 MCP runtime。 |
 | `storage/` | SQLite session/profile、SFTP 路径和已知主机密钥存储。 |
 | `proxy/` | 网络代理和异步双向流。 |
 | `agent_mcp/mod.rs` | MCP 子模块声明和启动入口。 |
@@ -232,11 +231,18 @@ GUI 侧出现问题时，先记录复现操作、时间点、workspace_id 和对
 
 MCP 手工回归工具：
 
+三个独立入口支持 MCP profile 读取、SSH/SFTP workspace 链路和并发只读请求；每次运行会把请求结果和失败信息写入 `logs/`，后续 GUI 问题由实际使用记录，再按日志证据迭代。
+
+独立 MCP 场景工具：
+
 ```powershell
-go run scripts\stress_mcp.go scripts\stress_mcp_types.go
+$env:GO111MODULE='off'
+go run scripts\mcp_ssh.go scripts\mcp_common.go -ip <profile-ip>
+go run scripts\mcp_sftp.go scripts\mcp_common.go -ip <profile-ip>
+go run scripts\mcp_concurrent.go scripts\mcp_common.go -ip <profile-ip> -rounds 4
 ```
 
-该工具支持 MCP 工具清单检查、SSH/SFTP workspace 链路、并发请求、keep-alive 隔离、日志汇总和目标 profile IP 参数。后续 GUI 问题由实际使用记录，再按日志证据迭代。
+本机 Go 安装需要先设置 `GO111MODULE=off` 才能解析标准库。三个入口都按串行方式完成准备和清理；只有 `mcp_concurrent.go` 在已建立的 SSH/SFTP workspace 上并发执行只读请求。完整接口回归还可使用 `stress_mcp.go` 与 `stress_mcp_types.go`，覆盖 18 个工具、watch/transfer、workspace 并发和 profile 压力读取。SFTP 入口会记录 workspace、首个远程目录、条目数量和轮询次数，便于和应用日志中的“初始远程目录扫描”次数对照。
 
 常规检查：
 

@@ -2,37 +2,17 @@ mod delete;
 mod local_view;
 mod watcher;
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, RwLock},
-};
+use std::path::PathBuf;
 
-use crate::{application::ApplicationContext, domain::session::SessionProfile};
+use crate::{
+    application::{ApplicationContext, model::SftpWorkspaceSnapshot},
+    domain::session::SessionProfile,
+};
 use gpui_kit::*;
 
 use super::{
-    CancelTransfer, DownloadRemoteEntry, RetryTransfer, SftpModel, SftpProjection, SftpSnapshot,
-    SftpView, UploadLocalEntry,
+    CancelTransfer, DownloadRemoteEntry, RetryTransfer, SftpProjection, SftpView, UploadLocalEntry,
 };
-
-impl SftpModel {
-    pub(super) fn snapshot(&self) -> SftpSnapshot {
-        self.snapshot
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
-
-    pub(in crate::gui::workspace::sftp) fn replace_snapshot(&self, next_snapshot: SftpSnapshot) {
-        {
-            let mut snapshot = self
-                .snapshot
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            *snapshot = next_snapshot;
-        }
-    }
-}
 
 impl SftpView {
     pub(super) fn persist_remote_directory(&mut self, path: &str, cx: &mut Context<Self>) {
@@ -65,10 +45,7 @@ impl SftpView {
             path
         );
         cx.spawn(async move |_this, _cx| {
-            match application
-                .persist_sftp_remote_path(workspace_id, path)
-                .await
-            {
+            match application.save_sftp_remote_path(workspace_id, path).await {
                 Ok(()) => log::debug!("SFTP 远程目录保存完成: 会话 {profile_id}"),
                 Err(error) => log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error}"),
             }
@@ -76,14 +53,23 @@ impl SftpView {
         .detach();
     }
 
-    pub(super) fn connect_projection(&mut self, workspace_id: String, profile: SessionProfile) {
+    pub(super) fn initialize_projection(&mut self, workspace_id: String, profile: SessionProfile) {
+        let existing = self.projections.contains_key(&workspace_id);
+        log::debug!(
+            "SFTP GUI projection connecting: workspace_id={workspace_id}, profile_id={}, existing={}",
+            profile.id,
+            existing
+        );
+        if existing {
+            log::debug!(
+                "SFTP GUI projection event already handled, skipping: workspace_id={workspace_id}"
+            );
+            return;
+        }
         self.close(&workspace_id);
         self.remote_selection.clear();
         self.remote_list_state.reset_with_uniform_height(0, px(38.));
 
-        let model = Arc::new(SftpModel {
-            snapshot: RwLock::new(SftpSnapshot::default()),
-        });
         let profile_id = profile.id.clone();
         let profile_ip = profile.host.clone();
         let profile_title = profile.name.clone();
@@ -93,28 +79,27 @@ impl SftpView {
                 profile_id,
                 profile_ip,
                 profile_title,
-                model,
+                snapshot: SftpWorkspaceSnapshot::default(),
             },
         );
         self.updates.notify_one();
     }
 
     pub(super) fn close(&mut self, workspace_id: &str) {
-        self.stop_local_watchers_for_workspace(workspace_id);
-        self.remote_revisions.remove(workspace_id);
+        self.clear_local_watch_projection_for_workspace(workspace_id);
         self.local_restore_requests.remove(workspace_id);
         self.persisted_remote_paths.remove(workspace_id);
         self.projections.remove(workspace_id);
     }
 
-    pub(super) fn load_directory(&mut self, path: String, cx: &mut Context<Self>) {
+    pub(super) fn change_remote_directory(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
-        let _ = self.load_directory_for_workspace(&workspace_id, path, cx);
+        let _ = self.change_remote_directory_for_workspace(&workspace_id, path, cx);
     }
 
-    pub(super) fn load_directory_for_workspace(
+    pub(super) fn change_remote_directory_for_workspace(
         &mut self,
         workspace_id: &str,
         path: String,
@@ -173,7 +158,7 @@ impl SftpView {
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.sync_application_state(cx);
+                        this.refresh_from_application(cx);
                         cx.notify();
                     });
                 }
@@ -228,7 +213,7 @@ impl SftpView {
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.sync_application_state(cx);
+                        this.refresh_from_application(cx);
                         cx.notify();
                     });
                 }
@@ -250,8 +235,6 @@ impl SftpView {
     ) {
         let Some(record) = self
             .transfers
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
             .find(|transfer| transfer.id == action.0)
             .cloned()
@@ -269,7 +252,7 @@ impl SftpView {
                 log::warn!("取消 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.sync_application_state(cx);
+                this.refresh_from_application(cx);
                 cx.notify();
             });
         })
@@ -284,8 +267,6 @@ impl SftpView {
     ) {
         let Some(record) = self
             .transfers
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
             .find(|transfer| transfer.id == action.0)
             .cloned()
@@ -306,7 +287,7 @@ impl SftpView {
                 log::warn!("重试 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.sync_application_state(cx);
+                this.refresh_from_application(cx);
                 cx.notify();
             });
         })

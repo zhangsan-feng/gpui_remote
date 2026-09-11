@@ -22,12 +22,19 @@ use super::{RemoteDeleteItem, SftpCommand, SftpEntry, SftpModel, SftpStatus};
 
 const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 
-pub(super) async fn run_sftp(
+pub(super) async fn run_sftp_session(
+    workspace_id: String,
     profile: SessionProfile,
     initial_remote_path: Option<String>,
     mut commands: mpsc::UnboundedReceiver<SftpCommand>,
     model: Arc<SftpModel>,
 ) -> Result<()> {
+    log::debug!(
+        "SFTP runtime starting: workspace_id={workspace_id}, profile_id={}, host={}, port={}",
+        profile.id,
+        profile.host,
+        profile.port
+    );
     let proxy = profile.proxy.as_ref().map(|proxy| ProxySettings {
         host: proxy.host.clone(),
         port: proxy.port,
@@ -103,10 +110,10 @@ pub(super) async fn run_sftp(
             .await
             .context("读取 SFTP 初始目录失败")?
     };
-    log::debug!("SFTP 初始远程目录扫描开始: {initial_path}");
-    let entries = read_directory(&sftp, &initial_path).await?;
+    log::debug!("SFTP 初始远程目录扫描开始: workspace_id={workspace_id}, path={initial_path}");
+    let entries = scan_remote_directory(&sftp, &initial_path).await?;
     log::debug!(
-        "SFTP 初始远程目录扫描完成: {}, entries={}",
+        "SFTP 初始远程目录扫描完成: workspace_id={workspace_id}, path={}, entries={}",
         initial_path,
         entries.len()
     );
@@ -129,21 +136,24 @@ pub(super) async fn run_sftp(
                     }
                 };
                 match command {
-                    SftpCommand::LoadDirectory(path) => {
-                        log::debug!("SFTP 开始读取远程目录: {path}");
+                    SftpCommand::ChangeRemoteDirectory(path) => {
+                        log::debug!("SFTP 远程目录扫描开始: {path}");
                         let result = async {
                             let path = sftp.canonicalize(path).await.context("解析远程目录失败")?;
-                            let entries = read_directory(&sftp, &path).await?;
+                            let entries = scan_remote_directory(&sftp, &path).await?;
                             Ok::<_, anyhow::Error>((path, entries))
                         }
                         .await;
                         match result {
                             Ok((path, entries)) => {
-                                log::debug!("SFTP 远程目录读取完成: {path}");
+                                log::debug!(
+                                    "SFTP 远程目录扫描完成: path={path}, entries={}",
+                                    entries.len()
+                                );
                                 model.set_directory(path, entries)
                             }
                             Err(error) => {
-                                log::warn!("SFTP 读取远程目录失败: {error:#}");
+                                log::warn!("SFTP 远程目录扫描失败: {error:#}");
                                 model.set_error(format!("{error:#}"));
                             }
                         }
@@ -206,7 +216,7 @@ pub(super) async fn run_sftp(
                         refresh_path,
                     } => {
                         let delete_result = delete_remote_paths(&sftp, &items).await;
-                        match read_directory(&sftp, &refresh_path).await {
+                        match scan_remote_directory(&sftp, &refresh_path).await {
                             Ok(entries) => {
                                 model.set_directory(refresh_path, entries);
                                 if let Err(error) = delete_result {
@@ -246,6 +256,7 @@ pub(super) async fn run_sftp(
         },
         true,
     );
+    log::debug!("SFTP runtime stopped: workspace_id={workspace_id}");
     Ok(())
 }
 
@@ -280,7 +291,7 @@ async fn run_upload(
             } else {
                 model.update_transfer(transfer_id, 1., 0, 0, "已完成");
                 if model.snapshot().path == refresh_path {
-                    match read_directory(&sftp, &refresh_path).await {
+                    match scan_remote_directory(&sftp, &refresh_path).await {
                         Ok(entries) => model.set_directory(refresh_path, entries),
                         Err(error) => model.set_error(format!("{error:#}")),
                     }
@@ -659,7 +670,7 @@ pub(super) fn join_remote_path(directory: &str, file_name: &str) -> String {
     }
 }
 
-async fn read_directory(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>> {
+async fn scan_remote_directory(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>> {
     let mut entries = sftp
         .read_dir(path)
         .await

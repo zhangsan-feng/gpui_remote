@@ -1,6 +1,6 @@
 use gpui_kit::*;
 
-use crate::infrastructure::{InfrastructureContext, agent_mcp::McpSettings};
+use crate::application::{ApplicationContext, model::McpSettings};
 
 use super::SettingsOperationWindow;
 
@@ -156,34 +156,49 @@ impl SettingsOperationWindow {
     ) {
         let host = self.mcp_host.read(cx).value().trim().to_owned();
         let port = self.mcp_port.read(cx).value().trim().parse::<u16>();
-        let token = self.mcp_token.clone();
-
-        let result = if host.is_empty() {
-            Err("MCP Host 不能为空".to_owned())
-        } else if port.as_ref().is_err() || port == Ok(0) {
-            Err("MCP Port 必须是 1-65535 的数字".to_owned())
-        } else if token.is_empty() {
-            Err("MCP Token 不能为空".to_owned())
-        } else {
-            cx.read_global::<InfrastructureContext, _>(|infrastructure, _| {
-                infrastructure.apply_settings(McpSettings {
-                    enabled: self.mcp_enabled,
-                    host,
-                    port: port.expect("MCP 端口已校验"),
-                    token,
-                })
-            })
+        let port = match port {
+            Ok(port) if port > 0 => port,
+            _ => {
+                self.mcp_error = Some("MCP Port 必须是 1-65535 的数字".to_owned());
+                cx.notify();
+                return;
+            }
         };
-
-        match result {
-            Ok(settings) => {
-                self.mcp_token = settings.token;
-                self.mcp_error = None;
-            }
-            Err(error) => {
-                self.mcp_error = Some(error);
-            }
+        let token = self.mcp_token.clone();
+        if host.is_empty() {
+            self.mcp_error = Some("MCP Host 不能为空".to_owned());
+            cx.notify();
+            return;
         }
-        cx.notify();
+        if token.is_empty() {
+            self.mcp_error = Some("MCP Token 不能为空".to_owned());
+            cx.notify();
+            return;
+        }
+
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let settings = McpSettings {
+            enabled: self.mcp_enabled,
+            host,
+            port,
+            token,
+        };
+        cx.spawn(async move |this, cx| {
+            let result = application.update_mcp_settings(settings).await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(settings) => {
+                        this.mcp_token = settings.token;
+                        this.mcp_error = None;
+                    }
+                    Err(error) => {
+                        this.mcp_error = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }

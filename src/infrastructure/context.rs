@@ -4,8 +4,6 @@ use gpui_kit::{App, Global};
 
 use super::{
     agent_mcp::{self, AgentMcpRuntime, bridge::McpBridgeReceiver},
-    profile_query,
-    profile_query::QueryService,
     storage::{SessionStorageRepository, Storage},
 };
 
@@ -16,7 +14,6 @@ struct McpRuntime {
 
 struct InfrastructureContextInner {
     storage: Storage,
-    profile_query: Arc<dyn profile_query::ProfileQuery>,
     mcp: McpRuntime,
 }
 
@@ -33,7 +30,6 @@ impl InfrastructureContext {
         let (endpoint, receiver) = agent_mcp::bridge::new();
         Self {
             inner: Arc::new(InfrastructureContextInner {
-                profile_query: profile_query::sqlite(storage.session.clone()),
                 storage,
                 mcp: McpRuntime {
                     service: AgentMcpRuntime::new(endpoint),
@@ -58,22 +54,18 @@ impl InfrastructureContext {
         Ok(())
     }
 
-    pub(crate) fn settings(&self) -> agent_mcp::McpSettings {
+    pub(crate) fn current_mcp_settings(&self) -> agent_mcp::McpSettings {
         self.inner.mcp.service.settings()
     }
 
-    pub(crate) fn apply_settings(
+    pub(crate) fn update_mcp_settings(
         &self,
         settings: agent_mcp::McpSettings,
     ) -> Result<agent_mcp::McpSettings, String> {
         self.inner.mcp.service.apply_settings(settings)
     }
 
-    pub(crate) fn session(&self) -> SessionStorageRepository {
+    pub(crate) fn session_repository(&self) -> SessionStorageRepository {
         self.inner.storage.session.clone()
-    }
-
-    pub(crate) fn query_service(&self) -> QueryService {
-        QueryService::new(Arc::clone(&self.inner.profile_query))
     }
 }

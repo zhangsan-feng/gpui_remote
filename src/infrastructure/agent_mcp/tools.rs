@@ -212,7 +212,7 @@ impl AgentTerminalMcp {
         log::debug!("MCP tool handler started: tool=list_profiles");
         let result = self
             .bridge
-            .list_profiles()
+            .read_profile_summaries()
             .await
             .map(|profiles| Json(profiles.into_iter().map(ProfileOutput::from).collect()))
             .map_err(mcp_error);
@@ -266,7 +266,7 @@ impl AgentTerminalMcp {
     #[tool(description = "List open SFTP sessions by workspace id.")]
     async fn list_sftp_sessions(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.bridge
-            .list_sftp_sessions()
+            .read_sftp_workspace_summaries()
             .await
             .map(|sessions| Json(sessions.into_iter().map(TerminalOutput::from).collect()))
             .map_err(mcp_error)
@@ -278,7 +278,7 @@ impl AgentTerminalMcp {
         Parameters(input): Parameters<SftpWorkspaceInput>,
     ) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
         self.bridge
-            .list_sftp_local(input.workspace_id)
+            .read_sftp_local_directory(input.workspace_id)
             .await
             .map(|directory| Json(directory.into()))
             .map_err(mcp_error)
@@ -304,7 +304,7 @@ impl AgentTerminalMcp {
         Parameters(input): Parameters<SftpWorkspaceInput>,
     ) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
         self.bridge
-            .list_sftp_remote(input.workspace_id)
+            .read_sftp_remote_directory(input.workspace_id)
             .await
             .map(|directory| Json(directory.into()))
             .map_err(mcp_error)
@@ -360,7 +360,7 @@ impl AgentTerminalMcp {
         Parameters(input): Parameters<SftpWorkspaceInput>,
     ) -> Result<Json<Vec<SftpTransferInfoOutput>>, ErrorData> {
         self.bridge
-            .list_sftp_transfers(input.workspace_id)
+            .read_sftp_transfer_records(input.workspace_id)
             .await
             .map(|transfers| Json(transfers.into_iter().map(Into::into).collect()))
             .map_err(mcp_error)
@@ -374,7 +374,7 @@ impl AgentTerminalMcp {
         Parameters(input): Parameters<SftpWatchPathInput>,
     ) -> Result<Json<SftpWatchOutput>, ErrorData> {
         self.bridge
-            .watch_sftp_local(input.workspace_id, input.ip, input.title, input.local_path)
+            .start_sftp_local_watch(input.workspace_id, input.ip, input.title, input.local_path)
             .await
             .map(|watch| Json(watch.into()))
             .map_err(mcp_error)
@@ -398,7 +398,7 @@ impl AgentTerminalMcp {
         Parameters(input): Parameters<SftpWatchListInput>,
     ) -> Result<Json<Vec<SftpWatchOutput>>, ErrorData> {
         self.bridge
-            .list_sftp_local_watches(input.workspace_id, input.ip, input.title)
+            .read_sftp_local_watch_summaries(input.workspace_id, input.ip, input.title)
             .await
             .map(|watches| Json(watches.into_iter().map(Into::into).collect()))
             .map_err(mcp_error)

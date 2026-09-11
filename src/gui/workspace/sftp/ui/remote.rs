@@ -1,7 +1,6 @@
 use super::super::{
     DeleteRemoteEntry, DownloadRemoteEntry, DragPreviewLocalToRemoteItem,
-    DragPreviewRemoteToLocalItem, RemoteDeleteItem, RemoteTransferItem, SftpEntry, SftpSnapshot,
-    SftpStatus, SftpView,
+    DragPreviewRemoteToLocalItem, RemoteDeleteItem, RemoteTransferItem, SftpView,
 };
 use super::PathTarget;
 use gpui_kit::component::{
@@ -15,21 +14,23 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
+use crate::application::model::{SftpEntrySummary, SftpWorkspaceSnapshot};
 use crate::component::theme;
 
 impl SftpView {
     pub(super) fn remote_panel(
         &self,
-        snapshot: SftpSnapshot,
+        snapshot: SftpWorkspaceSnapshot,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let colors = cx.theme();
         let menu_view = cx.entity();
-        let connected = snapshot.status == SftpStatus::Connected;
-        let content = if snapshot.entries.is_empty() && !snapshot.loading {
+        let remote = snapshot.remote.clone();
+        let connected = snapshot.status == "connected";
+        let content = if remote.entries.is_empty() && !remote.loading {
             self.empty_directory("远程目录为空", cx).into_any_element()
         } else {
-            let entries = snapshot.entries.clone();
+            let entries = remote.entries.clone();
             let selection = self.remote_selection.clone();
             let selected_items = entries
                 .iter()
@@ -85,8 +86,8 @@ impl SftpView {
                             .disabled(!connected)
                             .on_click(cx.listener(Self::refresh)),
                     )
-                    .child(self.path_bar(snapshot.path.clone(), PathTarget::Remote, cx))
-                    .when(snapshot.loading, |this| {
+                    .child(self.path_bar(remote.path.clone(), PathTarget::Remote, cx))
+                    .when(remote.loading, |this| {
                         this.child(
                             div()
                                 .text_xs()
@@ -102,7 +103,7 @@ impl SftpView {
                     }
                 }),
             )
-            .when_some(snapshot.error.clone(), |this, error| {
+            .when_some(remote.error.clone(), |this, error| {
                 this.child(self.error_bar(error, cx))
             })
             .when(connected, |this| {
@@ -128,11 +129,11 @@ impl SftpView {
                 )
             })
             .when(!connected, |this| {
-                let (title, message) = match snapshot.status {
-                    SftpStatus::Connecting => ("正在连接 SFTP…", None),
-                    SftpStatus::Failed => ("SFTP 连接失败", snapshot.error.as_deref()),
-                    SftpStatus::Disconnected => ("SFTP 连接已断开", snapshot.error.as_deref()),
-                    SftpStatus::Connected => unreachable!(),
+                let (title, message) = match snapshot.status.as_str() {
+                    "failed" => ("SFTP 连接失败", remote.error.as_deref()),
+                    "disconnected" => ("SFTP 连接已断开", remote.error.as_deref()),
+                    "connected" => unreachable!(),
+                    _ => ("正在连接 SFTP…", None),
                 };
                 this.child(self.status_view(title, message, cx))
             })
@@ -151,6 +152,7 @@ impl SftpView {
                         .selected_snapshot()
                         .and_then(|snapshot| {
                             snapshot
+                                .remote
                                 .entries
                                 .iter()
                                 .find(|entry| entry.path == path)
@@ -171,6 +173,7 @@ impl SftpView {
                         view.selected_snapshot()
                             .map(|snapshot| {
                                 snapshot
+                                    .remote
                                     .entries
                                     .iter()
                                     .filter(|entry| view.remote_selection.contains(&entry.path))
@@ -205,7 +208,7 @@ impl SftpView {
     }
 
     fn remote_row(
-        entry: SftpEntry,
+        entry: SftpEntrySummary,
         view: WeakEntity<SftpView>,
         selected: bool,
         selected_items: Vec<RemoteTransferItem>,

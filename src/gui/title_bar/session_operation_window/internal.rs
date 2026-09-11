@@ -1,6 +1,8 @@
 use gpui_kit::*;
 
 use super::{ConnectionProtocol, FormSection, SessionOperationWindow};
+use crate::application::ApplicationContext;
+use crate::global_state::read_global_state;
 
 impl SessionOperationWindow {
     pub(super) fn submit(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -14,16 +16,28 @@ impl SessionOperationWindow {
             }
         };
 
-        match self.persist(draft, cx) {
-            Ok(event) => {
-                self.publish_change(event, cx);
-                window.remove_window();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let mode = self.mode.clone();
+        let window_handle = window.window_handle();
+        let global_state = read_global_state(cx);
+        cx.spawn(async move |this, cx| {
+            match SessionOperationWindow::save_session(mode, draft, application).await {
+                Ok(event) => {
+                    global_state.update(cx, |_, cx| {
+                        cx.emit(event);
+                    });
+                    let _ = cx.update_window(window_handle, |_, window, _| window.remove_window());
+                }
+                Err(error) => {
+                    let _ = this.update(cx, |this, cx| {
+                        this.error = Some(error.to_string());
+                        cx.notify();
+                    });
+                }
             }
-            Err(error) => {
-                self.error = Some(error.to_string());
-                cx.notify();
-            }
-        }
+        })
+        .detach();
     }
 
     pub(super) fn cancel(&mut self, _: &ClickEvent, window: &mut Window, _: &mut Context<Self>) {

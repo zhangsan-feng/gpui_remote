@@ -11,13 +11,12 @@ use crate::{
 
 use super::{
     ApplicationContext, ApplicationResult, RemoteDeleteItem, SftpStatus, mapping, model,
-    model::SftpDirectorySummary, model::SftpTransferInfo, model::SftpTransferSummary,
-    model::SftpWatchSummary, validation,
+    model::SftpTransferSummary, model::SftpWatchSummary, validation,
 };
 
 impl ApplicationContext {
     pub(crate) fn workspace_runtime_available(&self, workspace_id: &str) -> bool {
-        let Some(profile) = self.sessions().get(workspace_id) else {
+        let Some(profile) = self.sessions().profile_for_workspace(workspace_id) else {
             return false;
         };
         match profile.protocol {
@@ -46,22 +45,47 @@ impl ApplicationContext {
         &self,
         workspace_id: &str,
     ) -> ApplicationResult<crate::domain::terminal::TerminalData> {
-        self.ssh().snapshot(workspace_id)
+        self.ssh().terminal_snapshot(workspace_id)
     }
 
     pub(crate) fn terminal_revision(&self, workspace_id: &str) -> ApplicationResult<u64> {
-        self.ssh().revision(workspace_id)
+        self.ssh().terminal_revision(workspace_id)
     }
 
-    pub(crate) fn sftp_snapshot(
+    pub(crate) fn sftp_workspace_snapshot(
         &self,
         workspace_id: &str,
-    ) -> ApplicationResult<SftpDirectorySummary> {
-        self.sftp().snapshot(workspace_id).map(map_remote_directory)
-    }
-
-    pub(crate) fn sftp_revision(&self, workspace_id: &str) -> ApplicationResult<u64> {
-        self.sftp().revision(workspace_id)
+    ) -> ApplicationResult<model::SftpWorkspaceSnapshot> {
+        validation::validate_session_protocol(self, workspace_id, Protocol::Sftp)?;
+        let remote_snapshot = self.sftp().sftp_remote_snapshot(workspace_id)?;
+        let status = match remote_snapshot.status {
+            SftpStatus::Connecting => "connecting",
+            SftpStatus::Connected => "connected",
+            SftpStatus::Disconnected => "disconnected",
+            SftpStatus::Failed => "failed",
+        };
+        let remote = map_remote_directory(remote_snapshot);
+        let local = self
+            .sftp()
+            .local_directory_snapshot(workspace_id)
+            .map(map_local_directory)?;
+        let transfers = self
+            .sftp()
+            .sftp_transfer_snapshot(workspace_id)
+            .map(|transfers| transfers.into_iter().map(map_transfer_info).collect())?;
+        let watches = self
+            .sftp()
+            .sftp_local_watch_summaries(workspace_id)
+            .map(|watches| watches.into_iter().map(map_watch_summary).collect())?;
+        let remote_revision = self.sftp().sftp_remote_revision(workspace_id)?;
+        Ok(model::SftpWorkspaceSnapshot {
+            remote,
+            local,
+            transfers,
+            watches,
+            status: status.to_owned(),
+            remote_revision,
+        })
     }
 
     pub(crate) fn sftp_connection_status(
@@ -69,7 +93,7 @@ impl ApplicationContext {
         workspace_id: &str,
     ) -> ApplicationResult<TerminalStatus> {
         self.sftp()
-            .snapshot(workspace_id)
+            .sftp_remote_snapshot(workspace_id)
             .map(|snapshot| match snapshot.status {
                 SftpStatus::Connecting => TerminalStatus::Connecting,
                 SftpStatus::Connected => TerminalStatus::Connected,
@@ -78,25 +102,7 @@ impl ApplicationContext {
             })
     }
 
-    pub(crate) fn sftp_local_snapshot(
-        &self,
-        workspace_id: &str,
-    ) -> ApplicationResult<SftpDirectorySummary> {
-        self.sftp()
-            .local_snapshot(workspace_id)
-            .map(map_local_directory)
-    }
-
-    pub(crate) fn sftp_transfers_snapshot(
-        &self,
-        workspace_id: &str,
-    ) -> ApplicationResult<Vec<SftpTransferInfo>> {
-        self.sftp()
-            .transfers(workspace_id)
-            .map(|transfers| transfers.into_iter().map(map_transfer_info).collect())
-    }
-
-    pub(crate) async fn persist_sftp_local_path(
+    pub(crate) async fn save_sftp_local_path(
         &self,
         workspace_id: String,
         path: std::path::PathBuf,
@@ -104,7 +110,7 @@ impl ApplicationContext {
         self.update_sftp_local_path(&workspace_id, &path).await
     }
 
-    pub(crate) async fn persist_sftp_remote_path(
+    pub(crate) async fn save_sftp_remote_path(
         &self,
         workspace_id: String,
         path: String,
@@ -123,12 +129,12 @@ impl ApplicationContext {
             .map(|_| ())
     }
 
-    pub(crate) async fn delete_sftp_remote(
+    pub(crate) async fn delete_sftp_remote_paths(
         &self,
         workspace_id: String,
         items: Vec<RemoteDeleteItem>,
     ) -> ApplicationResult<()> {
-        self.sftp().delete_remote(&workspace_id, items).await
+        self.sftp().delete_remote_paths(&workspace_id, items).await
     }
 
     pub(crate) async fn change_sftp_local_directory(
@@ -153,7 +159,9 @@ impl ApplicationContext {
         path: String,
     ) -> ApplicationResult<()> {
         validate_session(self, &workspace_id, Protocol::Sftp, &ip, &title)?;
-        self.sftp().load_directory(&workspace_id, path).await
+        self.sftp()
+            .change_remote_directory(&workspace_id, path)
+            .await
     }
 
     pub(crate) async fn upload_sftp(
@@ -194,7 +202,7 @@ impl ApplicationContext {
         self.sftp().retry_transfer(&workspace_id, transfer_id).await
     }
 
-    pub(crate) fn list_sftp_local_watches(
+    pub(crate) fn sftp_local_watch_summaries(
         &self,
         workspace_id: String,
         ip: String,
@@ -202,11 +210,11 @@ impl ApplicationContext {
     ) -> ApplicationResult<Vec<SftpWatchSummary>> {
         validate_session(self, &workspace_id, Protocol::Sftp, &ip, &title)?;
         self.sftp()
-            .local_watches(&workspace_id)
+            .sftp_local_watch_summaries(&workspace_id)
             .map(|watches| watches.into_iter().map(map_watch_summary).collect())
     }
 
-    pub(crate) async fn watch_sftp_local(
+    pub(crate) async fn start_sftp_local_watch(
         &self,
         workspace_id: String,
         ip: String,
@@ -215,7 +223,7 @@ impl ApplicationContext {
     ) -> ApplicationResult<SftpWatchSummary> {
         validate_session(self, &workspace_id, Protocol::Sftp, &ip, &title)?;
         self.sftp()
-            .watch_local(&workspace_id, local_path.into())
+            .listen_local_directory(&workspace_id, local_path.into())
             .await
             .map(map_watch_summary)
     }
@@ -229,7 +237,7 @@ impl ApplicationContext {
     ) -> ApplicationResult<()> {
         validate_session(self, &workspace_id, Protocol::Sftp, &ip, &title)?;
         self.sftp()
-            .stop_watching_local(&workspace_id, local_path.as_ref())
+            .stop_listening_local_directory(&workspace_id, local_path.as_ref())
             .await
     }
 
@@ -268,48 +276,54 @@ impl ApplicationContext {
 }
 
 impl ApplicationContext {
-    pub(crate) async fn list_profiles(
+    pub(crate) async fn list_profile_summaries(
         &self,
     ) -> ApplicationResult<Vec<super::model::ProfileSummary>> {
-        self.profile_query().await
+        self.list_session_profiles().await.map(|profiles| {
+            profiles
+                .into_iter()
+                .map(mapping::map_profile_summary)
+                .collect()
+        })
     }
 
-    pub(crate) async fn list_sftp_local(
+    pub(crate) async fn read_sftp_local_directory(
         &self,
         workspace_id: String,
     ) -> ApplicationResult<model::SftpDirectorySummary> {
         validation::validate_session_protocol(self, &workspace_id, Protocol::Sftp)?;
         self.sftp()
-            .list_local(&workspace_id)
-            .await
+            .local_directory_snapshot(&workspace_id)
             .map(mapping::map_local_directory)
     }
 
-    pub(crate) async fn list_sftp_sessions(
+    pub(crate) async fn list_sftp_workspace_summaries(
         &self,
     ) -> ApplicationResult<Vec<model::TerminalSummary>> {
         Ok(mapping::list_sftp_sessions(self))
     }
 
-    pub(crate) async fn list_sftp_remote(
+    pub(crate) async fn read_sftp_remote_directory(
         &self,
         workspace_id: String,
     ) -> ApplicationResult<model::SftpDirectorySummary> {
         self.sftp()
-            .snapshot(&workspace_id)
+            .sftp_remote_snapshot(&workspace_id)
             .map(mapping::map_remote_directory)
     }
 
-    pub(crate) async fn list_sftp_transfers(
+    pub(crate) async fn read_sftp_transfer_records(
         &self,
         workspace_id: String,
     ) -> ApplicationResult<Vec<model::SftpTransferInfo>> {
-        self.sftp().transfers(&workspace_id).map(|transfers| {
-            transfers
-                .into_iter()
-                .map(mapping::map_transfer_info)
-                .collect()
-        })
+        self.sftp()
+            .sftp_transfer_snapshot(&workspace_id)
+            .map(|transfers| {
+                transfers
+                    .into_iter()
+                    .map(mapping::map_transfer_info)
+                    .collect()
+            })
     }
 
     pub(crate) async fn list_terminals(&self) -> ApplicationResult<Vec<model::TerminalSummary>> {

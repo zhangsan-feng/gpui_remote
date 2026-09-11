@@ -144,7 +144,7 @@ src/
 - [x] 将基础设施上下文和 profile query 迁移到 `src/infrastructure/context.rs`、`profile_query.rs`，并删除旧兼容模块。
 - [x] 将 application 共用模型、映射、校验和查询边界从 `src/data_context` 迁出。
 - [x] 建立 `ApplicationStoreGraph`，由 `Entity<SessionStore>`、`Entity<SshStore>`、`Entity<SftpStore>` 作为 App 持有的根句柄，并完成两个 Global 注册。
-- [x] 建立不携带 GPUI 上下文的 MCP 类型化 bridge 和 GPUI 适配器。
+- [x] 建立不携带 GPUI 上下文的 MCP 类型化 bridge 和 infrastructure 内 GPUI 适配器。
 - [x] 迁移 GUI 读写和订阅链，GUI component 不再保存 application context 字段。
 - [ ] 完成 application entity 状态更新/订阅深化、通知过滤和 GUI/MCP 手工回归。
 
@@ -281,7 +281,7 @@ let infrastructure = cx.read_global::<InfrastructureContext>().clone();
 
 - Create: `src/infrastructure/agent_mcp/bridge.rs`
 - Modify: `src/infrastructure/agent_mcp/mod.rs`, `core.rs`, `external.rs`, `server.rs`, `tools.rs`
-- Modify: `src/main.rs` 或 GUI 根初始化位置，加入 GPUI bridge adapter
+- Modify: `src/main.rs`，加入 infrastructure/agent_mcp 内的 GPUI bridge adapter
 - Modify: `src/global_state.rs` only if a UI-independent routing event must be declared
 
 **Interfaces:**
@@ -325,7 +325,7 @@ impl McpBridgeEndpoint {
 
 - [x] 定义 command/response/notification 协议，覆盖 profile 查询、会话生命周期、SSH 终端操作、SFTP 目录/传输/watch 操作。
 - [x] 为每个请求生成唯一 request ID，并保证成功、application 错误和 bridge 关闭能返回关联错误。
-- [ ] 完善 adapter 退出时的统一关闭通知，确保所有等待中的 MCP 请求都能及时结束。
+- [x] adapter 退出时会释放命令 receiver 和请求 response sender；等待中的 MCP 请求收到 bridge closed 错误，不会永久等待。
 - [x] 在 GPUI 侧启动 adapter task；adapter 是唯一同时读取 `cx.read_global` 和消费 MCP command 的代码。
 - [x] 在 MCP 侧删除 `OnceLock<ApplicationContext>`、`OnceLock<AsyncApp>`、旧 context 以及 GUI handle 注册。
 - [x] 添加 bridge 关键日志：请求接收、request ID、响应发送、adapter 关闭；日志不打印密码、私钥或完整敏感连接信息。
@@ -372,12 +372,12 @@ impl McpBridgeEndpoint {
 - MCP tool 不调用 GUI API，不访问 Global，不持有 application/infrastructure context，不自行生成 workspace/session 的业务 ID。
 - 返回结果由 application 生成共享模型；MCP 只负责协议字段和序列化。
 
-- [ ] 将 profile 查询、打开/关闭/选择会话改成 bridge command，并验证错误按 request ID 返回。
-- [ ] 将终端输入、resize、分页读取、滚动等 tool 映射为 SSH application command。
-- [ ] 将 SFTP 目录、路径、上传、下载、删除、取消、重试、watch/stop-watch 映射为 SFTP application command。
+- [x] 将 profile 查询、打开/关闭/选择会话改成 bridge command，并按 request ID 关联响应。
+- [x] 将终端输入、分页读取和滚动等 tool 映射为 SSH application command；resize 保持 GUI 专用操作。
+- [x] 将 SFTP 目录、路径、上传、下载、watch/stop-watch 映射为 SFTP application command；删除/取消/重试继续由 GUI application API 使用。
 - [ ] 对异步状态通知定义订阅过滤：按 workspace/session/transfer ID 过滤，不让 MCP 收到无关状态；当前 bridge 已具备 notification channel，过滤策略待下一阶段接入。
 - [ ] 将 application `Result` 和共享 summary 转换成稳定 MCP JSON，避免把内部 entity/store 类型序列化出去。
-- [ ] 记录 MCP 请求、bridge 响应和 application 错误日志；确认日志不包含凭据。
+- [x] 记录 MCP 请求、bridge 响应和 application 错误日志；确认日志不包含凭据。
 
 ### Task 9：删除旧 facade，收敛模块可见性
 

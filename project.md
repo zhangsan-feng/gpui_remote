@@ -58,7 +58,6 @@ application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能
 - `mod.rs`：application 子模块声明、初始化和稳定类型导出。
 - `core.rs`：`ApplicationContext`、GPUI `Global` 实现和应用根句柄组合。
 - `state.rs`：`ApplicationStoreGraph` 以及 session/SSH/SFTP 的 GPUI typed store handle；运行时数据仍由各自 application 模块持有。
-- `bridge.rs`：GPUI bridge adapter，从本层 `cx.read_global` 读取 `ApplicationContext`，执行命令并发布响应/通知。
 - `external.rs`：GUI 和 GPUI bridge adapter 使用的 application command、快照和返回 API。
 - `model.rs`：GUI/MCP 共用的 profile、终端、SFTP 目录、传输和 watch 摘要。
 - `mapping.rs`：entity/store 状态到共用返回模型的映射。
@@ -76,7 +75,7 @@ application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能
 - `storage/`：SQLite session/profile、SFTP 路径和已知主机密钥存储。
 - `proxy/`：网络代理与异步双向流。
 - `agent_mcp/mod.rs`：MCP 子模块声明和启动入口。
-- `agent_mcp/bridge.rs`：命令、响应、通知 envelope 及线程安全 bridge endpoint。
+- `agent_mcp/bridge.rs`：命令、响应、通知 envelope 及线程安全 bridge endpoint；GPUI adapter 在此读取 application Global 并执行 application API。
 - `agent_mcp/core.rs`：MCP controller 与 bridge 生命周期。
 - `agent_mcp/external.rs`：MCP 启动入口，只接收 bridge endpoint 和 MCP 配置。
 - `agent_mcp/server.rs`：MCP server 生命周期和协议适配。

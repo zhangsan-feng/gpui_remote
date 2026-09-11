@@ -178,6 +178,7 @@ async fn main() {
                     info!("application_global_registered");
 
                     let (mcp_bridge, mcp_receiver) = infrastructure::agent_mcp::bridge::new();
+                    info!("mcp_bridge_ready");
                     infrastructure::agent_mcp::bridge::start_mcp_bridge(cx, mcp_receiver);
                     infrastructure::agent_mcp::start(mcp_bridge);
 

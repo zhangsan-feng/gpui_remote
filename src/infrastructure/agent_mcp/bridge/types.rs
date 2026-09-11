@@ -16,6 +16,12 @@ use crate::{
 pub(crate) const COMMAND_CAPACITY: usize = 128;
 pub(crate) const NOTIFICATION_CAPACITY: usize = 256;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RouteKey {
+    Control,
+    Workspace(String),
+}
+
 pub(crate) enum ApplicationCommand {
     ListProfiles,
     OpenSession {
@@ -138,6 +144,16 @@ impl ApplicationCommand {
             | Self::ListSftpSessions
             | Self::ListTerminals => None,
         }
+    }
+
+    pub(crate) fn is_close_session(&self) -> bool {
+        matches!(self, Self::CloseSession { .. })
+    }
+
+    pub(crate) fn route_key(&self) -> RouteKey {
+        self.workspace_id()
+            .map(|workspace_id| RouteKey::Workspace(workspace_id.to_owned()))
+            .unwrap_or(RouteKey::Control)
     }
 }
 

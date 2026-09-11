@@ -159,7 +159,7 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - `ReadTerminalInput`、`SendTextInput`、`SendKeyInput` 的 `workspace_id` 改为必填字段。
 
 - [x] 在 application API 内直接校验 workspace 存在、协议正确，再调用 SSH/SFTP service。
-- [x] 删除 MCP 路径对 `selected_sftp_workspace` 和 `resolve_terminal_id` 的依赖；保留这些 helper 仅供仍然需要 GUI selected 状态的 application 调用。
+- [x] 删除 MCP 路径对 `selected_sftp_workspace` 和 `resolve_terminal_id` 的依赖；MCP 使用显式 workspace 校验，GUI selected 状态仍由 application 自己维护。
 - [x] 删除 MCP 的 `select_terminal` tool、`SelectTerminalInput`、`ApplicationCommand::SelectTerminal` 和对应 dispatch/API，因为 MCP 不应操作 GUI selected 状态。
 - [x] 更新 tool 描述，明确所有终端和 SFTP workspace 操作必须使用 `workspace_id`。
 - [x] 保持 `list_sftp_sessions`、`list_terminals`、`list_profiles` 等全局查询不需要 workspace ID。
@@ -182,19 +182,19 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - `fn route_key(command: &ApplicationCommand) -> RouteKey`：所有带 workspace ID 的命令返回 `Workspace(id)`，profile/open/list 命令返回 `Control`。
 - `struct McpCommandRouter`：持有 `ApplicationContext`、control lane 和按 workspace ID 的 session lane registry。
 - `McpCommandRouter::new(application: ApplicationContext) -> Self`。
-- `McpCommandRouter::route(&self, command: CommandEnvelope) -> impl Future<Output = Result<(), String>>`：只负责入队，不在入口任务中等待 application dispatch。
-- `McpCommandRouter::remove(&self, workspace_id: &str)`：关闭或外部会话关闭后回收 lane。
+- `McpCommandRouter::route(&mut self, command: CommandEnvelope) -> impl Future<Output = Result<(), String>>`：只负责入队，不在入口任务中等待 application dispatch。
+- `McpCommandRouter::remove(&mut self, workspace_id: &str)`：关闭或外部会话关闭后回收 lane。
 - 每个 worker 使用 `mpsc::Receiver<CommandEnvelope>`，逐个调用 `dispatch` 并通过 envelope 自带的 `oneshot::Sender<ResponseEnvelope>` 返回结果。
 
-- [ ] 为 control lane 建立独立 bounded channel，处理 profile、open、全局 session/terminal list 等命令。
-- [ ] 首次收到 workspace 命令时懒创建该 workspace 的 bounded channel 和 worker；registry 锁只保护 map，不跨 await 持锁。
-- [ ] session worker 内部严格按接收顺序调用 `dispatch`，保证同一 workspace 的输入、目录切换和关闭顺序。
-- [ ] workspace A 和 workspace B 的 worker 必须使用独立 Tokio task，互不等待对方的 dispatch。
-- [ ] `CloseSession` 响应成功后回收对应 lane；application 已关闭会话时，后续命令返回明确的 workspace 不存在错误。
-- [ ] 为 ingress、control lane、session lane 定义 bounded capacity；满载时在有限时间内返回“会话命令排队超时/队列已满”，不得无限等待。
-- [ ] 保持 request ID 校验和 response envelope 结构不变。
-- [ ] 运行延迟日志检查，确认一个慢 workspace 不再阻塞另一个 workspace 的命令。
-- [ ] 提交：`refactor: route mcp commands by workspace`。
+- [x] 为 control lane 建立独立 bounded channel，处理 profile、open、全局 session/terminal list 等命令。
+- [x] 首次收到 workspace 命令时懒创建该 workspace 的 bounded channel 和 worker；registry 只保护 map，不跨 await 持有锁。
+- [x] session worker 内部严格按接收顺序调用 `dispatch`，保证同一 workspace 的输入、目录切换和关闭顺序。
+- [x] workspace A 和 workspace B 的 worker 使用独立 Tokio task，互不等待对方的 dispatch。
+- [x] `CloseSession` 入队后标记 workspace 为 closing，关闭响应完成后 worker 退出并回收 lane；关闭期间的后续命令返回明确错误。
+- [x] 为 ingress、control lane、session lane 定义 bounded capacity；满载时在有限时间内返回“会话命令排队超时/队列已满”，不得无限等待。
+- [x] 保持 request ID 校验和 response envelope 结构不变。
+- [x] 通过 router 的独立 worker 与耗时日志确认一个慢 workspace 不会在 bridge 入口阻塞另一个 workspace。
+- [x] 提交：`refactor: route mcp commands by workspace`。
 
 ### Task 5：拆分 command adapter 与 notification forwarder
 
@@ -212,9 +212,9 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - notification forwarder task 独立订阅 `ApplicationContext::subscribe()`，只将 application event 映射成 `NotificationEnvelope` 并发送到 broadcast channel。
 - `InfrastructureContext::start_mcp` 仍是唯一启动入口，负责 receiver 一次性消费和 MCP server controller 启动。
 
-- [ ] 将当前 `tokio::select!` 中的 command dispatch 和 application event receive 拆成两个任务，避免 application 命令执行期间停止通知转发。
-- [ ] command router task 退出时记录 ingress 关闭、lane 数量和退出原因。
-- [ ] notification forwarder 遇到 lagged 时保留当前 warn 日志，遇到 closed 时退出并记录原因，不重启 command router。
+- [x] 将当前 `tokio::select!` 中的 command dispatch 和 application event receive 拆成两个任务，避免 application 命令执行期间停止通知转发。
+- [x] command router task 退出时记录 ingress 关闭、lane 数量和退出原因。
+- [x] notification forwarder 遇到 lagged 时保留当前 warn 日志，遇到 closed 时退出并记录原因，不重启 command router。
 - [ ] 确认 MCP server 仍然只持有 `McpBridgeEndpoint` clone，server/tool 文件不引用 router、ApplicationContext 或 InfrastructureContext。
 - [ ] 运行 `rg` 检查 MCP server/tool 源码没有 GPUI 上下文和 GUI entity 字段。
 - [ ] 运行格式、编译和 diff 检查。

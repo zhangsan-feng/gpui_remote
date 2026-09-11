@@ -176,6 +176,10 @@ async fn main() {
                     cx.set_global(application);
                     info!("application and infrastructure globals registered");
 
+                    let (mcp_bridge, mcp_receiver) = infrastructure::agent_mcp::bridge::new();
+                    application::start_mcp_bridge(cx, mcp_receiver);
+                    infrastructure::agent_mcp::start(mcp_bridge);
+
                     let global_state = cx.new(|_| GlobalState {});
                     cx.set_global(GlobalStateHandle(global_state));
                     let main_window = cx.new(|cx| gui::home::HomeView::new(window, cx));

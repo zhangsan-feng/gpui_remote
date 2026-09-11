@@ -7,9 +7,7 @@ use std::{
 use tokio::task::AbortHandle;
 use uuid::Uuid;
 
-use crate::data_context::DataContext;
-
-use super::{McpSettings, SETTINGS_PATH, server};
+use super::{McpSettings, SETTINGS_PATH, bridge::McpBridgeEndpoint, server};
 
 const HOST_ENV: &str = "GPUI_REMOTE_MCP_HOST";
 const PORT_ENV: &str = "GPUI_REMOTE_MCP_PORT";
@@ -19,16 +17,16 @@ pub(super) struct AgentMcpController {
 }
 
 struct ControllerState {
-    data_context: DataContext,
+    bridge: McpBridgeEndpoint,
     settings: McpSettings,
     server_abort: Option<AbortHandle>,
 }
 
 impl AgentMcpController {
-    pub(super) fn new(data_context: DataContext) -> Self {
+    pub(super) fn new(bridge: McpBridgeEndpoint) -> Self {
         Self {
             state: Arc::new(Mutex::new(ControllerState {
-                data_context,
+                bridge,
                 settings: McpSettings::default(),
                 server_abort: None,
             })),
@@ -57,10 +55,10 @@ impl AgentMcpController {
 
         state.settings = settings.clone();
         if settings.enabled {
-            let mcp_context = state.data_context.mcp();
+            let bridge = state.bridge.clone();
             let server_settings = settings.clone();
             let server = tokio::spawn(async move {
-                if let Err(error) = server::run(mcp_context, server_settings).await {
+                if let Err(error) = server::run(bridge, server_settings).await {
                     log::error!("Agent MCP server stopped: {error:#}");
                 }
             });

@@ -1,4 +1,5 @@
 mod auth;
+pub(crate) mod bridge;
 mod core;
 mod external;
 mod server;

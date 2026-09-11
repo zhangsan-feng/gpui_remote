@@ -10,9 +10,9 @@ use crate::{
 };
 
 use super::{
-    ApplicationContext, ApplicationResult, RemoteDeleteItem, SftpStatus,
+    ApplicationContext, ApplicationResult, RemoteDeleteItem, SftpStatus, mapping, model,
     model::SftpDirectorySummary, model::SftpTransferInfo, model::SftpTransferSummary,
-    model::SftpWatchSummary,
+    model::SftpWatchSummary, validation,
 };
 
 impl ApplicationContext {
@@ -254,5 +254,107 @@ impl ApplicationContext {
         offset: usize,
     ) -> ApplicationResult<()> {
         self.ssh().scroll_to(&workspace_id, offset).await
+    }
+}
+
+impl ApplicationContext {
+    pub(crate) async fn list_profiles(
+        &self,
+    ) -> ApplicationResult<Vec<super::model::ProfileSummary>> {
+        self.profile_query().await
+    }
+
+    pub(crate) async fn list_sftp_local(&self) -> ApplicationResult<model::SftpDirectorySummary> {
+        let workspace_id = validation::selected_sftp_workspace(self)?;
+        self.sftp()
+            .list_local(&workspace_id)
+            .await
+            .map(mapping::map_local_directory)
+    }
+
+    pub(crate) async fn list_sftp_sessions(
+        &self,
+    ) -> ApplicationResult<Vec<model::TerminalSummary>> {
+        Ok(mapping::list_sftp_sessions(self))
+    }
+
+    pub(crate) async fn list_sftp_remote(
+        &self,
+        workspace_id: String,
+    ) -> ApplicationResult<model::SftpDirectorySummary> {
+        self.sftp()
+            .snapshot(&workspace_id)
+            .map(mapping::map_remote_directory)
+    }
+
+    pub(crate) async fn list_sftp_transfers(
+        &self,
+        workspace_id: String,
+    ) -> ApplicationResult<Vec<model::SftpTransferInfo>> {
+        self.sftp().transfers(&workspace_id).map(|transfers| {
+            transfers
+                .into_iter()
+                .map(mapping::map_transfer_info)
+                .collect()
+        })
+    }
+
+    pub(crate) async fn list_terminals(&self) -> ApplicationResult<Vec<model::TerminalSummary>> {
+        Ok(mapping::list_terminals(self))
+    }
+
+    pub(crate) async fn select_terminal(
+        &self,
+        workspace_id: String,
+        ip: String,
+        title: String,
+    ) -> ApplicationResult<()> {
+        validate_session(self, &workspace_id, Protocol::Ssh, &ip, &title)?;
+        self.select_session(Some(workspace_id)).await
+    }
+
+    pub(crate) async fn read_terminal(
+        &self,
+        workspace_id: Option<String>,
+        offset: usize,
+        limit: usize,
+    ) -> ApplicationResult<model::TerminalReadPage> {
+        let workspace_id = validation::resolve_terminal_id(self, workspace_id)?;
+        self.ssh()
+            .read(&workspace_id, offset, mapping::normalize_read_limit(limit))
+            .await
+            .map(|page| model::TerminalReadPage {
+                workspace_id,
+                text: page.text,
+                total_lines: page.total_lines,
+                offset: page.offset,
+                limit: page.limit,
+                has_more: page.has_more,
+            })
+    }
+
+    pub(crate) async fn send_text(
+        &self,
+        workspace_id: Option<String>,
+        text: String,
+    ) -> ApplicationResult<()> {
+        let workspace_id = validation::resolve_terminal_id(self, workspace_id)?;
+        self.ssh()
+            .send_input(&workspace_id, text.into_bytes())
+            .await
+    }
+
+    pub(crate) async fn send_key(
+        &self,
+        workspace_id: Option<String>,
+        key: String,
+        control: bool,
+        alt: bool,
+        shift: bool,
+    ) -> ApplicationResult<()> {
+        let workspace_id = validation::resolve_terminal_id(self, workspace_id)?;
+        self.ssh()
+            .send_key(&workspace_id, &key, control, alt, shift)
+            .await
     }
 }

@@ -1,3 +1,4 @@
+mod bridge;
 mod core;
 mod event;
 mod external;
@@ -8,6 +9,7 @@ mod sftp;
 mod ssh;
 pub(crate) mod validation;
 
+pub(crate) use bridge::start_mcp_bridge;
 pub use core::ApplicationContext;
 pub use event::ApplicationEvent;
 pub use session::SessionApplication;

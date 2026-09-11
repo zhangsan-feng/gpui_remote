@@ -77,6 +77,16 @@ impl ApplicationContext {
         self.inner.sftp.clone()
     }
 
+    pub(crate) async fn profile_query(
+        &self,
+    ) -> ApplicationResult<Vec<super::model::ProfileSummary>> {
+        self.inner
+            .infrastructure
+            .query_service()
+            .list_profiles()
+            .await
+    }
+
     pub async fn open_session(
         &self,
         profile_id: String,

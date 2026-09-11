@@ -245,6 +245,8 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 
 ### Task 7：按日志结果优化同一会话内的操作 lane
 
+当前仅完成不同 workspace 的并发；同一 workspace 继续使用 serial lane。由于本轮没有连接真实远端环境，暂不凭空拆分 read/transfer/control lane，待实际日志证明存在同 workspace 阻塞后再优化。
+
 **Files:**
 
 - Modify: `src/infrastructure/agent_mcp/bridge/router.rs`
@@ -282,12 +284,12 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - `project.md` 的架构图必须体现 `InfrastructureContext -> MCP runtime -> router -> workspace lanes`。
 - `plan.md` 勾选项必须与源码和验证结果一致。
 
-- [ ] 更新 `project.md` 的 bridge、router、session worker、notification forwarder 文件职责。
-- [ ] 更新 `project.md` 的数据流，明确 MCP 不操作 GUI，GUI selected 状态不作为 MCP 隐式上下文。
-- [ ] 运行 `cargo fmt -- --check`。
-- [ ] 运行 `cargo check`；不运行 `cargo test`，不新增测试文件。
-- [ ] 运行 `git diff --check`。
-- [ ] 使用 `rg` 确认不存在旧的 `bridge.rs` 单文件入口、MCP `Option<String>` workspace 路径和 MCP GUI selection 调用。
+- [x] 更新 `project.md` 的 bridge、router、session worker、notification forwarder 文件职责。
+- [x] 更新 `project.md` 的数据流，明确 MCP 不操作 GUI，GUI selected 状态不作为 MCP 隐式上下文。
+- [x] 运行 `cargo fmt -- --check`。
+- [x] 运行 `cargo check`；不运行 `cargo test`，不新增测试文件。
+- [x] 运行 `git diff --check`。
+- [x] 使用 `rg` 确认不存在旧的 `bridge.rs` 单文件入口、MCP `Option<String>` workspace 路径和 MCP GUI selection 调用。
 - [ ] 手工验证两个不同 workspace 同时执行终端读取、SFTP 列目录和 transfer 查询时互不阻塞。
 - [ ] 手工验证同一 workspace 的 terminal input、目录切换、close 按发送顺序完成。
 - [ ] 手工验证一个慢 SFTP 操作期间，另一个 workspace 的 profile 查询和 terminal 操作可以返回。

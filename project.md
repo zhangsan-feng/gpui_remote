@@ -21,13 +21,22 @@ GUI 使用层
   -> application entity/store
   -> SSH/SFTP 数据面
 
-MCP Tokio task
-  -> McpBridgeEndpoint(CommandEnvelope)
-  -> GPUI bridge adapter
-  -> adapter 本层 cx.read_global<ApplicationContext>()
-  -> application entity/store
-  -> ResponseEnvelope / NotificationEnvelope
+MCP HTTP client A/B/C
+  -> AgentTerminalMcp 持有 McpBridgeEndpoint.clone()
+  -> bounded global ingress mpsc(CommandEnvelope)
+  -> GPUI bridge adapter 的 command router task
+  -> McpCommandRouter
+       ├─ control lane：profile/open/全局列表
+       ├─ workspace-A lane：A 内 FIFO worker
+       └─ workspace-B lane：B 内 FIFO worker
+  -> 每个 worker 读取 ApplicationContext Global 并调用 application API
+  -> 对应 SSH/SFTP application 数据面
+  -> oneshot ResponseEnvelope
   -> MCP protocol result
+
+ApplicationEvent
+  -> 独立 notification forwarder task
+  -> MCP broadcast NotificationEnvelope
 ```
 
 Global 只保存全局根句柄，不保存终端输出、目录列表或传输进度等高频业务数据。业务状态通过 entity 的 `read/update/notify/observe/subscribe` 流动；IO 由 `cx.spawn + tokio` 执行，完成后回到 GPUI 上下文更新 entity。
@@ -75,7 +84,13 @@ application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能
 - `storage/`：SQLite session/profile、SFTP 路径和已知主机密钥存储。
 - `proxy/`：网络代理与异步双向流。
 - `agent_mcp/mod.rs`：MCP 子模块声明和启动入口。
-- `agent_mcp/bridge.rs`：命令、响应、通知 envelope 及线程安全 bridge endpoint；GPUI adapter 在此读取 application Global 并执行 application API。
+- `agent_mcp/bridge/`：MCP bridge 的分层实现；endpoint 只负责线程安全入队和响应关联，router 负责 control/workspace lane，worker 负责 application dispatch，adapter 负责读取 Global 和启动独立任务。
+- `agent_mcp/bridge/mod.rs`：bridge 子模块声明、初始化入口和稳定导出。
+- `agent_mcp/bridge/types.rs`：命令、响应、通知 envelope、correlation ID、耗时字段和 `RouteKey` 类型。
+- `agent_mcp/bridge/endpoint.rs`：`McpBridgeEndpoint`、`McpBridgeReceiver`、请求发送和 typed helper；不持有 application 或 GUI 上下文。
+- `agent_mcp/bridge/router.rs`：bounded control lane、按 workspace 懒创建的 session lane、FIFO worker、backpressure、close/runtime/idle 回收。
+- `agent_mcp/bridge/dispatch.rs`：单个命令到 `ApplicationContext` API 的映射，只由 worker 调用。
+- `agent_mcp/bridge/adapter.rs`：GPUI bridge adapter、command router task、SessionClosed 生命周期监听和 notification forwarder。
 - `agent_mcp/core.rs`：MCP controller 与 bridge 生命周期。
 - `agent_mcp/external.rs`：MCP 启动入口，只接收 bridge endpoint 和 MCP 配置。
 - `agent_mcp/server.rs`：MCP server 生命周期和协议适配。
@@ -102,11 +117,11 @@ main
   -> 创建 ApplicationContext
   -> cx.set_global(InfrastructureContext)
   -> cx.set_global(ApplicationContext)
-  -> InfrastructureContext 启动 GPUI bridge adapter 和 MCP Tokio task
+  -> InfrastructureContext 启动 GPUI bridge adapter 的 command router task 和 notification forwarder task
   -> 创建 GUI
 ```
 
-会话打开由 application 层统一协调：读取 profile、创建对应 SSH/SFTP entity、注册 SessionStore、生成 workspace/session ID，并发布 application 事件。会话关闭由 application 层停止对应 runtime、传输和 watcher，再移除 session 状态。GUI/MCP 都不自行生成业务 ID，也不直接回滚底层 service。
+会话打开由 application 层统一协调：读取 profile、创建对应 SSH/SFTP entity、注册 SessionStore、生成 workspace/session ID，并发布 application 事件。会话关闭由 application 层停止对应 runtime、传输和 watcher，再移除 session 状态。GUI/MCP 都不自行生成业务 ID，也不直接回滚底层 service。MCP 的 workspace 操作必须显式携带 `workspace_id`，不读取 GUI selected 状态，也不提供修改 GUI selected 状态的 tool；GUI 与 MCP 共享的是 `ApplicationContext` API 和 application event，而不是彼此的 entity、地址或 channel。
 
 ## 维护约束
 

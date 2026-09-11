@@ -1,9 +1,11 @@
 mod core;
 mod event;
+pub(crate) mod mapping;
 pub mod model;
 mod session;
 mod sftp;
 mod ssh;
+pub(crate) mod validation;
 
 pub use core::ApplicationContext;
 pub use event::ApplicationEvent;

@@ -27,9 +27,11 @@ impl SftpView {
         );
         cx.notify();
 
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         cx.spawn(async move |this, cx| {
-            let result = gui.delete_sftp_local_paths(workspace_id, paths).await;
+            let result = application
+                .delete_sftp_local_paths(workspace_id, paths)
+                .await;
             let _ = this.update(cx, |this, cx| {
                 if this.local.path != current_directory {
                     return;
@@ -38,7 +40,7 @@ impl SftpView {
                 if let Err(error) = result {
                     this.local.error = Some(error);
                 }
-                this.sync_application_state(&this.gui.clone());
+                this.sync_application_state();
                 cx.notify();
             });
         })
@@ -63,7 +65,7 @@ impl SftpView {
         let items = action.items.clone();
         let count = items.len();
         let refresh_path = snapshot.path;
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         self.remote_selection.clear();
         log::debug!(
             "SFTP 批量删除远程路径加入队列: workspace_id={}, count={}, directory={refresh_path}",
@@ -79,7 +81,10 @@ impl SftpView {
                     is_directory: item.is_directory,
                 })
                 .collect();
-            if let Err(error) = gui.delete_sftp_remote(task_workspace_id, items).await {
+            if let Err(error) = application
+                .delete_sftp_remote(task_workspace_id, items)
+                .await
+            {
                 log::warn!("SFTP 批量删除请求失败: {error}");
             }
         })

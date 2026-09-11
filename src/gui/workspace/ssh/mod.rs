@@ -5,7 +5,7 @@ mod ui;
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::data_context::GuiContext;
+use crate::application::ApplicationContext;
 use gpui_kit::*;
 use serde::Deserialize;
 
@@ -32,7 +32,7 @@ struct PasteTerminal;
 
 pub(super) struct TerminalView {
     models: HashMap<String, Arc<TerminalModel>>,
-    gui: GuiContext,
+    application: ApplicationContext,
     selected_workspace_id: Option<String>,
     updates: Arc<tokio::sync::Notify>,
     status_updates: Arc<tokio::sync::Notify>,
@@ -55,16 +55,18 @@ pub(in crate::gui::workspace) fn init(cx: &mut App) {
 }
 
 impl TerminalView {
-    pub(in crate::gui::workspace) fn new(gui: GuiContext, cx: &mut Context<Self>) -> Self {
-        let updates = gui.terminal_updates();
-        let status_updates = gui.terminal_status_updates();
+    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let updates = application.terminal_updates();
+        let status_updates = application.terminal_status_updates();
         let list_state = ListState::new(0, ListAlignment::Top, px(256.))
             .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
         list_state.set_follow_mode(FollowMode::Tail);
 
         let this = Self {
             models: HashMap::new(),
-            gui,
+            application,
             selected_workspace_id: None,
             updates,
             status_updates,

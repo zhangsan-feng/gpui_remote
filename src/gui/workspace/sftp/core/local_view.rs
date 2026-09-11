@@ -34,10 +34,10 @@ impl SftpView {
             path.display()
         );
 
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let path_text = path.display().to_string();
         cx.spawn(async move |this, cx| {
-            let result = gui
+            let result = application
                 .change_sftp_local_directory(
                     workspace_id.clone(),
                     profile_ip,
@@ -53,7 +53,7 @@ impl SftpView {
                     this.local.loading = false;
                     this.local.error = Some(error);
                 }
-                this.sync_application_state(&this.gui.clone());
+                this.sync_application_state();
                 cx.notify();
             });
         })
@@ -80,7 +80,7 @@ impl SftpView {
             log::debug!("SFTP 本地目录恢复请求已处理，跳过重复恢复: workspace={workspace_id}");
             return;
         }
-        self.sync_application_state(&self.gui.clone());
+        self.sync_application_state();
         self.local_selection.clear();
         self.local_list_state.reset_with_uniform_height(0, px(38.));
         self.local_restore_requests.remove(workspace_id);
@@ -99,7 +99,7 @@ impl SftpView {
         else {
             return;
         };
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let workspace_id = workspace_id.to_owned();
         let path = path.to_owned();
         log::debug!(
@@ -108,7 +108,10 @@ impl SftpView {
             path.display()
         );
         cx.spawn(async move |_this, _cx| {
-            match gui.persist_sftp_local_path(workspace_id, path).await {
+            match application
+                .persist_sftp_local_path(workspace_id, path)
+                .await
+            {
                 Ok(()) => log::debug!("SFTP 本地目录保存完成: session={profile_id}"),
                 Err(error) => log::warn!("保存 SFTP 本地目录失败，会话 {profile_id}: {error}"),
             }

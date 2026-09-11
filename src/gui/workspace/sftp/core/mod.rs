@@ -57,14 +57,17 @@ impl SftpView {
         self.persisted_remote_paths
             .insert(workspace_id.clone(), path.to_owned());
         let path = path.to_owned();
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         log::debug!(
             "SFTP 远程目录路径变化，准备保存: session={}, path={}",
             profile_id,
             path
         );
         cx.spawn(async move |_this, _cx| {
-            match gui.persist_sftp_remote_path(workspace_id, path).await {
+            match application
+                .persist_sftp_remote_path(workspace_id, path)
+                .await
+            {
                 Ok(()) => log::debug!("SFTP 远程目录保存完成: 会话 {profile_id}"),
                 Err(error) => log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error}"),
             }
@@ -127,10 +130,10 @@ impl SftpView {
             .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let workspace_id = workspace_id.to_owned();
         cx.spawn(async move |_this, _cx| {
-            if let Err(error) = gui
+            if let Err(error) = application
                 .change_sftp_remote_directory(workspace_id, profile_ip, profile_title, path)
                 .await
             {
@@ -157,14 +160,17 @@ impl SftpView {
         if !self.projections.contains_key(workspace_id) {
             return;
         }
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let task_workspace_id = workspace_id.to_owned();
         let path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match gui.upload_sftp(task_workspace_id, vec![path_text]).await {
+            match application
+                .upload_sftp(task_workspace_id, vec![path_text])
+                .await
+            {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.sync_application_state(&this.gui.clone());
+                        this.sync_application_state();
                         cx.notify();
                     });
                 }
@@ -209,16 +215,16 @@ impl SftpView {
         if !self.projections.contains_key(workspace_id) {
             return;
         }
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let task_workspace_id = workspace_id.to_owned();
         cx.spawn(async move |this, cx| {
-            match gui
+            match application
                 .download_sftp(task_workspace_id, vec![remote_path])
                 .await
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.sync_application_state(&this.gui.clone());
+                        this.sync_application_state();
                         cx.notify();
                     });
                 }
@@ -248,14 +254,17 @@ impl SftpView {
         else {
             return;
         };
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let workspace_id = record.workspace_id.clone();
         cx.spawn(async move |this, cx| {
-            if let Err(error) = gui.cancel_sftp_transfer(workspace_id, record.id).await {
+            if let Err(error) = application
+                .cancel_sftp_transfer(workspace_id, record.id)
+                .await
+            {
                 log::warn!("取消 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.sync_application_state(&this.gui.clone());
+                this.sync_application_state();
                 cx.notify();
             });
         })
@@ -282,13 +291,16 @@ impl SftpView {
             return;
         }
         let workspace_id = record.workspace_id.clone();
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         cx.spawn(async move |this, cx| {
-            if let Err(error) = gui.retry_sftp_transfer(workspace_id, record.id).await {
+            if let Err(error) = application
+                .retry_sftp_transfer(workspace_id, record.id)
+                .await
+            {
                 log::warn!("重试 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.sync_application_state(&this.gui.clone());
+                this.sync_application_state();
                 cx.notify();
             });
         })

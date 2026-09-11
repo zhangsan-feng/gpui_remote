@@ -8,7 +8,7 @@ use std::{
 use gpui_kit::*;
 
 use crate::{
-    data_context::{GuiContext, SftpDirectorySummary, SftpTransferInfo},
+    application::model::{SftpDirectorySummary, SftpTransferInfo},
     domain::{session::Protocol, terminal::TerminalStatus},
     global_state::{GlobalEvent, read_global_state},
 };
@@ -16,13 +16,13 @@ use crate::{
 use super::{SftpStatus, SftpView};
 
 impl SftpView {
-    pub(super) fn sync_application_state(&mut self, gui: &GuiContext) {
+    pub(super) fn sync_application_state(&mut self) {
         let workspace_ids = self.projections.keys().cloned().collect::<Vec<_>>();
         for workspace_id in workspace_ids {
             let Some(projection) = self.projections.get(&workspace_id) else {
                 continue;
             };
-            if let Ok(watches) = gui.list_sftp_local_watches(
+            if let Ok(watches) = self.application.list_sftp_local_watches(
                 workspace_id.clone(),
                 projection.profile_ip.clone(),
                 projection.profile_title.clone(),
@@ -35,14 +35,15 @@ impl SftpView {
                         .collect::<HashMap<_, _>>(),
                 );
             }
-            let Ok(revision) = gui.sftp_revision(&workspace_id) else {
+            let Ok(revision) = self.application.sftp_revision(&workspace_id) else {
                 continue;
             };
             if self.remote_revisions.get(&workspace_id) == Some(&revision) {
                 continue;
             }
-            if let Ok(summary) = gui.sftp_snapshot(&workspace_id) {
-                let status = gui
+            if let Ok(summary) = self.application.sftp_snapshot(&workspace_id) {
+                let status = self
+                    .application
                     .sftp_connection_status(&workspace_id)
                     .ok()
                     .map(to_sftp_status)
@@ -55,10 +56,10 @@ impl SftpView {
         }
 
         if let Some(workspace_id) = self.selected_workspace_id.as_deref() {
-            if let Ok(summary) = gui.sftp_local_snapshot(workspace_id) {
+            if let Ok(summary) = self.application.sftp_local_snapshot(workspace_id) {
                 self.local = to_local_snapshot(summary);
             }
-            if let Ok(transfers) = gui.sftp_transfers_snapshot(workspace_id) {
+            if let Ok(transfers) = self.application.sftp_transfers_snapshot(workspace_id) {
                 *self
                     .transfers
                     .write()
@@ -72,7 +73,7 @@ impl SftpView {
         let global_state = read_global_state(cx);
         cx.subscribe(&global_state, |this, _, event, cx| {
             match event {
-                GlobalEvent::OpenWorkspaceSession(workspace_id, profile)
+                GlobalEvent::WorkspaceSessionOpened(workspace_id, profile)
                     if profile.protocol == Protocol::Sftp =>
                 {
                     this.connect_projection(workspace_id.clone(), profile.clone());
@@ -92,7 +93,7 @@ impl SftpView {
                     {
                         this.restore_local_path(workspace_id, cx);
                     }
-                    this.sync_application_state(&this.gui.clone());
+                    this.sync_application_state();
                 }
                 GlobalEvent::CloseWorkspaceSession { workspace_id } => {
                     this.close(workspace_id);
@@ -112,7 +113,7 @@ impl SftpView {
         &self,
         workspace_id: &str,
     ) -> Option<TerminalStatus> {
-        self.gui.sftp_connection_status(workspace_id).ok()
+        self.application.sftp_connection_status(workspace_id).ok()
     }
 }
 

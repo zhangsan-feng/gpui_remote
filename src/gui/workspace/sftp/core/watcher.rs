@@ -49,11 +49,11 @@ impl SftpView {
         };
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let task_workspace_id = workspace_id.to_owned();
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match gui
+            match application
                 .watch_sftp_local(
                     task_workspace_id.clone(),
                     profile_ip,
@@ -90,13 +90,13 @@ impl SftpView {
         let Some(projection) = self.projections.get(&workspace_id) else {
             return;
         };
-        let gui = self.gui.clone();
+        let application = self.application.clone();
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
         let local_path = action.0.clone();
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match gui
+            match application
                 .stop_sftp_local_watch(
                     workspace_id.clone(),
                     profile_ip,

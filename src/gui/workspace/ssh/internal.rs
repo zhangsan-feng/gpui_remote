@@ -1,6 +1,8 @@
 mod keyboard {
     use gpui_kit::*;
 
+    use crate::application::ApplicationContext;
+
     use super::super::{
         PasteTerminal, SendTab, TerminalView,
         core::{encode_control_key, encode_special_key},
@@ -61,10 +63,11 @@ mod keyboard {
             input: Vec<u8>,
             cx: &mut Context<Self>,
         ) {
-            let gui = self.gui.clone();
+            let application =
+                cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
             let workspace_id = workspace_id.to_owned();
             cx.spawn(async move |_this, _cx| {
-                if let Err(error) = gui.send_terminal_input(workspace_id, input).await {
+                if let Err(error) = application.send_terminal_input(workspace_id, input).await {
                     log::debug!("发送 SSH 输入失败: {error}");
                 }
             })
@@ -97,8 +100,8 @@ mod scroll {
     };
 
     use crate::{
+        application::ApplicationContext,
         component::{color::rgb_to_u32, theme},
-        data_context::GuiContext,
         domain::terminal::TerminalFrame,
     };
     use gpui_kit::component::ElementExt;
@@ -250,9 +253,10 @@ mod scroll {
             let Some(workspace_id) = self.selected_workspace_id.clone() else {
                 return;
             };
-            let gui: GuiContext = self.gui.clone();
+            let application =
+                cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
             cx.spawn(async move |_this, _cx| {
-                if let Err(error) = gui.scroll_terminal_to(workspace_id, offset).await {
+                if let Err(error) = application.scroll_terminal_to(workspace_id, offset).await {
                     log::debug!("滚动 SSH 终端失败: {error}");
                 }
             })

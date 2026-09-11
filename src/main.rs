@@ -50,7 +50,8 @@ pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) -> [WorkerGuard
         //     metadata.level() == Level::Info && !metadata.target().starts_with("symphonia")
         // })
         .level(log::LevelFilter::Info)
-        .level_for("gpui_remote::data_context", log::LevelFilter::Debug)
+        .level_for("gpui_remote::application", log::LevelFilter::Debug)
+        .level_for("gpui_remote::infrastructure", log::LevelFilter::Debug)
         .level_for(
             "gpui_remote::gui::workspace::agent_mcp",
             log::LevelFilter::Debug,
@@ -167,8 +168,15 @@ async fn main() {
                 );
 
                 app.new(|cx| {
+                    let storage = infrastructure::storage::Storage::new();
+                    let infrastructure = infrastructure::new(storage.session.clone());
+                    let application = application::ApplicationContext::new(infrastructure.clone());
+                    cx.set_global(storage);
+                    cx.set_global(infrastructure);
+                    cx.set_global(application);
+                    info!("application and infrastructure globals registered");
+
                     let global_state = cx.new(|_| GlobalState {});
-                    cx.set_global(infrastructure::storage::Storage::new());
                     cx.set_global(GlobalStateHandle(global_state));
                     let main_window = cx.new(|cx| gui::home::HomeView::new(window, cx));
                     Root::new(main_window, window, cx)

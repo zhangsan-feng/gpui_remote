@@ -17,8 +17,10 @@ use gpui_kit::*;
 use serde::Deserialize;
 use tokio::sync::Notify;
 
-use crate::component::theme;
-use crate::data_context::{GuiContext, SftpWatchSummary};
+use crate::{
+    application::{ApplicationContext, model::SftpWatchSummary},
+    component::theme,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SftpStatus {
@@ -99,7 +101,7 @@ struct SftpProjection {
 }
 
 pub(in crate::gui::workspace) struct SftpView {
-    gui: GuiContext,
+    application: ApplicationContext,
     projections: HashMap<String, SftpProjection>,
     local_watchers: HashMap<String, HashMap<PathBuf, SftpWatchSummary>>,
     remote_revisions: HashMap<String, u64>,
@@ -267,9 +269,11 @@ impl Render for DragPreviewRemoteToLocalItem {
 }
 
 impl SftpView {
-    pub(in crate::gui::workspace) fn new(gui: GuiContext, cx: &mut Context<Self>) -> Self {
-        let updates = gui.sftp_updates();
-        let status_updates = gui.sftp_status_updates();
+    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let updates = application.sftp_updates();
+        let status_updates = application.sftp_status_updates();
         let local_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let remote_list_state =
@@ -277,12 +281,11 @@ impl SftpView {
         let transfer_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let model_updates = updates.clone();
-        let sync_gui = gui.clone();
         cx.spawn(async move |this, cx| {
             loop {
                 model_updates.notified().await;
                 let result = this.update(cx, |this, cx| {
-                    this.sync_application_state(&sync_gui);
+                    this.sync_application_state();
                     cx.notify();
                 });
                 if result.is_err() {
@@ -293,7 +296,7 @@ impl SftpView {
         .detach();
 
         let this = Self {
-            gui,
+            application,
             projections: HashMap::new(),
             local_watchers: HashMap::new(),
             remote_revisions: HashMap::new(),

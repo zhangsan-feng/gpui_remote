@@ -215,10 +215,10 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - [x] 将当前 `tokio::select!` 中的 command dispatch 和 application event receive 拆成两个任务，避免 application 命令执行期间停止通知转发。
 - [x] command router task 退出时记录 ingress 关闭、lane 数量和退出原因。
 - [x] notification forwarder 遇到 lagged 时保留当前 warn 日志，遇到 closed 时退出并记录原因，不重启 command router。
-- [ ] 确认 MCP server 仍然只持有 `McpBridgeEndpoint` clone，server/tool 文件不引用 router、ApplicationContext 或 InfrastructureContext。
-- [ ] 运行 `rg` 检查 MCP server/tool 源码没有 GPUI 上下文和 GUI entity 字段。
-- [ ] 运行格式、编译和 diff 检查。
-- [ ] 提交：`refactor: isolate mcp command and notification tasks`。
+- [x] 确认 MCP server 仍然只持有 `McpBridgeEndpoint` clone，server/tool 文件不引用 router、ApplicationContext 或 InfrastructureContext。
+- [x] 运行 `rg` 检查 MCP server/tool 源码没有 GPUI 上下文和 GUI entity 字段。
+- [x] 运行格式、编译和 diff 检查。
+- [x] 提交：`refactor: isolate mcp command and notification tasks`。
 
 ### Task 6：完善会话 lane 生命周期、背压和取消语义
 
@@ -235,13 +235,13 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - `SessionClosed` application event 能触发 registry 删除；已经取出的命令按 response channel 返回“会话已关闭”。
 - 队列发送使用明确的 bounded backpressure；响应 receiver 被 MCP 客户端取消时，worker 不 panic，继续处理其他请求。
 
-- [ ] 处理 GUI 关闭会话、MCP 关闭会话和 SSH/SFTP runtime 异常三种 lane 回收路径。
-- [ ] 防止 close 与同一 workspace 后续命令乱序：close 进入该 workspace lane，lane 在 close 响应完成后停止接收并从 registry 删除。
-- [ ] 为长期占用的 lane 增加空闲清理策略，空闲清理只回收 registry 和 channel，不关闭仍由 application 持有的 SSH/SFTP runtime。
-- [ ] 对 `mpsc::Sender::send`、`oneshot::Sender::send`、worker receiver 关闭分别返回可识别的 application result 或 MCP error。
-- [ ] 保持 transfer 操作的现有语义：上传/下载立即返回 transfer summary，后续通过 list transfers 查询状态，不让 MCP worker等待完整传输结束。
-- [ ] 检查 application session event 通知不会再次调用 GUI。
-- [ ] 提交：`refactor: harden mcp session lane lifecycle`。
+- [x] 处理 GUI 关闭会话、MCP 关闭会话和 SSH/SFTP runtime 异常三种 lane 回收路径。
+- [x] 防止 close 与同一 workspace 后续命令乱序：close 进入该 workspace lane，lane 在 close 响应完成后停止接收并从 registry 删除。
+- [x] 为长期占用的 lane 增加空闲清理策略，空闲清理只回收 registry 和 channel，不关闭仍由 application 持有的 SSH/SFTP runtime。
+- [x] 对 `mpsc::Sender::send`、`oneshot::Sender::send`、worker receiver 关闭分别返回可识别的 application result 或 MCP error。
+- [x] 保持 transfer 操作的现有语义：上传/下载立即返回 transfer summary，后续通过 list transfers 查询状态，不让 MCP worker等待完整传输结束。
+- [x] 检查 application session event 通知不会再次调用 GUI。
+- [x] 提交：`refactor: harden mcp session lane lifecycle`。
 
 ### Task 7：按日志结果优化同一会话内的操作 lane
 

@@ -16,6 +16,16 @@ use super::{
 };
 
 impl ApplicationContext {
+    pub(crate) fn workspace_runtime_available(&self, workspace_id: &str) -> bool {
+        let Some(profile) = self.sessions().get(workspace_id) else {
+            return false;
+        };
+        match profile.protocol {
+            Protocol::Ssh => self.ssh().runtime_available(workspace_id),
+            Protocol::Sftp => self.sftp().runtime_available(workspace_id),
+        }
+    }
+
     pub(crate) fn terminal_updates(&self) -> Arc<tokio::sync::Notify> {
         self.ssh().updates()
     }

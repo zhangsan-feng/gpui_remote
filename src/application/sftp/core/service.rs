@@ -232,6 +232,15 @@ impl SftpApplication {
         self.inner.status_updates.clone()
     }
 
+    pub(crate) fn runtime_available(&self, workspace_id: &str) -> bool {
+        self.inner
+            .runtimes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(workspace_id)
+            .is_some_and(|runtime| !runtime.commands.is_closed())
+    }
+
     pub fn transfers(&self, workspace_id: &str) -> Result<Vec<TransferRecord>, String> {
         self.ensure_workspace(workspace_id)?;
         Ok(self

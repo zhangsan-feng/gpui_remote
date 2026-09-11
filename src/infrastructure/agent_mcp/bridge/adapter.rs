@@ -1,6 +1,7 @@
 use gpui_kit::{App, AppContext};
+use std::time::Duration;
 
-use crate::application::ApplicationContext;
+use crate::application::{ApplicationContext, ApplicationEvent};
 
 use super::{dispatch, router::McpCommandRouter, types::McpBridgeReceiver};
 
@@ -13,11 +14,42 @@ pub(crate) fn start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver) {
 
     let command_application = application.clone();
     cx.spawn(async move |_cx| {
+        let lifecycle_application = command_application.clone();
         let mut router = McpCommandRouter::new(command_application);
+        let mut application_events = lifecycle_application.subscribe();
+        let mut idle_cleanup = tokio::time::interval(Duration::from_secs(60));
         log::info!("MCP application bridge adapter started");
-        while let Some(command) = command_rx.recv().await {
-            if let Err(error) = router.route(command).await {
-                log::debug!("MCP bridge command routing failed: {error}");
+        loop {
+            tokio::select! {
+                command = command_rx.recv() => {
+                    let Some(command) = command else {
+                        log::info!("MCP application bridge command channel closed");
+                        break;
+                    };
+                    if let Err(error) = router.route(command).await {
+                        log::debug!("MCP bridge command routing failed: {error}");
+                    }
+                }
+                event = application_events.recv() => {
+                    match event {
+                        Ok(ApplicationEvent::SessionClosed { workspace_id }) => {
+                            router.remove(&workspace_id);
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
+                            log::warn!("MCP bridge lifecycle receiver lagged: skipped={count}");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            log::warn!(
+                                "MCP bridge lifecycle receiver closed: command router stopped"
+                            );
+                            break;
+                        }
+                    }
+                }
+                _ = idle_cleanup.tick() => {
+                    router.cleanup_idle();
+                }
             }
         }
         log::info!(

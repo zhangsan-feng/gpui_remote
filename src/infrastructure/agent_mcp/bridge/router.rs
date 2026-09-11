@@ -10,6 +10,7 @@ use super::types::{COMMAND_CAPACITY, CommandEnvelope, ResponseEnvelope, RouteKey
 const CONTROL_LANE_CAPACITY: usize = 64;
 const SESSION_LANE_CAPACITY: usize = 64;
 const ROUTE_ENQUEUE_TIMEOUT: Duration = Duration::from_secs(5);
+const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 pub(crate) struct McpCommandRouter {
     application: ApplicationContext,
@@ -22,6 +23,7 @@ pub(crate) struct McpCommandRouter {
 struct SessionLane {
     sender: mpsc::Sender<CommandEnvelope>,
     closing: bool,
+    last_activity: Instant,
 }
 
 enum LaneEvent {
@@ -72,12 +74,22 @@ impl McpCommandRouter {
                 }
 
                 let result = enqueue(&sender, command, &workspace_id).await;
-                if result.is_err() && is_close {
-                    if let Some(lane) = self.session_lanes.get_mut(&workspace_id) {
-                        lane.closing = false;
+                match result {
+                    Ok(()) => {
+                        if let Some(lane) = self.session_lanes.get_mut(&workspace_id) {
+                            lane.last_activity = Instant::now();
+                        }
+                    }
+                    Err(error) => {
+                        if is_close {
+                            if let Some(lane) = self.session_lanes.get_mut(&workspace_id) {
+                                lane.closing = false;
+                            }
+                        }
+                        return Err(error);
                     }
                 }
-                result
+                Ok(())
             }
         }
     }
@@ -92,6 +104,26 @@ impl McpCommandRouter {
     pub(crate) fn lane_count(&mut self) -> usize {
         self.drain_lane_events();
         self.session_lanes.len()
+    }
+
+    pub(crate) fn cleanup_idle(&mut self) {
+        self.drain_lane_events();
+        let now = Instant::now();
+        let idle_workspaces = self
+            .session_lanes
+            .iter()
+            .filter(|(_, lane)| {
+                !lane.closing && now.duration_since(lane.last_activity) >= SESSION_IDLE_TIMEOUT
+            })
+            .map(|(workspace_id, _)| workspace_id.clone())
+            .collect::<Vec<_>>();
+        for workspace_id in idle_workspaces {
+            self.session_lanes.remove(&workspace_id);
+            log::info!(
+                "MCP bridge idle workspace lane removed: workspace_id={workspace_id}, idle_seconds={}",
+                SESSION_IDLE_TIMEOUT.as_secs()
+            );
+        }
     }
 
     fn drain_lane_events(&mut self) {
@@ -130,6 +162,7 @@ impl McpCommandRouter {
             SessionLane {
                 sender: sender.clone(),
                 closing: false,
+                last_activity: Instant::now(),
             },
         );
         log::debug!("MCP bridge workspace lane created: workspace_id={workspace_id}");
@@ -192,8 +225,15 @@ async fn run_lane(
 ) {
     while let Some(command) = receiver.recv().await {
         let should_stop = command.command.is_close_session();
-        process_command(&lane_name, &application, command).await;
-        if should_stop {
+        let runtime_failed = process_command(&lane_name, &application, command).await;
+        if should_stop || runtime_failed {
+            let reason = if should_stop {
+                "close_completed"
+            } else {
+                "workspace_runtime_unavailable"
+            };
+            reject_pending(&mut receiver, "MCP workspace runtime 已关闭，命令未执行");
+            log::info!("MCP bridge lane stopping: lane={lane_name}, reason={reason}");
             break;
         }
     }
@@ -209,9 +249,10 @@ async fn process_command(
     lane_name: &str,
     application: &ApplicationContext,
     command: CommandEnvelope,
-) {
+) -> bool {
     let request_id = command.request_id.clone();
     let command_name = command.command.name();
+    let workspace_bound = command.command.workspace_id().is_some();
     let workspace_id = command
         .command
         .workspace_id()
@@ -248,5 +289,14 @@ async fn process_command(
         log::debug!(
             "MCP bridge response sent: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, lane={lane_name}, queue_ms={queue_ms}, application_ms={application_ms}, total_ms={total_ms}"
         );
+    }
+
+    workspace_bound && !application.workspace_runtime_available(&workspace_id)
+}
+
+fn reject_pending(receiver: &mut mpsc::Receiver<CommandEnvelope>, message: &str) {
+    receiver.close();
+    while let Ok(command) = receiver.try_recv() {
+        reject(command, message.to_owned());
     }
 }

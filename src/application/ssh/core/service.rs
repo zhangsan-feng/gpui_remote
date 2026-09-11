@@ -183,6 +183,15 @@ impl SshApplication {
         self.inner.status_updates.clone()
     }
 
+    pub(crate) fn runtime_available(&self, workspace_id: &str) -> bool {
+        self.inner
+            .runtimes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(workspace_id)
+            .is_some_and(|runtime| !runtime.commands.is_closed())
+    }
+
     fn commands(
         &self,
         workspace_id: &str,

@@ -2,131 +2,246 @@
 
 ## 架构目标
 
-项目采用 GPUI 官方推荐的 `App -> Global -> Entity/Store` 数据流。GPUI `App` 是全局状态的唯一所有者；`ApplicationContext` 和 `InfrastructureContext` 是注册到 GPUI 的应用级 Global 根句柄；SSH、SFTP 和会话状态由各自 application entity/store 持有。
+项目使用 GPUI Global 作为应用级共享入口。`ApplicationContext` 是应用层根句柄，负责会话、SSH、SFTP 和应用事件；`InfrastructureContext` 是基础设施根句柄，负责存储、profile 查询和 MCP runtime。代理连接由 `infrastructure/proxy` 模块提供适配，协议 application 模块按需使用。
 
-GUI 与 MCP 都只能通过 application 层访问 SSH/SFTP 数据面：
+当前没有 `DataContext`、`GuiContext` 或 `McpContext` 中间 facade。每一层在自己的 GPUI 上下文中通过 `cx.read_global` 读取需要的 Global，不通过父组件或构造函数层层传递上下文。
+
+核心原则：
+
+- GUI 和 MCP 都只能通过 ApplicationContext API 访问数据面。
+- SSH、SFTP 以及未来新增协议的数据和 runtime 仍由各自 application 模块维护。
+- MCP 不操作 GUI，不读取 GUI selected 状态，也不持有 GUI entity、channel 或地址。
+- InfrastructureContext 收敛 storage、profile query 和 MCP 服务生命周期；`main.rs` 只负责初始化、注册 Global 和启动入口。
+- 发生问题时先查看日志；日志不足时先在调用边界补充 debug 日志，再根据证据修改实现，不凭猜测重构。
+
+## 总体数据流
 
 ```text
 GPUI App
   ├─ Global<ApplicationContext>
-  │    ├─ Entity<SessionStore>
-  │    ├─ Entity<SshStore>
-  │    └─ Entity<SftpStore>
+  │    ├─ SessionStore
+  │    ├─ SshStore
+  │    ├─ SftpStore
+  │    └─ ApplicationEvent
+  │
   └─ Global<InfrastructureContext>
-       └─ storage / profile query / proxy / MCP runtime
+       ├─ Storage
+       ├─ ProfileQuery
+       └─ AgentMcpRuntime
 
-GUI 使用层
-  -> 本层 cx.read_global<ApplicationContext>()
-  -> Entity<T>.read/update/observe/subscribe
-  -> application entity/store
-  -> SSH/SFTP 数据面
+infrastructure/proxy
+  -> SSH/SFTP application 连接时按 profile 配置使用
 
-MCP HTTP client A/B/C
-  -> AgentTerminalMcp 持有 McpBridgeEndpoint.clone()
-  -> bounded global ingress mpsc(CommandEnvelope)
-  -> GPUI bridge adapter 的 command router task
+GUI
+  -> cx.read_global<ApplicationContext>()
+  -> ApplicationContext API
+  -> 对应 application 模块
+  -> SSH/SFTP/未来协议 runtime
+  -> entity/store 更新并通知 GUI
+
+MCP Client
+  -> HTTP GET/POST
+  -> rmcp Streamable HTTP server
+  -> AgentTerminalMcp tool
+  -> McpBridgeEndpoint.clone()
+  -> global ingress mpsc
+  -> Tokio bridge adapter
   -> McpCommandRouter
-       ├─ control lane：profile/open/全局列表
-       ├─ workspace-A lane：A 内 FIFO worker
-       └─ workspace-B lane：B 内 FIFO worker
-  -> 每个 worker 读取 ApplicationContext Global 并调用 application API
-  -> 对应 SSH/SFTP application 数据面
+       ├─ control lane
+       ├─ workspace-A lane
+       └─ workspace-B lane
+  -> ApplicationContext API
+  -> 对应 application 模块
   -> oneshot ResponseEnvelope
-  -> MCP protocol result
+  -> MCP 返回结果
 
 ApplicationEvent
-  -> 独立 notification forwarder task
-  -> MCP broadcast NotificationEnvelope
+  -> 独立 notification forwarder
+  -> MCP broadcast notification
 ```
 
-Global 只保存全局根句柄，不保存终端输出、目录列表或传输进度等高频业务数据。业务状态通过 entity 的 `read/update/notify/observe/subscribe` 流动；IO 由 `cx.spawn + tokio` 执行，完成后回到 GPUI 上下文更新 entity。
+Application 层是 GUI 和 MCP 共享的唯一业务数据面。MCP 只负责协议输入输出和命令转发，不能绕过 application 层直接访问 SSH/SFTP service；GUI 也不直接持有基础设施内部地址。
 
-MCP 不持有 `App`、`AsyncApp`、`ApplicationContext`、`InfrastructureContext`、GUI entity 或 UI channel。MCP 只持有线程安全的 `McpBridgeEndpoint`，bridge 只传递命令、响应、通知、摘要和 correlation ID，不传递上下文、service 地址或 GUI 对象。
+## 并发模型
+
+MCP 支持并发 HTTP 请求，但并发粒度是业务 `workspace_id`，不是 MCP transport session ID。当前 rmcp 使用无状态 Streamable HTTP，每个 POST 是一个独立请求。
+
+- 不同 `workspace_id` 使用独立 bounded lane 和 FIFO worker，可以并行执行。
+- 同一 `workspace_id` 使用一个 FIFO lane，保证目录切换、终端输入、watch 和 close 的顺序。
+- profile、open session、全局列表等没有 workspace 的命令走独立 control lane。
+- 每个请求生成 `request_id`，通过 `oneshot` 关联响应，不依赖请求到达顺序。
+- lane 满载或 bridge 关闭时返回明确错误，不能无限等待。
+- command router 和 notification forwarder 是两个独立 Tokio task，慢命令不会停止事件转发。
+
+bridge 的命令/通知循环使用 `tokio::spawn` 运行在 Tokio runtime 中。GPUI `cx.spawn` 仍用于需要回到 GPUI 上下文更新 entity 的任务；纯 Tokio channel、timer 和网络服务不放到 GPUI 前台 executor 中等待。
 
 ## 分层职责
 
-- `domain`：会话、协议、终端等稳定领域类型，不依赖 GUI 和基础设施。
-- `application`：应用级用例、entity/store、共用返回模型、会话生命周期、SSH/SFTP 数据面和 application 事件。
-- `infrastructure`：SQLite、profile 查询、代理、运行时适配和 MCP 协议边界。
-- `gui`：GPUI view/entity、交互、订阅和渲染；GUI 不持有 SSH/SFTP service 内部地址。
-- `global_state`：窗口和 UI 生命周期状态，不承载 application 业务数据。
-- `component`：主题、列表、面板、窗口等通用 UI 组件。
+### domain
 
-application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能，`external.rs` 放外部 API，`mod.rs` 放类型、子模块声明和初始化。GUI 遵守：`core.rs` 放核心功能和数据流，`ui.rs` 只渲染，`external.rs` 放外部入口，`mod.rs` 放类型、初始化、Render、订阅和 component data。
+存放稳定的领域类型，例如会话、协议、终端等。domain 不依赖 GUI、GPUI 和基础设施实现。
+
+### application
+
+提供应用用例、业务状态、会话生命周期、SSH/SFTP 数据面、统一返回模型和 application event。application API 必须显式接收 `workspace_id`，不能从 GUI selected 状态推导 MCP 目标。
+
+### infrastructure
+
+提供 SQLite 存储、profile 查询、代理、MCP HTTP 协议边界和 bridge runtime。infrastructure 可以读取 ApplicationContext，但 MCP tool/server 不持有 ApplicationContext。
+
+### gui
+
+负责 GPUI entity、用户交互、订阅、布局和渲染。GUI 在自己的 `cx` 中读取 Global，交互调用 application API；`ui.rs` 只负责渲染，不等待网络 IO。
+
+### global_state
+
+只保存窗口和 UI 生命周期状态，不承载 SSH/SFTP 业务数据。
+
+### component
+
+提供主题、列表、面板、窗口和布局等通用 UI 组件。样式参考 Tailwind CSS，图标优先复用 Lucide 资源。
 
 ## 目录与文件职责
 
-- `Cargo.toml` / `Cargo.lock`：依赖和可复现构建配置。
-- `src/main.rs`：日志、资源、GPUI App 初始化、两个 Global 注册，以及通过 `InfrastructureContext` 启动 GUI/MCP。
-- `src/domain/`：会话、协议和终端领域模型。
-- `src/global_state.rs`：UI GlobalState entity 与 UI 事件，不承载业务数据。
-- `src/component/`：通用主题、列表、面板、窗口和布局组件。
+### 根目录
+
+| 目录/文件 | 主要功能 |
+| --- | --- |
+| `src/main.rs` | 初始化日志、资源和 GPUI App，注册 `InfrastructureContext`、`ApplicationContext`，启动 MCP 和 GUI。 |
+| `Cargo.toml` / `Cargo.lock` | Rust 依赖和可复现构建配置。 |
+| `AGENTS.md` | 项目约束和协作规则。 |
+| `plan.md` | 阶段性计划文件；当前阶段完成后保持清空，新的计划按需求重新建立。 |
+| `project.md` | 当前架构、数据流、目录职责和排查约定。 |
+| `scripts/` | 手工回归和压力工具，不属于 GUI 运行时。 |
 
 ### `src/application/`
 
-- `mod.rs`：application 子模块声明、初始化和稳定类型导出。
-- `core.rs`：`ApplicationContext`、GPUI `Global` 实现和应用根句柄组合。
-- `state.rs`：`ApplicationStoreGraph` 以及 session/SSH/SFTP 的 GPUI typed store handle；运行时数据仍由各自 application 模块持有。
-- `external.rs`：GUI 和 GPUI bridge adapter 使用的 application command、快照和返回 API。
-- `model.rs`：GUI/MCP 共用的 profile、终端、SFTP 目录、传输和 watch 摘要。
-- `mapping.rs`：entity/store 状态到共用返回模型的映射。
-- `validation.rs`：application 命令参数校验和统一错误转换。
-- `event.rs`：application entity 的领域事件和会话生命周期事件。
-- `session/`：SessionStore、会话创建/关闭/选择和会话摘要。
-- `ssh/`：SSH store、终端快照、PTY、输入、resize、滚动和通知。
-- `sftp/`：SFTP store、目录、路径、传输、删除、取消、重试和 watch。
+| 文件/目录 | 主要功能 |
+| --- | --- |
+| `mod.rs` | application 子模块声明、初始化和稳定类型导出。 |
+| `core.rs` | `ApplicationContext`、Global 实现和应用根句柄组合。 |
+| `state.rs` | `ApplicationStoreGraph` 以及 session/SSH/SFTP 的 GPUI store handle。 |
+| `external.rs` | GUI 和 infrastructure bridge 使用的 application command、快照和返回 API。 |
+| `model.rs` | GUI/MCP 共用的 profile、终端、目录、传输和 watch 摘要。 |
+| `mapping.rs` | entity/store 状态到共用返回模型的映射。 |
+| `validation.rs` | workspace、协议和命令参数校验。 |
+| `event.rs` | application entity 事件和会话生命周期事件。 |
+| `session/` | 会话创建、关闭、选择和摘要。 |
+| `ssh/` | SSH store、终端快照、PTY、输入、resize、滚动和通知。 |
+| `sftp/` | SFTP store、目录、路径、传输、删除、取消、重试和 watch。 |
 
 ### `src/infrastructure/`
 
-- `mod.rs`：基础设施子模块声明和 `InfrastructureContext` 初始化入口。
-- `context.rs`：统一持有 storage、profile query、MCP bridge/runtime，并实现 GPUI `Global`。
-- `profile_query.rs`：profile 查询 port 和具体实现适配。
-- `storage/`：SQLite session/profile、SFTP 路径和已知主机密钥存储。
-- `proxy/`：网络代理与异步双向流。
-- `agent_mcp/mod.rs`：MCP 子模块声明和启动入口。
-- `agent_mcp/bridge/`：MCP bridge 的分层实现；endpoint 只负责线程安全入队和响应关联，router 负责 control/workspace lane，worker 负责 application dispatch，adapter 负责读取 Global 和启动独立任务。
-- `agent_mcp/bridge/mod.rs`：bridge 子模块声明、初始化入口和稳定导出。
-- `agent_mcp/bridge/types.rs`：命令、响应、通知 envelope、correlation ID、耗时字段和 `RouteKey` 类型。
-- `agent_mcp/bridge/endpoint.rs`：`McpBridgeEndpoint`、`McpBridgeReceiver`、请求发送和 typed helper；不持有 application 或 GUI 上下文。
-- `agent_mcp/bridge/router.rs`：bounded control lane、按 workspace 懒创建的 session lane、FIFO worker、backpressure、close/runtime/idle 回收。
-- `agent_mcp/bridge/dispatch.rs`：单个命令到 `ApplicationContext` API 的映射，只由 worker 调用。
-- `agent_mcp/bridge/adapter.rs`：GPUI bridge adapter、command router task、SessionClosed 生命周期监听和 notification forwarder。
-- `agent_mcp/core.rs`：MCP controller 与 bridge 生命周期。
-- `agent_mcp/external.rs`：MCP 启动入口，只接收 bridge endpoint 和 MCP 配置。
-- `agent_mcp/server.rs`：MCP server 生命周期和协议适配。
-- `agent_mcp/tools.rs`：MCP tool 参数解析、命令构造和 application 结果序列化。
+| 文件/目录 | 主要功能 |
+| --- | --- |
+| `mod.rs` | 基础设施子模块声明和初始化入口。 |
+| `context.rs` | `InfrastructureContext`，统一持有 storage、profile query 和 MCP runtime。 |
+| `profile_query.rs` | profile 查询 port 和具体适配实现。 |
+| `storage/` | SQLite session/profile、SFTP 路径和已知主机密钥存储。 |
+| `proxy/` | 网络代理和异步双向流。 |
+| `agent_mcp/mod.rs` | MCP 子模块声明和启动入口。 |
+| `agent_mcp/core.rs` | MCP controller、配置和 server 生命周期。 |
+| `agent_mcp/external.rs` | MCP 对基础设施外部暴露的启动和设置入口。 |
+| `agent_mcp/server.rs` | MCP HTTP server、认证、GET/POST 路由和请求耗时日志。 |
+| `agent_mcp/tools.rs` | MCP tool 参数解析、命令构造和结果序列化。 |
+| `agent_mcp/bridge/mod.rs` | bridge 子模块声明、初始化和稳定导出。 |
+| `agent_mcp/bridge/types.rs` | command/response/notification envelope、correlation ID 和 route key。 |
+| `agent_mcp/bridge/endpoint.rs` | endpoint 入队、响应关联和 typed helper；不持有应用上下文。 |
+| `agent_mcp/bridge/router.rs` | control/workspace lane、FIFO worker、背压和 lane 生命周期。 |
+| `agent_mcp/bridge/dispatch.rs` | 将单个命令映射到 ApplicationContext API。 |
+| `agent_mcp/bridge/adapter.rs` | 读取 ApplicationContext Global，启动 Tokio command router 和 notification forwarder。 |
 
 ### `src/gui/`
 
-- `home/`：首页、根窗口和应用级 GUI entity 初始化。
-- `sidebar_session/`：会话侧栏和 profile 操作。
-- `title_bar/`：标题栏、设置和连接表单。
-- `workspace/`：工作区 UI 投影、布局和会话生命周期。
-- `workspace/ssh/`：SSH 终端输入、选区、滚动和快照投影。
-- `workspace/sftp/`：SFTP 列表、路径、选择、拖拽和传输投影。
-- `workspace/top_session/`：顶部会话标签和会话选择。
+| 目录 | 主要功能 |
+| --- | --- |
+| `home/` | 首页、根窗口和 GUI entity 初始化。 |
+| `sidebar_session/` | 会话侧栏和 profile 操作。 |
+| `title_bar/` | 标题栏、设置和连接表单。 |
+| `workspace/` | 工作区 UI 投影、布局和会话生命周期。 |
+| `workspace/ssh/` | SSH 终端输入、选区、滚动和快照投影。 |
+| `workspace/sftp/` | SFTP 列表、路径、选择、拖拽和传输投影。 |
+| `workspace/top_session/` | 顶部会话标签和会话选择。 |
 
-GUI 组件在自己的 GPUI `cx` 中读取需要的 Global，不通过父组件构造函数传递 context。UI 使用 entity 快照进行渲染，交互调用 application API，application 完成状态更新后通知 UI 重绘。
+GUI 模块文件职责：
 
-## 生命周期
+- `core.rs`：核心功能和数据流向。
+- `ui.rs`：渲染。
+- `external.rs`：外部调用和本层公开入口。
+- `mod.rs`：类型定义、子模块、初始化、Render 入口、订阅和 component data 初始化。
+
+application 和 infrastructure 模块文件职责：
+
+- `core.rs`：核心功能。
+- `external.rs`：外部 API。
+- `mod.rs`：类型定义、子模块声明和初始化。
+
+单个文件维护在 600–800 行；超过 800 行时按功能拆成目录和文件，`mod.rs` 只保留声明、导出和初始化。
+
+## 生命周期与启动顺序
 
 ```text
 main
-  -> 创建并注册 InfrastructureContext（内部初始化 storage / proxy / MCP runtime）
-  -> 创建 application entity/store 图
-  -> 创建 ApplicationContext
+  -> 初始化日志
+  -> 创建 InfrastructureContext
   -> cx.set_global(InfrastructureContext)
+  -> 创建 ApplicationContext
   -> cx.set_global(ApplicationContext)
-  -> InfrastructureContext 启动 GPUI bridge adapter 的 command router task 和 notification forwarder task
-  -> 创建 GUI
+  -> InfrastructureContext::start_mcp(cx)
+       -> bridge adapter 读取 ApplicationContext Global
+       -> 启动 command router task
+       -> 启动 notification forwarder task
+       -> 启动 MCP HTTP server
+  -> 创建 GUI HomeView
 ```
 
-会话打开由 application 层统一协调：读取 profile、创建对应 SSH/SFTP entity、注册 SessionStore、生成 workspace/session ID，并发布 application 事件。会话关闭由 application 层停止对应 runtime、传输和 watcher，再移除 session 状态。GUI/MCP 都不自行生成业务 ID，也不直接回滚底层 service。MCP 的 workspace 操作必须显式携带 `workspace_id`，不读取 GUI selected 状态，也不提供修改 GUI selected 状态的 tool；GUI 与 MCP 共享的是 `ApplicationContext` API 和 application event，而不是彼此的 entity、地址或 channel。
+`InfrastructureContext` 内部只允许一次性消费 MCP bridge receiver；MCP server 对外只持有 `McpBridgeEndpoint` 的 clone。会话打开、关闭、runtime 异常和 GUI 生命周期事件都由 application 层协调，并通过 application event 通知订阅方。
 
-## 维护约束
+## 后续协议扩展
 
-- 不编写测试用例；只进行格式、编译、diff、静态引用和手工回归检查。
-- 涉及 IO 的代码使用 `cx.spawn + tokio`，阻塞磁盘/SQLite/密钥加载使用 `spawn_blocking`。
-- 服务端接口仅使用 GET 和 POST。
-- 单文件维护在 600–800 行；超过 800 行按职责拆为目录和功能文件。
-- UI 样式参考 Tailwind CSS，图标优先复用项目已有 Lucide 资源。
+应用层后续会继续扩展 SSH、SFTP 之外的协议。扩展流程如下：
+
+1. 在 `domain` 增加稳定协议类型和必要的领域模型。
+2. 在 `src/application/<protocol>/` 增加协议自己的 `core.rs`、`external.rs`、`mod.rs`，由该模块维护连接、快照、传输和错误状态。
+3. 在 `ApplicationContext` 增加协议无关的入口或协议能力 API，返回 GUI/MCP 共用的摘要模型。
+4. storage/profile query 只增加协议配置的持久化和查询，不把协议 runtime 放入 storage。
+5. MCP 通过新的 application API 暴露工具，命令携带显式 `workspace_id`，继续经过 bridge router，不直接创建协议连接。
+6. GUI 通过 `cx.read_global<ApplicationContext>()` 使用相同 application API，并在对应 workspace 下增加投影和渲染。
+
+协议特有的数据必须留在对应 application 模块；bridge 只传递命令、响应、通知和摘要，不能演变成第二套数据层。
+
+## 日志与问题定位
+
+日志由 `src/main.rs` 初始化，application 和 infrastructure 默认开启 debug 级别，文件输出到 `logs/YYYY-MM-DD.log`。
+
+MCP 关键日志标记包括：
+
+- `MCP HTTP request started/finished`：HTTP 入口和总耗时。
+- `MCP tool handler started/finished`：工具处理耗时。
+- `MCP bridge request started/enqueued/response received`：request_id、入队和响应关联。
+- `MCP bridge ingress`、`route`、`lane`：路由、workspace 和队列状态。
+- `SFTP application`、`SFTP local watcher`：SFTP runtime 和 watcher 生命周期。
+
+GUI 侧出现问题时，先记录复现操作、时间点、workspace_id 和对应日志片段；若现有日志无法判断，再在 HTTP、GUI action、application API、runtime command channel 和状态通知边界补齐 debug 日志，至少包含操作名、目标 ID、状态转移和耗时。
+
+禁止用“应该是某个 channel 阻塞”这类假设直接修改架构。先通过日志区分 HTTP、MCP tool、bridge 入队、lane 排队、application 调用、远端 IO 和 UI 更新各阶段，再针对实际阶段修复。
+
+## 验证约定
+
+本项目是 GUI 项目，不新增 Rust 单元测试或 GUI 测试用例；使用编译、格式检查、日志和手工回归验证整体行为。
+
+MCP 手工回归工具：
+
+```powershell
+go run scripts\stress_mcp.go scripts\stress_mcp_types.go
+```
+
+该工具支持 MCP 工具清单检查、SSH/SFTP workspace 链路、并发请求、keep-alive 隔离、日志汇总和目标 profile IP 参数。后续 GUI 问题由实际使用记录，再按日志证据迭代。
+
+常规检查：
+
+```powershell
+cargo fmt -- --check
+cargo check
+git diff --check
+```

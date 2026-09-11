@@ -1,5 +1,6 @@
 mod core;
 mod event;
+pub mod model;
 mod session;
 mod sftp;
 mod ssh;

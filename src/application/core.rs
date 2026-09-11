@@ -3,10 +3,9 @@ use std::{
     sync::Arc,
 };
 
+use crate::{domain::session::Protocol, infrastructure::InfrastructureContext};
 use tokio::sync::broadcast;
 use uuid::Uuid;
-
-use crate::{data_context::InfrastructureContext, domain::session::Protocol};
 
 use super::{
     ApplicationEvent, ApplicationResult, SessionApplication, SftpApplication, SshApplication,

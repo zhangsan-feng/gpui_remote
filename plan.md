@@ -141,8 +141,8 @@ src/
 - [x] 已确认不让 MCP 持有 `App`、`AsyncApp`、`ApplicationContext` 或 `InfrastructureContext`。
 - [x] 已完成官方 GPUI/Zed/gpui-kit 数据流调研，确认目标是 `Global + Entity + read/update/notify/observe/subscribe`。
 - [ ] 创建并同步 `project.md`；当前仓库中该文件尚不存在。
-- [ ] 将基础设施上下文从旧位置迁移到 `src/infrastructure/context.rs`。
-- [ ] 将 application 共用模型、映射、校验和查询边界从 `src/data_context` 迁出。
+- [ ] 将基础设施上下文从旧位置迁移到 `src/infrastructure/context.rs`（上下文和 query 已迁移，旧兼容模块尚未删除）。
+- [ ] 将 application 共用模型、映射、校验和查询边界从 `src/data_context` 迁出（model/query 已迁移，mapping/validation 待迁移）。
 - [ ] 将应用状态重构为 application entity/store 图，并实现两个 Global 注册。
 - [ ] 建立不携带 GPUI 上下文的 MCP 类型化 bridge 和 GPUI 适配器。
 - [ ] 迁移 GUI 读写和订阅链，删除旧 facade。

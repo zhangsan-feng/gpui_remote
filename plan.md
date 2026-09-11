@@ -158,14 +158,14 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - `ApplicationCommand::ReadTerminal`、`SendText`、`SendKey` 的 workspace 字段改为 `String`，不再使用 `Option<String>`。
 - `ReadTerminalInput`、`SendTextInput`、`SendKeyInput` 的 `workspace_id` 改为必填字段。
 
-- [ ] 在 application API 内直接校验 workspace 存在、协议正确，再调用 SSH/SFTP service。
-- [ ] 删除 MCP 路径对 `selected_sftp_workspace` 和 `resolve_terminal_id` 的依赖；保留这些 helper 仅供仍然需要 GUI selected 状态的 application 调用。
-- [ ] 删除 MCP 的 `select_terminal` tool、`SelectTerminalInput`、`ApplicationCommand::SelectTerminal` 和对应 dispatch/API，因为 MCP 不应操作 GUI selected 状态。
-- [ ] 更新 tool 描述，明确所有终端和 SFTP workspace 操作必须使用 `workspace_id`。
-- [ ] 保持 `list_sftp_sessions`、`list_terminals`、`list_profiles` 等全局查询不需要 workspace ID。
-- [ ] 运行 `rg` 确认 MCP tools 不再发送 `Option<String>` 会话 ID或调用 GUI selection API。
-- [ ] 运行格式、编译和 diff 检查。
-- [ ] 提交：`refactor: make mcp workspace routing explicit`。
+- [x] 在 application API 内直接校验 workspace 存在、协议正确，再调用 SSH/SFTP service。
+- [x] 删除 MCP 路径对 `selected_sftp_workspace` 和 `resolve_terminal_id` 的依赖；保留这些 helper 仅供仍然需要 GUI selected 状态的 application 调用。
+- [x] 删除 MCP 的 `select_terminal` tool、`SelectTerminalInput`、`ApplicationCommand::SelectTerminal` 和对应 dispatch/API，因为 MCP 不应操作 GUI selected 状态。
+- [x] 更新 tool 描述，明确所有终端和 SFTP workspace 操作必须使用 `workspace_id`。
+- [x] 保持 `list_sftp_sessions`、`list_terminals`、`list_profiles` 等全局查询不需要 workspace ID。
+- [x] 运行 `rg` 确认 MCP tools 不再发送 `Option<String>` 会话 ID或调用 GUI selection API。
+- [x] 运行格式、编译和 diff 检查。
+- [x] 提交：`refactor: make mcp workspace routing explicit`。
 
 ### Task 4：实现全局入口与 per-workspace command router
 

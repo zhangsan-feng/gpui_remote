@@ -32,8 +32,8 @@ pub(crate) async fn dispatch(
             .list_sftp_sessions()
             .await
             .map(ApplicationResponse::TerminalSummaries),
-        ApplicationCommand::ListSftpLocal => application
-            .list_sftp_local()
+        ApplicationCommand::ListSftpLocal { workspace_id } => application
+            .list_sftp_local(workspace_id)
             .await
             .map(ApplicationResponse::SftpDirectory),
         ApplicationCommand::ChangeSftpLocalDirectory {
@@ -105,14 +105,6 @@ pub(crate) async fn dispatch(
             .list_terminals()
             .await
             .map(ApplicationResponse::TerminalSummaries),
-        ApplicationCommand::SelectTerminal {
-            workspace_id,
-            ip,
-            title,
-        } => application
-            .select_terminal(workspace_id, ip, title)
-            .await
-            .map(|_| ApplicationResponse::Empty),
         ApplicationCommand::ReadTerminal {
             workspace_id,
             offset,

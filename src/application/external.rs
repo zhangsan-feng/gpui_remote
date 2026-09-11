@@ -264,8 +264,11 @@ impl ApplicationContext {
         self.profile_query().await
     }
 
-    pub(crate) async fn list_sftp_local(&self) -> ApplicationResult<model::SftpDirectorySummary> {
-        let workspace_id = validation::selected_sftp_workspace(self)?;
+    pub(crate) async fn list_sftp_local(
+        &self,
+        workspace_id: String,
+    ) -> ApplicationResult<model::SftpDirectorySummary> {
+        validation::validate_session_protocol(self, &workspace_id, Protocol::Sftp)?;
         self.sftp()
             .list_local(&workspace_id)
             .await
@@ -303,23 +306,13 @@ impl ApplicationContext {
         Ok(mapping::list_terminals(self))
     }
 
-    pub(crate) async fn select_terminal(
-        &self,
-        workspace_id: String,
-        ip: String,
-        title: String,
-    ) -> ApplicationResult<()> {
-        validate_session(self, &workspace_id, Protocol::Ssh, &ip, &title)?;
-        self.select_session(Some(workspace_id)).await
-    }
-
     pub(crate) async fn read_terminal(
         &self,
-        workspace_id: Option<String>,
+        workspace_id: String,
         offset: usize,
         limit: usize,
     ) -> ApplicationResult<model::TerminalReadPage> {
-        let workspace_id = validation::resolve_terminal_id(self, workspace_id)?;
+        validation::validate_terminal_workspace(self, &workspace_id)?;
         self.ssh()
             .read(&workspace_id, offset, mapping::normalize_read_limit(limit))
             .await
@@ -335,10 +328,10 @@ impl ApplicationContext {
 
     pub(crate) async fn send_text(
         &self,
-        workspace_id: Option<String>,
+        workspace_id: String,
         text: String,
     ) -> ApplicationResult<()> {
-        let workspace_id = validation::resolve_terminal_id(self, workspace_id)?;
+        validation::validate_terminal_workspace(self, &workspace_id)?;
         self.ssh()
             .send_input(&workspace_id, text.into_bytes())
             .await
@@ -346,13 +339,13 @@ impl ApplicationContext {
 
     pub(crate) async fn send_key(
         &self,
-        workspace_id: Option<String>,
+        workspace_id: String,
         key: String,
         control: bool,
         alt: bool,
         shift: bool,
     ) -> ApplicationResult<()> {
-        let workspace_id = validation::resolve_terminal_id(self, workspace_id)?;
+        validation::validate_terminal_workspace(self, &workspace_id)?;
         self.ssh()
             .send_key(&workspace_id, &key, control, alt, shift)
             .await

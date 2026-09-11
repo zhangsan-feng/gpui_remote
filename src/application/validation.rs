@@ -2,29 +2,12 @@ use crate::{application::ApplicationContext, domain::session::Protocol};
 
 use super::ApplicationResult;
 
-pub(crate) fn selected_sftp_workspace(
+pub(crate) fn validate_terminal_workspace(
     application: &ApplicationContext,
-) -> ApplicationResult<String> {
-    let workspace_id = application
-        .sessions()
-        .selected_id()
-        .ok_or_else(|| "当前没有选中的 SFTP 会话".to_owned())?;
-    validate_session_protocol(application, &workspace_id, Protocol::Sftp)?;
-    Ok(workspace_id)
-}
-
-pub(crate) fn resolve_terminal_id(
-    application: &ApplicationContext,
-    workspace_id: Option<String>,
-) -> ApplicationResult<String> {
-    let workspace_id = workspace_id
-        .or_else(|| application.sessions().selected_id())
-        .ok_or_else(|| "当前没有选中的终端会话".to_owned())?;
-    validate_session_protocol(application, &workspace_id, Protocol::Ssh)?;
-    application
-        .ssh()
-        .snapshot(&workspace_id)
-        .map(|_| workspace_id)
+    workspace_id: &str,
+) -> ApplicationResult<()> {
+    validate_session_protocol(application, workspace_id, Protocol::Ssh)?;
+    application.ssh().snapshot(workspace_id).map(|_| ())
 }
 
 pub(crate) fn validate_session(

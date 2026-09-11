@@ -123,8 +123,14 @@ impl McpBridgeEndpoint {
             .await
     }
 
-    pub(crate) async fn list_sftp_local(&self) -> ApplicationResult<SftpDirectorySummary> {
-        match self.request(ApplicationCommand::ListSftpLocal).await? {
+    pub(crate) async fn list_sftp_local(
+        &self,
+        workspace_id: String,
+    ) -> ApplicationResult<SftpDirectorySummary> {
+        match self
+            .request(ApplicationCommand::ListSftpLocal { workspace_id })
+            .await?
+        {
             ApplicationResponse::SftpDirectory(directory) => Ok(directory),
             _ => Err("MCP application bridge 返回了错误的本地目录响应".to_owned()),
         }
@@ -285,23 +291,9 @@ impl McpBridgeEndpoint {
         }
     }
 
-    pub(crate) async fn select_terminal(
-        &self,
-        workspace_id: String,
-        ip: String,
-        title: String,
-    ) -> ApplicationResult<()> {
-        self.expect_empty(ApplicationCommand::SelectTerminal {
-            workspace_id,
-            ip,
-            title,
-        })
-        .await
-    }
-
     pub(crate) async fn read_terminal(
         &self,
-        workspace_id: Option<String>,
+        workspace_id: String,
         offset: usize,
         limit: usize,
     ) -> ApplicationResult<TerminalReadPage> {
@@ -320,7 +312,7 @@ impl McpBridgeEndpoint {
 
     pub(crate) async fn send_text(
         &self,
-        workspace_id: Option<String>,
+        workspace_id: String,
         text: String,
     ) -> ApplicationResult<()> {
         self.expect_empty(ApplicationCommand::SendText { workspace_id, text })
@@ -329,7 +321,7 @@ impl McpBridgeEndpoint {
 
     pub(crate) async fn send_key(
         &self,
-        workspace_id: Option<String>,
+        workspace_id: String,
         key: String,
         control: bool,
         alt: bool,

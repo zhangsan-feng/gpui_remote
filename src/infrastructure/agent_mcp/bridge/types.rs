@@ -28,7 +28,9 @@ pub(crate) enum ApplicationCommand {
         workspace_id: String,
     },
     ListSftpSessions,
-    ListSftpLocal,
+    ListSftpLocal {
+        workspace_id: String,
+    },
     ChangeSftpLocalDirectory {
         workspace_id: String,
         ip: String,
@@ -73,22 +75,17 @@ pub(crate) enum ApplicationCommand {
         title: String,
     },
     ListTerminals,
-    SelectTerminal {
-        workspace_id: String,
-        ip: String,
-        title: String,
-    },
     ReadTerminal {
-        workspace_id: Option<String>,
+        workspace_id: String,
         offset: usize,
         limit: usize,
     },
     SendText {
-        workspace_id: Option<String>,
+        workspace_id: String,
         text: String,
     },
     SendKey {
-        workspace_id: Option<String>,
+        workspace_id: String,
         key: String,
         control: bool,
         alt: bool,
@@ -103,7 +100,7 @@ impl ApplicationCommand {
             Self::OpenSession { .. } => "open_session",
             Self::CloseSession { .. } => "close_session",
             Self::ListSftpSessions => "list_sftp_sessions",
-            Self::ListSftpLocal => "list_sftp_local",
+            Self::ListSftpLocal { .. } => "list_sftp_local",
             Self::ChangeSftpLocalDirectory { .. } => "change_sftp_local_directory",
             Self::ListSftpRemote { .. } => "list_sftp_remote",
             Self::ChangeSftpRemoteDirectory { .. } => "change_sftp_remote_directory",
@@ -114,7 +111,6 @@ impl ApplicationCommand {
             Self::StopSftpLocalWatch { .. } => "stop_sftp_local_watch",
             Self::ListSftpLocalWatches { .. } => "list_sftp_local_watches",
             Self::ListTerminals => "list_terminals",
-            Self::SelectTerminal { .. } => "select_terminal",
             Self::ReadTerminal { .. } => "read_terminal",
             Self::SendText { .. } => "send_text",
             Self::SendKey { .. } => "send_key",
@@ -124,23 +120,22 @@ impl ApplicationCommand {
     pub(crate) fn workspace_id(&self) -> Option<&str> {
         match self {
             Self::CloseSession { workspace_id }
+            | Self::ListSftpLocal { workspace_id }
+            | Self::ChangeSftpLocalDirectory { workspace_id, .. }
             | Self::ListSftpRemote { workspace_id }
+            | Self::ChangeSftpRemoteDirectory { workspace_id, .. }
             | Self::UploadSftp { workspace_id, .. }
             | Self::DownloadSftp { workspace_id, .. }
             | Self::ListSftpTransfers { workspace_id }
             | Self::WatchSftpLocal { workspace_id, .. }
             | Self::StopSftpLocalWatch { workspace_id, .. }
             | Self::ListSftpLocalWatches { workspace_id, .. }
-            | Self::SelectTerminal { workspace_id, .. } => Some(workspace_id),
-            Self::ReadTerminal { workspace_id, .. }
+            | Self::ReadTerminal { workspace_id, .. }
             | Self::SendText { workspace_id, .. }
-            | Self::SendKey { workspace_id, .. } => workspace_id.as_deref(),
+            | Self::SendKey { workspace_id, .. } => Some(workspace_id),
             Self::ListProfiles
             | Self::OpenSession { .. }
             | Self::ListSftpSessions
-            | Self::ListSftpLocal
-            | Self::ChangeSftpLocalDirectory { .. }
-            | Self::ChangeSftpRemoteDirectory { .. }
             | Self::ListTerminals => None,
         }
     }

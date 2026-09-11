@@ -43,15 +43,8 @@ enum OpenSessionProtocol {
 }
 
 #[derive(Deserialize, JsonSchema)]
-struct SelectTerminalInput {
-    workspace_id: String,
-    ip: String,
-    title: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
 struct ReadTerminalInput {
-    workspace_id: Option<String>,
+    workspace_id: String,
     #[serde(default)]
     offset: usize,
     #[serde(default = "default_read_limit")]
@@ -100,13 +93,13 @@ struct SftpWatchListInput {
 
 #[derive(Deserialize, JsonSchema)]
 struct SendTextInput {
-    workspace_id: Option<String>,
+    workspace_id: String,
     text: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
 struct SendKeyInput {
-    workspace_id: Option<String>,
+    workspace_id: String,
     key: String,
     #[serde(default)]
     control: bool,
@@ -261,7 +254,7 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "List open SFTP sessions and identify the selected SFTP session.")]
+    #[tool(description = "List open SFTP sessions by workspace id.")]
     async fn list_sftp_sessions(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.bridge
             .list_sftp_sessions()
@@ -270,17 +263,20 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "List the local directory currently shown by the SFTP workspace.")]
-    async fn list_sftp_local(&self) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
+    #[tool(description = "List the local directory currently shown by an open SFTP workspace.")]
+    async fn list_sftp_local(
+        &self,
+        Parameters(input): Parameters<SftpWorkspaceInput>,
+    ) -> Result<Json<SftpDirectoryOutput>, ErrorData> {
         self.bridge
-            .list_sftp_local()
+            .list_sftp_local(input.workspace_id)
             .await
             .map(|directory| Json(directory.into()))
             .map_err(mcp_error)
     }
 
     #[tool(
-        description = "Change the local directory shown by an open SFTP workspace. The workspace must be selected in the GUI; ip and title must match the SFTP session."
+        description = "Change the local directory shown by the workspace_id SFTP session; ip and title must match the SFTP session."
     )]
     async fn change_sftp_local_directory(
         &self,
@@ -320,7 +316,7 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Queue one or more local files or directories for upload to the current remote SFTP directory."
+        description = "Queue one or more local files or directories for upload to the identified workspace's current remote SFTP directory."
     )]
     async fn upload_sftp(
         &self,
@@ -334,7 +330,7 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Queue one or more entries from the current remote SFTP directory for download to the current local directory."
+        description = "Queue one or more entries from the identified workspace's current remote SFTP directory for download to its current local directory."
     )]
     async fn download_sftp(
         &self,
@@ -399,9 +395,7 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(
-        description = "List open SSH terminal sessions and identify the selected terminal session."
-    )]
+    #[tool(description = "List open SSH terminal sessions by workspace id.")]
     async fn list_terminals(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.bridge
             .list_terminals()
@@ -411,21 +405,7 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Switch the GUI to an open terminal top_session after verifying its ip and title."
-    )]
-    async fn select_terminal(
-        &self,
-        Parameters(input): Parameters<SelectTerminalInput>,
-    ) -> Result<Json<ActionOutput>, ErrorData> {
-        self.bridge
-            .select_terminal(input.workspace_id, input.ip, input.title)
-            .await
-            .map(|()| Json(ActionOutput { success: true }))
-            .map_err(mcp_error)
-    }
-
-    #[tool(
-        description = "Read terminal output without changing GUI scroll position. Offset counts lines back from the newest output."
+        description = "Read terminal output for an SSH workspace without changing GUI scroll position. Offset counts lines back from the newest output."
     )]
     async fn read_terminal(
         &self,
@@ -438,7 +418,7 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
-    #[tool(description = "Send UTF-8 text to a terminal top_session.")]
+    #[tool(description = "Send UTF-8 text to an SSH workspace terminal.")]
     async fn send_text(
         &self,
         Parameters(input): Parameters<SendTextInput>,

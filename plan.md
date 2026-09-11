@@ -129,7 +129,7 @@ src/
 └─ main.rs                            # 初始化基础设施、application、Global、bridge、GUI
 ```
 
-当前 `src/data_context` 目录在迁移完成后删除。当前 `src/infrastructure/data_context` 的 profile query 组合迁移到 `src/infrastructure/context.rs` 与 `src/infrastructure/profile_query.rs`。如果某个目标文件超过 800 行，按 session、ssh、sftp、bridge 等责任拆成目录，`mod.rs` 只保留声明、导出和初始化。
+`src/data_context` 和 `src/infrastructure/data_context` 已删除；profile query 组合位于 `src/infrastructure/context.rs` 与 `src/infrastructure/profile_query.rs`。如果某个目标文件超过 800 行，按 session、ssh、sftp、bridge 等责任拆成目录，`mod.rs` 只保留声明、导出和初始化。
 
 ---
 

@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use gpui_kit::*;
 
+use crate::application::ApplicationContext;
+
 use super::super::SftpView;
 
 impl SftpView {
@@ -34,7 +36,8 @@ impl SftpView {
             path.display()
         );
 
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let path_text = path.display().to_string();
         cx.spawn(async move |this, cx| {
             let result = application
@@ -53,7 +56,7 @@ impl SftpView {
                     this.local.loading = false;
                     this.local.error = Some(error);
                 }
-                this.sync_application_state();
+                this.sync_application_state(cx);
                 cx.notify();
             });
         })
@@ -74,13 +77,13 @@ impl SftpView {
     pub(in crate::gui::workspace::sftp) fn restore_local_path(
         &mut self,
         workspace_id: &str,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         if !claim_local_restore(&mut self.local_restore_requests, workspace_id) {
             log::debug!("SFTP 本地目录恢复请求已处理，跳过重复恢复: workspace={workspace_id}");
             return;
         }
-        self.sync_application_state();
+        self.sync_application_state(cx);
         self.local_selection.clear();
         self.local_list_state.reset_with_uniform_height(0, px(38.));
         self.local_restore_requests.remove(workspace_id);
@@ -99,7 +102,8 @@ impl SftpView {
         else {
             return;
         };
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace_id = workspace_id.to_owned();
         let path = path.to_owned();
         log::debug!(

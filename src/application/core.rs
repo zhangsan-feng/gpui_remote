@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{domain::session::Protocol, infrastructure::InfrastructureContext};
-use gpui_kit::Global;
+use gpui_kit::{App, AppContext, Global};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -47,7 +47,9 @@ pub struct ApplicationContext {
 impl Global for ApplicationContext {}
 
 impl ApplicationContext {
-    pub fn new(infrastructure: InfrastructureContext) -> Self {
+    pub fn new(cx: &mut App) -> Self {
+        let infrastructure =
+            cx.read_global::<InfrastructureContext, _>(|infrastructure, _| infrastructure.clone());
         let (events, _) = broadcast::channel(APPLICATION_EVENT_CAPACITY);
         Self {
             inner: Arc::new(ApplicationContextInner {

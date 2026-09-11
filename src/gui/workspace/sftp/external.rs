@@ -8,6 +8,7 @@ use std::{
 use gpui_kit::*;
 
 use crate::{
+    application::ApplicationContext,
     application::model::{SftpDirectorySummary, SftpTransferInfo},
     domain::{session::Protocol, terminal::TerminalStatus},
     global_state::{GlobalEvent, read_global_state},
@@ -16,13 +17,15 @@ use crate::{
 use super::{SftpStatus, SftpView};
 
 impl SftpView {
-    pub(super) fn sync_application_state(&mut self) {
+    pub(super) fn sync_application_state(&mut self, cx: &mut Context<Self>) {
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace_ids = self.projections.keys().cloned().collect::<Vec<_>>();
         for workspace_id in workspace_ids {
             let Some(projection) = self.projections.get(&workspace_id) else {
                 continue;
             };
-            if let Ok(watches) = self.application.list_sftp_local_watches(
+            if let Ok(watches) = application.list_sftp_local_watches(
                 workspace_id.clone(),
                 projection.profile_ip.clone(),
                 projection.profile_title.clone(),
@@ -35,15 +38,14 @@ impl SftpView {
                         .collect::<HashMap<_, _>>(),
                 );
             }
-            let Ok(revision) = self.application.sftp_revision(&workspace_id) else {
+            let Ok(revision) = application.sftp_revision(&workspace_id) else {
                 continue;
             };
             if self.remote_revisions.get(&workspace_id) == Some(&revision) {
                 continue;
             }
-            if let Ok(summary) = self.application.sftp_snapshot(&workspace_id) {
-                let status = self
-                    .application
+            if let Ok(summary) = application.sftp_snapshot(&workspace_id) {
+                let status = application
                     .sftp_connection_status(&workspace_id)
                     .ok()
                     .map(to_sftp_status)
@@ -56,10 +58,10 @@ impl SftpView {
         }
 
         if let Some(workspace_id) = self.selected_workspace_id.as_deref() {
-            if let Ok(summary) = self.application.sftp_local_snapshot(workspace_id) {
+            if let Ok(summary) = application.sftp_local_snapshot(workspace_id) {
                 self.local = to_local_snapshot(summary);
             }
-            if let Ok(transfers) = self.application.sftp_transfers_snapshot(workspace_id) {
+            if let Ok(transfers) = application.sftp_transfers_snapshot(workspace_id) {
                 *self
                     .transfers
                     .write()
@@ -93,7 +95,7 @@ impl SftpView {
                     {
                         this.restore_local_path(workspace_id, cx);
                     }
-                    this.sync_application_state();
+                    this.sync_application_state(cx);
                 }
                 GlobalEvent::CloseWorkspaceSession { workspace_id } => {
                     this.close(workspace_id);
@@ -107,13 +109,6 @@ impl SftpView {
 
     pub(in crate::gui::workspace) fn status_updates(&self) -> Arc<tokio::sync::Notify> {
         self.status_updates.clone()
-    }
-
-    pub(in crate::gui::workspace) fn connection_status(
-        &self,
-        workspace_id: &str,
-    ) -> Option<TerminalStatus> {
-        self.application.sftp_connection_status(workspace_id).ok()
     }
 }
 

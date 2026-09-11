@@ -1,6 +1,9 @@
-use gpui_kit::Context;
+use gpui_kit::{AppContext, Context};
 
-use crate::global_state::{GlobalEvent, read_global_state};
+use crate::{
+    application::ApplicationContext,
+    global_state::{GlobalEvent, read_global_state},
+};
 
 use super::Workspace;
 
@@ -10,7 +13,8 @@ impl Workspace {
         let event_source = global_state.clone();
         cx.subscribe(&event_source, move |this, _, event, cx| match event {
             GlobalEvent::OpenWorkspaceSession(profile) => {
-                let application = this.application.clone();
+                let application =
+                    cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
                 let profile_id = profile.id.clone();
                 let protocol = profile.protocol;
                 let ip = profile.host.clone();
@@ -38,7 +42,8 @@ impl Workspace {
                 .detach();
             }
             GlobalEvent::CloseWorkspaceSession { workspace_id } => {
-                let application = this.application.clone();
+                let application =
+                    cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
                 let workspace_id = workspace_id.clone();
                 cx.spawn(async move |_this, _cx| {
                     if let Err(error) = application.close_session(&workspace_id).await {
@@ -49,7 +54,8 @@ impl Workspace {
             }
             GlobalEvent::SelectWorkspaceSession(workspace_id) => {
                 this.select_workspace(workspace_id.as_deref(), cx);
-                let application = this.application.clone();
+                let application =
+                    cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
                 let workspace_id = workspace_id.clone();
                 cx.spawn(async move |_this, _cx| {
                     if let Err(error) = application.select_session(workspace_id).await {

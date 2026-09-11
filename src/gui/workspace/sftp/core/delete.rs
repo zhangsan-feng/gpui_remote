@@ -1,5 +1,7 @@
 use gpui_kit::*;
 
+use crate::application::ApplicationContext;
+
 use super::super::{DeleteLocalEntry, DeleteRemoteEntry, SftpView};
 
 impl SftpView {
@@ -27,7 +29,8 @@ impl SftpView {
         );
         cx.notify();
 
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         cx.spawn(async move |this, cx| {
             let result = application
                 .delete_sftp_local_paths(workspace_id, paths)
@@ -40,7 +43,7 @@ impl SftpView {
                 if let Err(error) = result {
                     this.local.error = Some(error);
                 }
-                this.sync_application_state();
+                this.sync_application_state(cx);
                 cx.notify();
             });
         })
@@ -65,7 +68,8 @@ impl SftpView {
         let items = action.items.clone();
         let count = items.len();
         let refresh_path = snapshot.path;
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         self.remote_selection.clear();
         log::debug!(
             "SFTP 批量删除远程路径加入队列: workspace_id={}, count={}, directory={refresh_path}",

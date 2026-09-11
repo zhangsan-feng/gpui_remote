@@ -101,7 +101,6 @@ struct SftpProjection {
 }
 
 pub(in crate::gui::workspace) struct SftpView {
-    application: ApplicationContext,
     projections: HashMap<String, SftpProjection>,
     local_watchers: HashMap<String, HashMap<PathBuf, SftpWatchSummary>>,
     remote_revisions: HashMap<String, u64>,
@@ -285,7 +284,7 @@ impl SftpView {
             loop {
                 model_updates.notified().await;
                 let result = this.update(cx, |this, cx| {
-                    this.sync_application_state();
+                    this.sync_application_state(cx);
                     cx.notify();
                 });
                 if result.is_err() {
@@ -296,7 +295,6 @@ impl SftpView {
         .detach();
 
         let this = Self {
-            application,
             projections: HashMap::new(),
             local_watchers: HashMap::new(),
             remote_revisions: HashMap::new(),

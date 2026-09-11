@@ -6,7 +6,8 @@ use crate::domain::session::SessionProfile;
 pub enum GlobalEvent {
     CreateSession,
     UpdateSession,
-    OpenWorkspaceSession(String, SessionProfile),
+    OpenWorkspaceSession(SessionProfile),
+    WorkspaceSessionOpened(String, SessionProfile),
     SelectWorkspaceSession(Option<String>),
     CloseWorkspaceSession { workspace_id: String },
     ThemeColorChanged,

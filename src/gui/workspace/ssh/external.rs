@@ -38,7 +38,7 @@ mod lifecycle {
             let global_state = read_global_state(cx);
             cx.subscribe(&global_state, |this, _, event, cx| {
                 match event {
-                    GlobalEvent::OpenWorkspaceSession(workspace_id, profile) => {
+                    GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
                         if profile.protocol == crate::domain::session::Protocol::Ssh {
                             this.connect_projection(workspace_id.clone(), profile.clone());
                         }

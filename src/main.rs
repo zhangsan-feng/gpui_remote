@@ -6,7 +6,6 @@
 pub(crate) mod application;
 mod build_info;
 mod component;
-mod data_context;
 mod domain;
 mod global_state;
 mod gui;
@@ -170,11 +169,13 @@ async fn main() {
                 app.new(|cx| {
                     let storage = infrastructure::storage::Storage::new();
                     let infrastructure = infrastructure::new(storage.session.clone());
-                    let application = application::ApplicationContext::new(infrastructure.clone());
                     cx.set_global(storage);
                     cx.set_global(infrastructure);
+                    info!("infrastructure_global_registered");
+
+                    let application = application::ApplicationContext::new(cx);
                     cx.set_global(application);
-                    info!("application and infrastructure globals registered");
+                    info!("application_global_registered");
 
                     let (mcp_bridge, mcp_receiver) = infrastructure::agent_mcp::bridge::new();
                     application::start_mcp_bridge(cx, mcp_receiver);

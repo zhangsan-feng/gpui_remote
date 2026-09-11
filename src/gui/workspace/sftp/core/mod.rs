@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::domain::session::SessionProfile;
+use crate::{application::ApplicationContext, domain::session::SessionProfile};
 use gpui_kit::*;
 
 use super::{
@@ -57,7 +57,8 @@ impl SftpView {
         self.persisted_remote_paths
             .insert(workspace_id.clone(), path.to_owned());
         let path = path.to_owned();
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         log::debug!(
             "SFTP 远程目录路径变化，准备保存: session={}, path={}",
             profile_id,
@@ -130,7 +131,8 @@ impl SftpView {
             .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace_id = workspace_id.to_owned();
         cx.spawn(async move |_this, _cx| {
             if let Err(error) = application
@@ -160,7 +162,8 @@ impl SftpView {
         if !self.projections.contains_key(workspace_id) {
             return;
         }
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let task_workspace_id = workspace_id.to_owned();
         let path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
@@ -170,7 +173,7 @@ impl SftpView {
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.sync_application_state();
+                        this.sync_application_state(cx);
                         cx.notify();
                     });
                 }
@@ -215,7 +218,8 @@ impl SftpView {
         if !self.projections.contains_key(workspace_id) {
             return;
         }
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let task_workspace_id = workspace_id.to_owned();
         cx.spawn(async move |this, cx| {
             match application
@@ -224,7 +228,7 @@ impl SftpView {
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.sync_application_state();
+                        this.sync_application_state(cx);
                         cx.notify();
                     });
                 }
@@ -254,7 +258,8 @@ impl SftpView {
         else {
             return;
         };
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace_id = record.workspace_id.clone();
         cx.spawn(async move |this, cx| {
             if let Err(error) = application
@@ -264,7 +269,7 @@ impl SftpView {
                 log::warn!("取消 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.sync_application_state();
+                this.sync_application_state(cx);
                 cx.notify();
             });
         })
@@ -291,7 +296,8 @@ impl SftpView {
             return;
         }
         let workspace_id = record.workspace_id.clone();
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         cx.spawn(async move |this, cx| {
             if let Err(error) = application
                 .retry_sftp_transfer(workspace_id, record.id)
@@ -300,7 +306,7 @@ impl SftpView {
                 log::warn!("重试 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.sync_application_state();
+                this.sync_application_state(cx);
                 cx.notify();
             });
         })

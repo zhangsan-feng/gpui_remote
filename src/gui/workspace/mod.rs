@@ -8,14 +8,12 @@ mod ui;
 
 use gpui_kit::*;
 
-use crate::application::ApplicationContext;
 use crate::domain::session::Protocol;
 use sftp::SftpView;
 use ssh::TerminalView;
 use top_session::WorkspaceSession;
 
 pub struct Workspace {
-    application: ApplicationContext,
     workspace: Entity<WorkspaceSession>,
     terminal: Entity<TerminalView>,
     sftp: Entity<SftpView>,
@@ -25,14 +23,11 @@ pub struct Workspace {
 impl Workspace {
     pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         ssh::init(cx);
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace = cx.new(|cx| WorkspaceSession::new(cx));
         let terminal = cx.new(TerminalView::new);
         let sftp = cx.new(SftpView::new);
 
         let this = Self {
-            application,
             workspace,
             terminal,
             sftp,

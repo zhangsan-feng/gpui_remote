@@ -1,5 +1,7 @@
 use gpui_kit::*;
 
+use crate::application::ApplicationContext;
+
 use super::super::*;
 
 impl TerminalView {
@@ -29,16 +31,18 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) {
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace_ids = self.models.keys().cloned().collect::<Vec<_>>();
         for workspace_id in workspace_ids {
-            let Ok(revision) = self.application.terminal_revision(&workspace_id) else {
+            let Ok(revision) = application.terminal_revision(&workspace_id) else {
                 continue;
             };
             let Some(model) = self.models.get(&workspace_id) else {
                 continue;
             };
             if model.revision() != revision {
-                if let Ok(data) = self.application.terminal_snapshot(&workspace_id) {
+                if let Ok(data) = application.terminal_snapshot(&workspace_id) {
                     model.replace(data, revision);
                 }
             }

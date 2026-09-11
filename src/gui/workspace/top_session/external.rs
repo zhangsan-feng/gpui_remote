@@ -13,7 +13,7 @@ impl WorkspaceSession {
     pub(super) fn start_subscribe(&self, cx: &mut Context<Self>) {
         let global_state = read_global_state(cx);
         cx.subscribe(&global_state, |this, _, event, cx| match event {
-            GlobalEvent::OpenWorkspaceSession(workspace_id, profile) => {
+            GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
                 this.open(workspace_id.clone(), profile.clone(), cx);
             }
             _ => {}

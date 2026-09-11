@@ -1,10 +1,8 @@
-use gpui_kit::Context;
-use uuid::Uuid;
-
 use crate::{
     domain::session::SessionProfile,
     global_state::{GlobalEvent, read_global_state},
 };
+use gpui_kit::Context;
 
 use super::SessionComponent;
 
@@ -29,9 +27,8 @@ impl SessionComponent {
     }
 
     pub(super) fn open_workspace(&self, profile: SessionProfile, cx: &mut Context<Self>) {
-        let workspace_id = Uuid::new_v4().to_string();
         read_global_state(cx).update(cx, |_, cx| {
-            cx.emit(GlobalEvent::OpenWorkspaceSession(workspace_id, profile));
+            cx.emit(GlobalEvent::OpenWorkspaceSession(profile));
         });
     }
 }

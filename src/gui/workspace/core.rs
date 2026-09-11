@@ -1,6 +1,6 @@
-use gpui_kit::Context;
+use gpui_kit::{AppContext, Context};
 
-use crate::domain::session::Protocol;
+use crate::{application::ApplicationContext, domain::session::Protocol};
 
 use super::{Workspace, top_session::terminal_statuses};
 
@@ -20,12 +20,14 @@ impl Workspace {
     }
 
     pub(super) fn refresh_session_statuses(&self, cx: &mut Context<Self>) {
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let statuses = terminal_statuses(self.workspace.read(cx).sessions(), |id| {
             self.terminal
                 .read(cx)
                 .model(id)
                 .map(|model| model.read().status.clone())
-                .or_else(|| self.sftp.read(cx).connection_status(id))
+                .or_else(|| application.sftp_connection_status(id).ok())
         });
         self.workspace
             .update(cx, |workspace, cx| workspace.update_statuses(statuses, cx));

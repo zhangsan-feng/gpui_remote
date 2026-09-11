@@ -5,6 +5,8 @@ use std::{
 
 use gpui_kit::*;
 
+use crate::application::ApplicationContext;
+
 use super::super::{SftpView, StopWatchingLocalPath, WatchLocalPath};
 
 impl SftpView {
@@ -49,7 +51,8 @@ impl SftpView {
         };
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let task_workspace_id = workspace_id.to_owned();
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
@@ -90,7 +93,8 @@ impl SftpView {
         let Some(projection) = self.projections.get(&workspace_id) else {
             return;
         };
-        let application = self.application.clone();
+        let application =
+            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
         let local_path = action.0.clone();

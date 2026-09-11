@@ -32,7 +32,6 @@ struct PasteTerminal;
 
 pub(super) struct TerminalView {
     models: HashMap<String, Arc<TerminalModel>>,
-    application: ApplicationContext,
     selected_workspace_id: Option<String>,
     updates: Arc<tokio::sync::Notify>,
     status_updates: Arc<tokio::sync::Notify>,
@@ -66,7 +65,6 @@ impl TerminalView {
 
         let this = Self {
             models: HashMap::new(),
-            application,
             selected_workspace_id: None,
             updates,
             status_updates,

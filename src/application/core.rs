@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{domain::session::Protocol, infrastructure::InfrastructureContext};
+use gpui_kit::Global;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -42,6 +43,8 @@ impl From<String> for UpdateSftpPath {
 pub struct ApplicationContext {
     inner: Arc<ApplicationContextInner>,
 }
+
+impl Global for ApplicationContext {}
 
 impl ApplicationContext {
     pub fn new(infrastructure: InfrastructureContext) -> Self {

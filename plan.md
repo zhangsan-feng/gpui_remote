@@ -106,13 +106,13 @@ Application events ─> independent notification forwarder ─> MCP broadcast
 - `bridge::start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver)` 继续作为 `InfrastructureContext::start_mcp` 使用的入口。
 - `dispatch(application, command)` 的响应映射保持现有 `ApplicationResponse` 类型和 correlation ID 行为。
 
-- [ ] 将现有 envelope、命令、响应、通知类型移入 `types.rs`，保持字段名和可见性。
-- [ ] 将 endpoint 的发送和 typed helper 移入 `endpoint.rs`，只保留 command channel 操作。
-- [ ] 将 `dispatch` 移入 `dispatch.rs`，不改变 application API 调用顺序。
-- [ ] 将 GPUI adapter 移入 `adapter.rs`，暂时保留单 worker 行为作为拆分后的基准。
-- [ ] 更新所有 `use super::bridge::*` 和 `use crate::infrastructure::agent_mcp::bridge::*` 路径。
-- [ ] 运行 `cargo fmt -- --check`、`cargo check`、`git diff --check`，确认拆分没有行为变化。
-- [ ] 提交：`refactor: split mcp bridge responsibilities`。
+- [x] 将现有 envelope、命令、响应、通知类型移入 `types.rs`，保持字段名和可见性。
+- [x] 将 endpoint 的发送和 typed helper 移入 `endpoint.rs`，只保留 command channel 操作。
+- [x] 将 `dispatch` 移入 `dispatch.rs`，不改变 application API 调用顺序。
+- [x] 将 GPUI adapter 移入 `adapter.rs`，暂时保留单 worker 行为作为拆分后的基准。
+- [x] 更新所有 `use super::bridge::*` 和 `use crate::infrastructure::agent_mcp::bridge::*` 路径。
+- [x] 运行 `cargo fmt -- --check`、`cargo check`、`git diff --check`，确认拆分没有行为变化。
+- [x] 提交：`refactor: split mcp bridge responsibilities`。
 
 ### Task 2：增加命令耗时和排队观测
 

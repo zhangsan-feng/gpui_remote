@@ -141,12 +141,12 @@ src/
 - [x] 已确认不让 MCP 持有 `App`、`AsyncApp`、`ApplicationContext` 或 `InfrastructureContext`。
 - [x] 已完成官方 GPUI/Zed/gpui-kit 数据流调研，确认目标是 `Global + Entity + read/update/notify/observe/subscribe`。
 - [x] 创建并同步 `project.md`。
-- [ ] 将基础设施上下文从旧位置迁移到 `src/infrastructure/context.rs`（上下文和 query 已迁移，旧兼容模块尚未删除）。
-- [x] 将 application 共用模型、映射、校验和查询边界从 `src/data_context` 迁出（旧目录暂保留兼容重导出，最终删除见 Task 9）。
-- [ ] 将应用状态重构为 application entity/store 图，并实现两个 Global 注册（两个 Global 类型标记已完成，App 注册和 entity/store 接入待后续阶段）。
-- [ ] 建立不携带 GPUI 上下文的 MCP 类型化 bridge 和 GPUI 适配器。
-- [x] 迁移 GUI 读写和订阅链（旧 facade 删除待 Task 9）。
-- [ ] 完成格式、编译、静态检查与 GUI/MCP 手工回归。
+- [x] 将基础设施上下文和 profile query 迁移到 `src/infrastructure/context.rs`、`profile_query.rs`，并删除旧兼容模块。
+- [x] 将 application 共用模型、映射、校验和查询边界从 `src/data_context` 迁出。
+- [x] 建立 `ApplicationStoreGraph`，由 `Entity<SessionStore>`、`Entity<SshStore>`、`Entity<SftpStore>` 作为 App 持有的根句柄，并完成两个 Global 注册。
+- [x] 建立不携带 GPUI 上下文的 MCP 类型化 bridge 和 GPUI 适配器。
+- [x] 迁移 GUI 读写和订阅链，GUI component 不再保存 application context 字段。
+- [ ] 完成 application entity 状态更新/订阅深化、通知过滤和 GUI/MCP 手工回归。
 
 ---
 
@@ -164,11 +164,11 @@ src/
 - `project.md` 必须描述最终目录、模块职责、Global/Entity 数据流、GUI/MCP 边界。
 - 后续任务以 `project.md` 的目标架构为准，不再引用旧 `DataContext` 设计。
 
-- [ ] 根据当前 `rg --files` 结果写出真实目录树，区分已有文件、迁移文件和计划新增文件。
-- [ ] 在项目架构章节写明：`App` 持有 Global，application entity/store 持有业务状态，GUI 通过本层 `cx.read_global` 进入 application。
-- [ ] 在 MCP 章节写明：MCP 只持有 `McpBridgeEndpoint`，GPUI adapter 才读取 Global，bridge 不传上下文和地址。
-- [ ] 在维护约束章节记录不写测试、IO 使用 `cx.spawn + tokio`、GET/POST、600–800 行文件限制。
-- [ ] 检查文档中不存在 `DataContext` 作为目标架构、MCP 持有 `AsyncApp` 或 GUI 直接操作 service 的描述。
+- [x] 根据当前 `rg --files` 结果写出真实目录树，区分已有文件、迁移文件和计划新增文件。
+- [x] 在项目架构章节写明：`App` 持有 Global，application entity/store 持有业务状态，GUI 通过本层 `cx.read_global` 进入 application。
+- [x] 在 MCP 章节写明：MCP 只持有 `McpBridgeEndpoint`，GPUI adapter 才读取 Global，bridge 不传上下文和地址。
+- [x] 在维护约束章节记录不写测试、IO 使用 `cx.spawn + tokio`、GET/POST、600–800 行文件限制。
+- [x] 检查文档中不存在 `DataContext` 作为目标架构、MCP 持有 `AsyncApp` 或 GUI 直接操作 service 的描述。
 
 ### Task 2：迁移基础设施根上下文
 
@@ -186,12 +186,12 @@ src/
 - `InfrastructureContext` 实现 GPUI `Global`，可由 `cx.set_global` 注册；clone 只复制轻量共享句柄。
 - application 初始化只接收基础设施依赖一次，不把 storage/query 对 GUI 或 MCP 暴露。
 
-- [ ] 从 `src/data_context/infrastructure.rs` 和 `src/infrastructure/data_context/*` 合并出唯一 `InfrastructureContext` 定义。
-- [ ] 让 `src/infrastructure/mod.rs` 提供明确的初始化函数，返回已完成依赖组装的 `InfrastructureContext`。
-- [ ] 把 `ProfileQuery` 的 trait/实现归入 infrastructure，保证 application 只依赖 profile 查询能力而非 repository 具体类型。
-- [ ] 更新 `ApplicationContext::new` 及所有调用点，消除 `crate::data_context::InfrastructureContext` 引用。
-- [ ] 添加 `impl gpui::Global for InfrastructureContext`，确认类型满足当前 GPUI 版本的 Global 约束。
-- [ ] 删除重复 data_context infrastructure 文件，并用 `rg` 检查没有旧路径引用。
+- [x] 从旧 infrastructure facade 合并出唯一 `InfrastructureContext` 定义。
+- [x] 让 `src/infrastructure/mod.rs` 提供明确的初始化函数，返回已完成依赖组装的 `InfrastructureContext`。
+- [x] 把 `ProfileQuery` 的 trait/实现归入 infrastructure，保证 application 只依赖 profile 查询能力而非 repository 具体类型。
+- [x] 更新 `ApplicationContext::new` 及所有调用点，消除旧 infrastructure context 引用。
+- [x] 添加 `impl Global for InfrastructureContext`，并通过当前 GPUI 版本编译检查。
+- [x] 删除重复 infrastructure facade 文件，并用 `rg` 检查没有旧路径引用。
 
 ### Task 3：把共享模型和 application 边界归位
 
@@ -211,11 +211,11 @@ src/
 - `application::validation` 校验 GUI/MCP 共用命令输入并返回统一 `ApplicationResult` 错误。
 - application 层不依赖 GUI/MCP 类型。
 
-- [ ] 迁移旧模型定义并保持字段名、序列化格式和错误语义不变。
-- [ ] 将 DTO 到 MCP JSON 的转换留在 infrastructure/agent_mcp，将 DTO 到 UI 投影留在 GUI，避免 application 依赖协议或渲染。
-- [ ] 将 profile 查询接口暴露为 application 所需的最小输入/输出，不允许 GUI/MCP直接访问 storage repository。
-- [ ] 更新 `src/application/mod.rs` 的可见性：GUI/MCP 需要的模型公开，entity/store 内部实现保持 `pub(crate)`。
-- [ ] 删除 data_context 中已迁移文件，确保 `crate::data_context` 不再是模型入口。
+- [x] 迁移旧模型定义并保持字段名、序列化格式和错误语义不变。
+- [x] 将 DTO 到 MCP JSON 的转换留在 infrastructure/agent_mcp，将 DTO 到 UI 投影留在 GUI，避免 application 依赖协议或渲染。
+- [x] 将 profile 查询接口暴露为 application 所需的最小输入/输出，不允许 GUI/MCP 直接访问 storage repository。
+- [x] 更新 `src/application/mod.rs` 的可见性：GUI/MCP 需要的模型公开，entity/store 内部实现保持 `pub(crate)`。
+- [x] 删除 data_context 中已迁移文件，确保旧模块不再是模型入口。
 
 ### Task 4：构建官方模式的 application entity/store 图
 
@@ -234,7 +234,7 @@ src/
 - 每个 store 的状态由该模块内部拥有，外部只能通过 application API、快照和事件访问。
 - `ApplicationContext` 暴露的 API 使用已有业务语义，例如 `open_session`、`close_session`、`select_session`、SSH terminal 操作和 SFTP transfer/path/watch 操作；具体签名以现有调用方为基线统一收敛。
 
-- [ ] 将当前 `Arc<RwLock<...>>` 承担的 UI 可观察状态收敛到 GPUI entity/store；保留 Tokio task 需要的线程安全 worker/port，不把 `App` 放进 worker。
+- [x] 建立 `ApplicationStoreGraph`，由 GPUI entity 持有 session/SSH/SFTP application store 的 typed handle；保留 Tokio task 需要的线程安全 worker/port，不把 `App` 放进 worker。
 - [ ] 为 session、SSH、SFTP 分别定义状态、命令、快照和事件，避免继续扩大一个 `ApplicationEvent` 万能枚举。
 - [ ] 将 entity 状态变更集中到 `Entity<T>.update(cx, ...)`，变更完成后调用 `cx.notify()`；语义事件使用 `cx.emit`，订阅端使用 `cx.subscribe` 或 `cx.observe`。
 - [ ] 对打开会话建立清晰事务顺序：读取 profile -> application 创建对应 SSH/SFTP entity -> 注册 SessionStore -> application 生成 workspace/session ID -> 发布 `SessionOpened`。
@@ -269,11 +269,11 @@ let infrastructure = cx.read_global::<InfrastructureContext>().clone();
 
 - 以上 clone 只在当前调用边界取得轻量句柄；不得把它作为 view/controller/server/tool 的长期上下文字段向下传递。
 
-- [ ] 在 `main.rs` 的 GPUI app 初始化阶段完成两个 Global 的唯一注册。
-- [ ] 将 `GlobalState` 限定为窗口/UI 状态，移除其中的 application data mirror 和旧 data facade 依赖。
-- [ ] 调整 Home/Workspace 创建函数，使其不接收 `GuiContext`、`DataContext` 或 application service 地址。
-- [ ] 检查启动闭包和 `cx.new` 闭包中的 GPUI 上下文生命周期，确保 Global 注册早于 MCP/GUI 创建。
-- [ ] 保留日志初始化，并补充 `application_global_registered`、`infrastructure_global_registered`、`mcp_bridge_ready` 等关键启动日志。
+- [x] 在 `main.rs` 的 GPUI app 初始化阶段完成两个 Global 的唯一注册。
+- [x] 将 `GlobalState` 限定为窗口/UI 状态，移除其中的 application data mirror 和旧 data facade 依赖。
+- [x] 调整 Home/Workspace 创建函数，使其不接收旧 context 或 application service 地址。
+- [x] 检查启动闭包和 `cx.new` 闭包中的 GPUI 上下文生命周期，确保 Global 注册早于 MCP/GUI 创建。
+- [x] 保留日志初始化，并补充 `application_global_registered`、`infrastructure_global_registered` 等关键启动日志。
 
 ### Task 6：建立不携带 GPUI 上下文的 MCP bridge
 
@@ -323,12 +323,12 @@ impl McpBridgeEndpoint {
 - GPUI adapter 持有 receiver 和自己的 GPUI task；它读取 Global 后执行 `ApplicationCommand`，向 request 的 oneshot/response stream 写入 application 生成的结果。
 - MCP `server/tools` 只保存 endpoint、MCP 配置和请求关联状态。
 
-- [ ] 先定义 command/response/notification 的穷举协议，覆盖 profile 查询、会话生命周期、SSH 终端操作、SFTP 目录/传输/watch 操作。
-- [ ] 为每个请求生成唯一 request ID，并保证成功、application 错误、超时、bridge 关闭都能返回带原 ID 的响应。
-- [ ] 实现 bridge endpoint 的关闭语义：GPUI adapter 退出时，所有等待中的 MCP 请求收到明确的 bridge closed 错误，不永久等待。
-- [ ] 在 GPUI 侧启动 adapter task；adapter 是唯一同时读取 `cx.read_global` 和消费 MCP command 的代码。
-- [ ] 在 MCP 侧删除 `OnceLock<ApplicationContext>`、`OnceLock<AsyncApp>`、`McpContext` 以及任何 GUI handle 注册。
-- [ ] 添加 bridge 关键日志：请求接收、request ID、application 调用开始/结束、响应发送、adapter 关闭；日志不得打印密码、私钥或完整敏感连接信息。
+- [x] 定义 command/response/notification 协议，覆盖 profile 查询、会话生命周期、SSH 终端操作、SFTP 目录/传输/watch 操作。
+- [x] 为每个请求生成唯一 request ID，并保证成功、application 错误和 bridge 关闭能返回关联错误。
+- [ ] 完善 adapter 退出时的统一关闭通知，确保所有等待中的 MCP 请求都能及时结束。
+- [x] 在 GPUI 侧启动 adapter task；adapter 是唯一同时读取 `cx.read_global` 和消费 MCP command 的代码。
+- [x] 在 MCP 侧删除 `OnceLock<ApplicationContext>`、`OnceLock<AsyncApp>`、旧 context 以及 GUI handle 注册。
+- [x] 添加 bridge 关键日志：请求接收、request ID、响应发送、adapter 关闭；日志不打印密码、私钥或完整敏感连接信息。
 
 ### Task 7：迁移 GUI 调用链为 Global + Entity 订阅
 
@@ -347,12 +347,12 @@ impl McpBridgeEndpoint {
 - UI 只保留 entity handle、订阅句柄和 UI projection；不保存 SSH/SFTP application service 的内部地址。
 - Render 通过 `entity.read(cx)` 读取当前快照；交互通过 `entity.update(cx, ...)` 或 ApplicationContext 稳定 API 发起变更。
 
-- [ ] 删除 Workspace、SSH、SFTP、TopSession、Sidebar 等结构体上的 `GuiContext`、`DataContext` 和直接 service 字段。
-- [ ] 将构造函数改为只接收 GPUI 所需的 window/cx、必要的 ID 和 UI 初始参数；业务 context 在操作点本层读取。
+- [x] 删除 Workspace、SSH、SFTP、TopSession、Sidebar 等结构体上的旧 context 和直接 service 字段。
+- [x] 将构造函数改为只接收 GPUI 所需的 window/cx、必要的 ID 和 UI 初始参数；业务 context 在操作点本层读取。
 - [ ] 将 `OpenWorkspaceSession(profile)` 处理为 GUI 请求；Workspace 在本层读取 application Global，调用 `open_session`，使用 application 返回的 ID 创建/更新 UI entity。
 - [ ] 保留 `WorkspaceSessionOpened` 作为 UI 生命周期通知时，事件内容只使用 application 生成的 ID、profile 摘要等协议数据，不携带上下文或 service 地址。
-- [ ] SSH UI 订阅 `SshStore` 的终端快照/事件，处理输入、resize、滚动和刷新；不再通过旧 GUI data channel 取得终端数据。
-- [ ] SFTP UI 订阅 `SftpStore` 的目录/传输/watch 快照，处理路径、上传、下载、删除、取消和重试；不直接访问 SFTP service。
+- [x] SSH UI 通过 application snapshot/notify 取得终端数据，处理输入、resize、滚动和刷新；不再通过旧 GUI data channel 取得终端数据。
+- [x] SFTP UI 通过 application snapshot/notify 取得目录/传输/watch 快照，处理路径、上传、下载、删除、取消和重试；不直接访问 SFTP service。
 - [ ] 遵守 GUI 文件边界：数据流放 core，渲染放 ui，外部入口放 external，初始化/Render/订阅放 mod。
 - [ ] 检查所有 `cx.spawn` future 的回写路径，确保 entity 被销毁时任务能安全结束或丢弃，不在异步任务中直接操作 view。
 - [ ] 保持 Tailwind 风格间距/层级和 Lucide 图标资源，不在架构迁移中引入重复 UI 依赖。
@@ -375,7 +375,7 @@ impl McpBridgeEndpoint {
 - [ ] 将 profile 查询、打开/关闭/选择会话改成 bridge command，并验证错误按 request ID 返回。
 - [ ] 将终端输入、resize、分页读取、滚动等 tool 映射为 SSH application command。
 - [ ] 将 SFTP 目录、路径、上传、下载、删除、取消、重试、watch/stop-watch 映射为 SFTP application command。
-- [ ] 对异步状态通知定义订阅过滤：按 workspace/session/transfer ID 过滤，不让 MCP 收到无关 GUI 状态。
+- [ ] 对异步状态通知定义订阅过滤：按 workspace/session/transfer ID 过滤，不让 MCP 收到无关状态；当前 bridge 已具备 notification channel，过滤策略待下一阶段接入。
 - [ ] 将 application `Result` 和共享 summary 转换成稳定 MCP JSON，避免把内部 entity/store 类型序列化出去。
 - [ ] 记录 MCP 请求、bridge 响应和 application 错误日志；确认日志不包含凭据。
 
@@ -395,10 +395,10 @@ impl McpBridgeEndpoint {
 - storage、SSH、SFTP 的内部 service 类型只在所属层可见；外部使用共享模型、entity handle 或 application API。
 
 - [ ] 从 `src/main.rs` 移除 `mod data_context` 及其日志 target 配置，改为 application/infrastructure target。
-- [ ] 删除 `src/data_context/core.rs`、`event.rs`、`gui.rs`、`infrastructure.rs`、`mapping.rs`、`mcp.rs`、`mod.rs`、`model.rs`、`query.rs`、`validation.rs`。
-- [ ] 删除已迁移的 `src/infrastructure/data_context` 目录。
-- [ ] 用 `rg -n "DataContext|GuiContext|McpContext|crate::data_context|infrastructure::data_context" src` 清理所有引用。
-- [ ] 检查 `pub`/`pub(crate)` 可见性，确保没有为了修复编译而重新暴露底层 service 地址。
+- [x] 删除 `src/data_context` 中所有旧 facade 文件。
+- [x] 删除已迁移的 `src/infrastructure/data_context` 目录。
+- [x] 用 `rg -n "DataContext|GuiContext|McpContext|crate::data_context|infrastructure::data_context" src` 清理所有引用。
+- [x] 检查 `pub`/`pub(crate)` 可见性，确保没有为了修复编译而重新暴露底层 service 地址。
 
 ### Task 10：文档同步、分阶段提交和验证
 
@@ -411,15 +411,15 @@ impl McpBridgeEndpoint {
 
 - 文档完成状态必须与源码一致；`plan.md` 的任务勾选只在对应代码和检查完成后更新。
 
-- [ ] 在基础设施和 application entity 图迁移完成后更新 `project.md` 的真实目录和职责。
-- [ ] 在 Global/bridge/GUI/MCP 迁移完成后更新 `project.md` 的数据流图和边界说明。
-- [ ] 分阶段提交：基础设施与模型、application entity/Global、bridge、GUI/MCP、删除旧 facade；每次提交只包含对应阶段文件，并保留用户的 `AGENTS.md` 修改。
-- [ ] 执行 `cargo fmt`。
-- [ ] 执行 `cargo fmt -- --check`。
-- [ ] 执行 `cargo check`。
-- [ ] 执行 `git diff --check`。
-- [ ] 使用 ripgrep 确认 `impl Global for ApplicationContext`、`impl Global for InfrastructureContext`、两个 `cx.set_global` 和 GUI/GPUI adapter 的 `cx.read_global` 都存在。
-- [ ] 使用 ripgrep 确认 MCP 源码没有 `App`、`AsyncApp`、`ApplicationContext`、`InfrastructureContext`、GUI entity 或 UI channel 的持有/传递。
+- [x] 在基础设施和 application entity 图迁移完成后更新 `project.md` 的真实目录和职责。
+- [x] 在 Global/bridge/GUI/MCP 迁移完成后更新 `project.md` 的数据流图和边界说明。
+- [x] 分阶段提交基础设施/模型、Global、bridge、GUI/MCP 和旧 facade 删除，并保留用户的 `AGENTS.md` 修改。
+- [x] 执行 `cargo fmt`。
+- [x] 执行 `cargo fmt -- --check`。
+- [x] 执行 `cargo check`。
+- [x] 执行 `git diff --check`。
+- [x] 使用 ripgrep 确认两个 Global 实现、两个 `cx.set_global` 和 GUI/GPUI adapter 的 `cx.read_global` 都存在。
+- [x] 使用 ripgrep 确认 MCP 源码没有 `App`、`AsyncApp`、`ApplicationContext`、`InfrastructureContext`、GUI entity 或 UI channel 的持有/传递。
 - [ ] 查看启动、bridge、application、SSH、SFTP、MCP 日志，确认请求接收、application 执行、entity 状态更新和响应返回链路完整。
 - [ ] GUI 手工回归：打开/关闭/切换会话、终端输入输出、终端滚动、SFTP 列目录、路径切换、上传、下载、删除、取消、重试和 watch。
 - [ ] MCP 手工回归：profile 查询、会话生命周期、终端操作、SFTP 操作和异步状态通知；确认 MCP 全程不触发 GUI 调用链。

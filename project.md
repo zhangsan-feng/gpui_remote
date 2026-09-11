@@ -56,7 +56,9 @@ application 和 infrastructure 的公共边界遵守：`core.rs` 放核心功能
 ### `src/application/`
 
 - `mod.rs`：application 子模块声明、初始化和稳定类型导出。
-- `core.rs`：`ApplicationContext`、GPUI `Global` 实现和根 entity/store 组合。
+- `core.rs`：`ApplicationContext`、GPUI `Global` 实现和应用根句柄组合。
+- `state.rs`：`ApplicationStoreGraph` 以及 session/SSH/SFTP 的 GPUI typed store handle；运行时数据仍由各自 application 模块持有。
+- `bridge.rs`：GPUI bridge adapter，从本层 `cx.read_global` 读取 `ApplicationContext`，执行命令并发布响应/通知。
 - `external.rs`：GUI 和 GPUI bridge adapter 使用的 application command、快照和返回 API。
 - `model.rs`：GUI/MCP 共用的 profile、终端、SFTP 目录、传输和 watch 摘要。
 - `mapping.rs`：entity/store 状态到共用返回模型的映射。

@@ -52,6 +52,12 @@ impl McpCommandRouter {
 
     pub(crate) async fn route(&mut self, command: CommandEnvelope) -> Result<(), String> {
         self.drain_lane_events();
+        let command_name = command.command.name();
+        let workspace_id = command.command.workspace_id().unwrap_or("control");
+        let request_id = command.request_id.clone();
+        log::debug!(
+            "MCP bridge route started: request_id={request_id}, command={command_name}, workspace_id={workspace_id}"
+        );
         match command.command.route_key() {
             RouteKey::Control => enqueue(&self.control_tx, command, "control").await,
             RouteKey::Workspace(workspace_id) => {
@@ -183,9 +189,17 @@ async fn enqueue(
         .unwrap_or("control")
         .to_owned();
     let queued_at = command.queued_at;
+    let available_capacity = sender.capacity();
+    log::debug!(
+        "MCP bridge lane enqueue started: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, route={route}, available_capacity={available_capacity}"
+    );
     match tokio::time::timeout(ROUTE_ENQUEUE_TIMEOUT, sender.reserve()).await {
         Ok(Ok(permit)) => {
             permit.send(command);
+            log::debug!(
+                "MCP bridge lane enqueue finished: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, route={route}, queue_ms={}",
+                queued_at.elapsed().as_millis()
+            );
             Ok(())
         }
         Ok(Err(_)) => {
@@ -223,7 +237,13 @@ async fn run_lane(
     mut receiver: mpsc::Receiver<CommandEnvelope>,
     lane_event_tx: mpsc::UnboundedSender<LaneEvent>,
 ) {
+    log::debug!("MCP bridge lane started: lane={lane_name}");
     while let Some(command) = receiver.recv().await {
+        log::debug!(
+            "MCP bridge lane command received: lane={lane_name}, command={}, workspace_id={}",
+            command.command.name(),
+            command.command.workspace_id().unwrap_or("control")
+        );
         let should_stop = command.command.is_close_session();
         let runtime_failed = process_command(&lane_name, &application, command).await;
         if should_stop || runtime_failed {

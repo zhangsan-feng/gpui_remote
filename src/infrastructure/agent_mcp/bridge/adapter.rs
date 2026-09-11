@@ -5,7 +5,7 @@ use crate::application::{ApplicationContext, ApplicationEvent};
 
 use super::{dispatch, router::McpCommandRouter, types::McpBridgeReceiver};
 
-pub(crate) fn start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver) {
+pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
     let application = cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
     let McpBridgeReceiver {
         mut command_rx,
@@ -13,7 +13,10 @@ pub(crate) fn start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver) {
     } = bridge;
 
     let command_application = application.clone();
-    cx.spawn(async move |_cx| {
+    // This bridge owns Tokio channels and timers. Keep it on the Tokio runtime
+    // instead of GPUI's foreground executor, whose wake-up model can strand a
+    // pending Tokio channel operation under load.
+    tokio::spawn(async move {
         let lifecycle_application = command_application.clone();
         let mut router = McpCommandRouter::new(command_application);
         let mut application_events = lifecycle_application.subscribe();
@@ -26,9 +29,24 @@ pub(crate) fn start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver) {
                         log::info!("MCP application bridge command channel closed");
                         break;
                     };
+                    let request_id = command.request_id.clone();
+                    let command_name = command.command.name();
+                    let workspace_id = command
+                        .command
+                        .workspace_id()
+                        .unwrap_or("control")
+                        .to_owned();
+                    log::debug!(
+                        "MCP bridge ingress received: request_id={request_id}, command={command_name}, workspace_id={workspace_id}"
+                    );
+                    let route_started = std::time::Instant::now();
                     if let Err(error) = router.route(command).await {
                         log::debug!("MCP bridge command routing failed: {error}");
                     }
+                    log::debug!(
+                        "MCP bridge ingress routed: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, route_ms={}",
+                        route_started.elapsed().as_millis()
+                    );
                 }
                 event = application_events.recv() => {
                     match event {
@@ -56,11 +74,10 @@ pub(crate) fn start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver) {
             "MCP application bridge command router stopped: reason=ingress_closed, lanes={} ",
             router.lane_count()
         );
-    })
-    .detach();
+    });
 
     let notification_application = application;
-    cx.spawn(async move |_cx| {
+    tokio::spawn(async move {
         let mut application_events = notification_application.subscribe();
         log::info!("MCP application notification forwarder started");
         loop {
@@ -79,6 +96,5 @@ pub(crate) fn start_mcp_bridge(cx: &mut App, bridge: McpBridgeReceiver) {
                 }
             }
         }
-    })
-    .detach();
+    });
 }

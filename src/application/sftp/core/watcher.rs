@@ -32,6 +32,11 @@ pub(crate) struct LocalWatchRuntime {
 
 impl LocalWatchRuntime {
     pub(crate) fn stop(mut self) {
+        log::debug!(
+            "SFTP local watcher stopping: workspace_id={}, local_path={}",
+            self.summary.workspace_id,
+            self.summary.local_path
+        );
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
@@ -47,6 +52,10 @@ pub(crate) async fn create(
     local_path: PathBuf,
     remote_path: String,
 ) -> Result<LocalWatchRuntime, String> {
+    log::debug!(
+        "SFTP local watcher create started: workspace_id={workspace_id}, local_path={}, remote_path={remote_path}",
+        local_path.display()
+    );
     let (event_sender, mut event_receiver) = mpsc::unbounded_channel::<notify::Result<Event>>();
     let (stop_sender, mut stop_receiver) = oneshot::channel();
     let setup_path = local_path.clone();

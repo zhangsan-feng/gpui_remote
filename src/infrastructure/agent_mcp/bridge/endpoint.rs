@@ -40,6 +40,9 @@ impl McpBridgeEndpoint {
         let command_name = command.name();
         let workspace_id = command.workspace_id().unwrap_or("control").to_owned();
         let queued_at = std::time::Instant::now();
+        log::debug!(
+            "MCP bridge request started: request_id={request_id}, command={command_name}, workspace_id={workspace_id}"
+        );
         let (response_tx, response_rx) = oneshot::channel();
         match tokio::time::timeout(
             std::time::Duration::from_secs(5),
@@ -67,9 +70,17 @@ impl McpBridgeEndpoint {
                 return Err("MCP application bridge 队列已满".to_owned());
             }
         }
+        log::debug!(
+            "MCP bridge request enqueued: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, enqueue_ms={}",
+            queued_at.elapsed().as_millis()
+        );
         let response = response_rx
             .await
             .map_err(|_| "MCP application bridge 未返回响应".to_owned())?;
+        log::debug!(
+            "MCP bridge request response received: request_id={request_id}, command={command_name}, workspace_id={workspace_id}, total_ms={}",
+            queued_at.elapsed().as_millis()
+        );
         if response.request_id != request_id {
             return Err(format!(
                 "MCP application bridge 响应关联 ID 不匹配: expected={request_id}, actual={}",

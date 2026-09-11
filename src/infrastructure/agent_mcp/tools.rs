@@ -208,11 +208,20 @@ impl AgentTerminalMcp {
         description = "List saved connection profiles. Returns profile id, title, ip, host, and protocol."
     )]
     async fn list_profiles(&self) -> Result<Json<Vec<ProfileOutput>>, ErrorData> {
-        self.bridge
+        let started_at = std::time::Instant::now();
+        log::debug!("MCP tool handler started: tool=list_profiles");
+        let result = self
+            .bridge
             .list_profiles()
             .await
             .map(|profiles| Json(profiles.into_iter().map(ProfileOutput::from).collect()))
-            .map_err(mcp_error)
+            .map_err(mcp_error);
+        log::debug!(
+            "MCP tool handler finished: tool=list_profiles, ok={}, elapsed_ms={}",
+            result.is_ok(),
+            started_at.elapsed().as_millis()
+        );
+        result
     }
 
     #[tool(

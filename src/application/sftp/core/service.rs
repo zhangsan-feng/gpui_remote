@@ -61,6 +61,11 @@ impl SftpApplication {
         initial_remote_path: Option<String>,
         initial_local_path: Option<PathBuf>,
     ) -> Result<(), String> {
+        log::debug!(
+            "SFTP application open started: workspace_id={workspace_id}, host={}, port={}",
+            profile.host,
+            profile.port
+        );
         if profile.protocol != Protocol::Sftp {
             return Err(format!("SFTP 模块不支持 {} 协议", profile.protocol));
         }
@@ -105,6 +110,7 @@ impl SftpApplication {
                     task,
                 },
             );
+        log::debug!("SFTP application runtime registered: workspace_id={workspace_id}");
         self.inner
             .local_snapshots
             .write()
@@ -119,10 +125,12 @@ impl SftpApplication {
             log::debug!("读取 SFTP 本地初始目录失败: workspace_id={workspace_id}, error={error}");
         }
         self.inner.updates.notify_one();
+        log::debug!("SFTP application open finished: workspace_id={workspace_id}");
         Ok(())
     }
 
     pub async fn close(&self, workspace_id: &str) -> Result<(), String> {
+        log::debug!("SFTP application close started: workspace_id={workspace_id}");
         self.stop_all_local_watchers(workspace_id);
         let runtime = self
             .inner
@@ -131,14 +139,17 @@ impl SftpApplication {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(workspace_id)
             .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
+        log::debug!("SFTP application runtime removed: workspace_id={workspace_id}");
         let _ = runtime.commands.send(SftpCommand::Disconnect);
         runtime.task.abort();
+        log::debug!("SFTP application runtime aborted: workspace_id={workspace_id}");
         self.inner
             .local_snapshots
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(workspace_id);
         self.inner.updates.notify_one();
+        log::debug!("SFTP application close finished: workspace_id={workspace_id}");
         Ok(())
     }
 
@@ -767,6 +778,10 @@ impl SftpApplication {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(workspace_id)
         {
+            log::debug!(
+                "SFTP local watchers stopping: workspace_id={workspace_id}, count={}",
+                watches.len()
+            );
             for watch in watches.into_values() {
                 watch.stop();
             }

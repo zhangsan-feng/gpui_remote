@@ -23,6 +23,9 @@ pub(crate) enum ApplicationCommand {
         ip: String,
         title: String,
     },
+    CloseSession {
+        workspace_id: String,
+    },
     ListSftpSessions,
     ListSftpLocal,
     ChangeSftpLocalDirectory {
@@ -109,7 +112,7 @@ pub(crate) enum ApplicationResponse {
 pub(crate) enum ApplicationNotification {
     SessionOpened {
         workspace_id: String,
-        profile: crate::domain::session::SessionProfile,
+        profile: ProfileSummary,
     },
     SessionClosed {
         workspace_id: String,
@@ -225,6 +228,11 @@ impl McpBridgeEndpoint {
             ApplicationResponse::TerminalSummaries(sessions) => Ok(sessions),
             _ => Err("MCP application bridge 返回了错误的 SFTP 会话响应".to_owned()),
         }
+    }
+
+    pub(crate) async fn close_session(&self, workspace_id: String) -> ApplicationResult<()> {
+        self.expect_empty(ApplicationCommand::CloseSession { workspace_id })
+            .await
     }
 
     pub(crate) async fn list_sftp_local(&self) -> ApplicationResult<SftpDirectorySummary> {

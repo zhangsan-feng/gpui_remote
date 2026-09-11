@@ -249,6 +249,18 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
+    #[tool(description = "Close an open SSH or SFTP workspace by workspace id.")]
+    async fn close_session(
+        &self,
+        Parameters(input): Parameters<SftpWorkspaceInput>,
+    ) -> Result<Json<ActionOutput>, ErrorData> {
+        self.bridge
+            .close_session(input.workspace_id)
+            .await
+            .map(|()| Json(ActionOutput { success: true }))
+            .map_err(mcp_error)
+    }
+
     #[tool(description = "List open SFTP sessions and identify the selected SFTP session.")]
     async fn list_sftp_sessions(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
         self.bridge

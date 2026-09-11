@@ -7,6 +7,7 @@ pub mod model;
 mod session;
 mod sftp;
 mod ssh;
+mod state;
 pub(crate) mod validation;
 
 pub(crate) use bridge::start_mcp_bridge;
@@ -19,5 +20,6 @@ pub(crate) use sftp::{
     LocalSnapshot, RemoteDeleteItem, SftpSnapshot, SftpStatus, TransferRecord, TransferRequest,
 };
 pub(crate) use ssh::SshApplication;
+pub(crate) use state::ApplicationStoreGraph;
 
 pub type ApplicationResult<T> = Result<T, String>;

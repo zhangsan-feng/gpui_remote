@@ -9,7 +9,8 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use super::{
-    ApplicationEvent, ApplicationResult, SessionApplication, SftpApplication, SshApplication,
+    ApplicationEvent, ApplicationResult, ApplicationStoreGraph, SessionApplication,
+    SftpApplication, SshApplication,
 };
 
 const APPLICATION_EVENT_CAPACITY: usize = 256;
@@ -20,6 +21,7 @@ struct ApplicationContextInner {
     sessions: SessionApplication,
     ssh: SshApplication,
     sftp: SftpApplication,
+    stores: ApplicationStoreGraph,
 }
 
 enum UpdateSftpPath {
@@ -51,12 +53,17 @@ impl ApplicationContext {
         let infrastructure =
             cx.read_global::<InfrastructureContext, _>(|infrastructure, _| infrastructure.clone());
         let (events, _) = broadcast::channel(APPLICATION_EVENT_CAPACITY);
+        let sessions = SessionApplication::new(events.clone());
+        let ssh = SshApplication::new();
+        let sftp = SftpApplication::new();
+        let stores = ApplicationStoreGraph::new(cx, sessions.clone(), ssh.clone(), sftp.clone());
         Self {
             inner: Arc::new(ApplicationContextInner {
                 infrastructure,
-                sessions: SessionApplication::new(events.clone()),
-                ssh: SshApplication::new(),
-                sftp: SftpApplication::new(),
+                sessions,
+                ssh,
+                sftp,
+                stores,
                 events,
             }),
         }

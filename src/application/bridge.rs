@@ -1,7 +1,7 @@
 use gpui_kit::{App, AppContext};
 
 use crate::{
-    application::{ApplicationContext, ApplicationEvent, ApplicationResult},
+    application::{ApplicationContext, ApplicationEvent, ApplicationResult, model::ProfileSummary},
     infrastructure::agent_mcp::bridge::{
         ApplicationCommand, ApplicationNotification, ApplicationResponse, McpBridgeReceiver,
         NotificationEnvelope, ResponseEnvelope,
@@ -71,6 +71,10 @@ async fn dispatch(
             .open_session(profile_id, protocol, ip, title)
             .await
             .map(ApplicationResponse::WorkspaceId),
+        ApplicationCommand::CloseSession { workspace_id } => application
+            .close_session(&workspace_id)
+            .await
+            .map(|_| ApplicationResponse::Empty),
         ApplicationCommand::ListSftpSessions => application
             .list_sftp_sessions()
             .await
@@ -188,7 +192,12 @@ fn map_event(event: ApplicationEvent) -> Option<NotificationEnvelope> {
             profile,
         } => ApplicationNotification::SessionOpened {
             workspace_id,
-            profile,
+            profile: ProfileSummary {
+                id: profile.id,
+                title: profile.name,
+                host: profile.host,
+                protocol: profile.protocol.as_str().to_owned(),
+            },
         },
         ApplicationEvent::SessionClosed { workspace_id } => {
             ApplicationNotification::SessionClosed { workspace_id }

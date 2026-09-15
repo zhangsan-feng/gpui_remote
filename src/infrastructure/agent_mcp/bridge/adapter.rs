@@ -50,10 +50,16 @@ pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
                 }
                 event = application_events.recv() => {
                     match event {
-                        Ok(ApplicationEvent::SessionClosed { workspace_id }) => {
+                        Ok(event) => {
+                            log::debug!(
+                                "MCP bridge application event observed: event={}, workspace_id={}",
+                                application_event_name(&event),
+                                application_event_workspace_id(&event).unwrap_or("none")
+                            );
+                            if let ApplicationEvent::SessionClosed { workspace_id } = event {
                             router.remove(&workspace_id);
+                            }
                         }
-                        Ok(_) => {}
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                             log::warn!("MCP bridge lifecycle receiver lagged: skipped={count}");
                         }
@@ -83,6 +89,11 @@ pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
         loop {
             match application_events.recv().await {
                 Ok(event) => {
+                    log::debug!(
+                        "MCP application notification forwarded: event={}, workspace_id={}",
+                        application_event_name(&event),
+                        application_event_workspace_id(&event).unwrap_or("none")
+                    );
                     let _ = notification_tx.send(dispatch::map_event(event));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
@@ -97,4 +108,20 @@ pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
             }
         }
     });
+}
+
+fn application_event_name(event: &ApplicationEvent) -> &'static str {
+    match event {
+        ApplicationEvent::SessionOpened { .. } => "session_opened",
+        ApplicationEvent::SessionClosed { .. } => "session_closed",
+        ApplicationEvent::SessionSelected { .. } => "session_selected",
+    }
+}
+
+fn application_event_workspace_id(event: &ApplicationEvent) -> Option<&str> {
+    match event {
+        ApplicationEvent::SessionOpened { workspace_id, .. }
+        | ApplicationEvent::SessionClosed { workspace_id } => Some(workspace_id),
+        ApplicationEvent::SessionSelected { workspace_id } => workspace_id.as_deref(),
+    }
 }

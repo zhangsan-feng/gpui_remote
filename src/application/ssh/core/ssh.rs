@@ -19,17 +19,30 @@ mod core {
     };
 
     pub(crate) async fn run_ssh_session(
+        workspace_id: String,
         profile: SessionProfile,
         command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         model: Arc<TerminalModel>,
     ) {
-        if let Err(error) = run(&profile, command_tx, commands, model.clone()).await {
+        log::debug!(
+            "SSH runtime started: workspace_id={workspace_id}, host={}, port={}",
+            profile.host,
+            profile.port
+        );
+        if let Err(error) = run(&workspace_id, &profile, command_tx, commands, model.clone()).await
+        {
+            log::warn!(
+                "SSH runtime failed: workspace_id={workspace_id}, host={}, port={}, error={error:#}",
+                profile.host,
+                profile.port
+            );
             model.set_status(TerminalStatus::Failed, Some(format!("{error:#}")));
         }
     }
 
     async fn run(
+        workspace_id: &str,
         profile: &SessionProfile,
         command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
@@ -106,19 +119,42 @@ mod core {
             .request_shell(true)
             .await
             .context("启动远程 Shell 失败")?;
+        log::debug!(
+            "SSH shell connected: workspace_id={workspace_id}, host={}, port={}",
+            profile.host,
+            profile.port
+        );
         model.set_status(TerminalStatus::Connected, None);
 
         let (reader, writer) = channel.split();
-        let exit_message =
-            run_connected_terminal_session(reader, writer, command_tx, commands, model.clone())
-                .await?;
+        let exit_message = run_connected_terminal_session(
+            workspace_id,
+            reader,
+            writer,
+            command_tx,
+            commands,
+            model.clone(),
+        )
+        .await?;
 
-        let _ = session
+        if let Err(error) = session
             .disconnect(Disconnect::ByApplication, "", "zh-CN")
-            .await;
+            .await
+        {
+            log::debug!(
+                "SSH session disconnect cleanup failed: workspace_id={workspace_id}, error={error:#}"
+            );
+        }
         model.set_status(
             TerminalStatus::Disconnected,
             exit_message.or_else(|| Some("SSH 连接已断开".into())),
+        );
+        log::debug!(
+            "SSH runtime stopped: workspace_id={workspace_id}, host={}, port={}, revision={}, update_revision={}",
+            profile.host,
+            profile.port,
+            model.revision(),
+            model.update_revision()
         );
         Ok(())
     }
@@ -140,6 +176,7 @@ mod runtime {
     const REFRESH_INTERVAL: Duration = Duration::from_millis(33);
 
     pub(crate) async fn run_connected_terminal_session(
+        workspace_id: &str,
         mut reader: ChannelReadHalf,
         writer: ChannelWriteHalf<client::Msg>,
         command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
@@ -159,49 +196,107 @@ mod runtime {
                 data.message.clone(),
             )
         };
-        let mut dirty = false;
+        let mut frame_dirty = false;
+        let mut content_dirty = false;
         let mut exit_message = None;
 
-        loop {
+        let stop_reason = loop {
             tokio::select! {
                 biased;
                 command = commands.recv() => {
-                    if !apply_command(command, &mut buffer, &writer, &mut dirty).await? {
-                        break;
-                    }
-                }
-                _ = refresh.tick() => {
-                    if dirty {
+                    if frame_dirty {
                         publish_model(
                             &mut buffer,
                             &model,
                             &mut last_frame,
                             &status,
                             &message,
+                            content_dirty,
                         );
-                        dirty = false;
+                        frame_dirty = false;
+                        content_dirty = false;
+                    }
+                    if !apply_command(
+                        command,
+                        &mut buffer,
+                        &writer,
+                        &model,
+                        &mut frame_dirty,
+                    ).await? {
+                        log::debug!(
+                            "SSH terminal runtime stopping: workspace_id={workspace_id}, reason=application_command"
+                        );
+                        break "application_command";
+                    }
+                }
+                _ = refresh.tick() => {
+                    if frame_dirty {
+                        publish_model(
+                            &mut buffer,
+                            &model,
+                            &mut last_frame,
+                            &status,
+                            &message,
+                            content_dirty,
+                        );
+                        frame_dirty = false;
+                        content_dirty = false;
                     }
                 }
                 message = reader.wait() => match message {
                     Some(ChannelMsg::Data { data })
                     | Some(ChannelMsg::ExtendedData { data, .. }) => {
                         buffer.process(&data);
-                        dirty = true;
+                        frame_dirty = true;
+                        content_dirty = true;
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
+                        log::debug!(
+                            "SSH remote shell exit status received: workspace_id={workspace_id}, exit_status={exit_status}"
+                        );
                         exit_message = Some(format!(
                             "远程 Shell 已退出（状态码 {exit_status}）"
                         ));
                     }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                    Some(ChannelMsg::Eof) => {
+                        log::warn!(
+                            "SSH terminal channel ended: workspace_id={workspace_id}, reason=remote_eof"
+                        );
+                        break "remote_eof";
+                    }
+                    Some(ChannelMsg::Close) => {
+                        log::warn!(
+                            "SSH terminal channel ended: workspace_id={workspace_id}, reason=remote_close"
+                        );
+                        break "remote_close";
+                    }
+                    None => {
+                        log::warn!(
+                            "SSH terminal channel reader ended: workspace_id={workspace_id}, reason=reader_closed"
+                        );
+                        break "reader_closed";
+                    }
                     _ => {}
                 }
             }
-        }
+        };
 
-        if dirty {
-            publish_model(&mut buffer, &model, &mut last_frame, &status, &message);
+        if frame_dirty {
+            publish_model(
+                &mut buffer,
+                &model,
+                &mut last_frame,
+                &status,
+                &message,
+                content_dirty,
+            );
         }
+        log::debug!(
+            "SSH terminal runtime ended: workspace_id={workspace_id}, reason={}, revision={}, update_revision={}",
+            stop_reason,
+            model.revision(),
+            model.update_revision()
+        );
         Ok(exit_message)
     }
 
@@ -209,11 +304,15 @@ mod runtime {
         command: Option<TerminalSessionCommand>,
         buffer: &mut TerminalBuffer,
         writer: &ChannelWriteHalf<client::Msg>,
-        dirty: &mut bool,
+        model: &TerminalModel,
+        frame_dirty: &mut bool,
     ) -> Result<bool> {
         match command {
             Some(TerminalSessionCommand::Input(data)) => {
-                writer.data_bytes(data).await.context("发送终端输入失败")?;
+                if !data.is_empty() {
+                    writer.data_bytes(data).await.context("发送终端输入失败")?;
+                    model.mark_input();
+                }
             }
             Some(TerminalSessionCommand::Resize { columns, rows }) => {
                 buffer.resize(columns, rows);
@@ -221,22 +320,31 @@ mod runtime {
                     .window_change(columns.max(1), rows.max(1), 0, 0)
                     .await
                     .context("调整 PTY 大小失败")?;
-                *dirty = true;
+                *frame_dirty = true;
             }
             Some(TerminalSessionCommand::Scroll { lines }) => {
                 buffer.scroll(lines);
-                *dirty = true;
+                *frame_dirty = true;
             }
             Some(TerminalSessionCommand::ScrollTo { offset }) => {
                 buffer.scroll_to(offset);
-                *dirty = true;
+                *frame_dirty = true;
             }
             Some(TerminalSessionCommand::Read {
                 offset,
                 limit,
+                since_revision,
                 reply,
             }) => {
-                let _ = reply.send(buffer.read_text(offset, limit));
+                let mut page = buffer.read_text(offset, limit);
+                page.revision = model.revision();
+                page.changed = since_revision.map_or(true, |revision| revision != page.revision);
+                if !page.changed {
+                    page.text.clear();
+                    page.limit = 0;
+                    page.has_more = false;
+                }
+                let _ = reply.send(page);
             }
             Some(TerminalSessionCommand::Disconnect) | None => {
                 return Ok(false);
@@ -251,6 +359,7 @@ mod runtime {
         last_frame: &mut Arc<TerminalFrame>,
         status: &TerminalStatus,
         message: &Option<String>,
+        content_changed: bool,
     ) {
         let next_frame = Arc::new(buffer.frame_reusing(Some(last_frame.as_ref())));
         if same_frame(last_frame, &next_frame) {
@@ -264,11 +373,16 @@ mod runtime {
             // );
         }
         *last_frame = next_frame;
-        model.replace(TerminalData {
+        let data = TerminalData {
             frame: last_frame.clone(),
             status: status.clone(),
             message: message.clone(),
-        });
+        };
+        if content_changed {
+            model.replace(data);
+        } else {
+            model.replace_view(data);
+        }
     }
 
     fn same_frame(left: &TerminalFrame, right: &TerminalFrame) -> bool {

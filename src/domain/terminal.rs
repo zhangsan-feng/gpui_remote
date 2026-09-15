@@ -77,6 +77,8 @@ pub struct TerminalHistoryPage {
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
+    pub revision: u64,
+    pub changed: bool,
 }
 
 pub enum TerminalSessionCommand {
@@ -94,6 +96,7 @@ pub enum TerminalSessionCommand {
     Read {
         offset: usize,
         limit: usize,
+        since_revision: Option<u64>,
         reply: oneshot::Sender<TerminalHistoryPage>,
     },
     Disconnect,

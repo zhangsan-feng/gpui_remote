@@ -145,7 +145,11 @@ impl SettingsOperationWindow {
     fn mcp_section(&self, cx: &Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_5()
-            .child(self.section_heading("MCP 服务", "配置 MCP 服务监听地址和访问令牌。", cx))
+            .child(self.section_heading(
+                "MCP 服务",
+                "配置 MCP 服务监听地址、访问令牌和验证方式。",
+                cx,
+            ))
             .child(self.mcp_panel(cx))
     }
 
@@ -193,6 +197,40 @@ impl SettingsOperationWindow {
                             .on_click(cx.listener(Self::toggle_mcp_enabled)),
                     ),
             )
+            .child(
+                h_flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_4()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child("Token 验证"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(colors.muted_foreground)
+                                    .child("开启后，访问 MCP 必须携带 Authorization Bearer Token"),
+                            ),
+                    )
+                    .child(
+                        Button::new("toggle-mcp-token-enabled")
+                            .when(self.mcp_token_enabled, |this| this.primary())
+                            .when(!self.mcp_token_enabled, |this| this.outline())
+                            .label(if self.mcp_token_enabled {
+                                "已启用"
+                            } else {
+                                "未启用"
+                            })
+                            .on_click(cx.listener(Self::toggle_mcp_token_enabled)),
+                    ),
+            )
             .child(Self::mcp_field("Host", &self.mcp_host, colors))
             .child(Self::mcp_field("Port", &self.mcp_port, colors))
             .child(self.mcp_token_field(cx))
@@ -209,7 +247,7 @@ impl SettingsOperationWindow {
                         .child(
                             Button::new("apply-mcp-settings")
                                 .primary()
-                                .label("保存并重启")
+                                .label("保存并重启服务")
                                 .on_click(cx.listener(Self::apply_mcp_settings)),
                         ),
                 ),

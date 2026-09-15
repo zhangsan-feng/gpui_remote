@@ -30,7 +30,8 @@ func main() {
 				runner.failures++
 				runner.logger.Printf("mcp_test_failure %v", waitErr)
 			}
-			runner.closeSession(workspaceID)
+			// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+			// runner.closeSession(workspaceID)
 		}
 	} else {
 		runner.failures++

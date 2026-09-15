@@ -8,6 +8,7 @@ use crate::domain::terminal::TerminalData;
 pub(in crate::gui::workspace) struct TerminalModel {
     data: RwLock<TerminalData>,
     revision: AtomicU64,
+    update_revision: AtomicU64,
 }
 
 impl TerminalModel {
@@ -15,6 +16,7 @@ impl TerminalModel {
         Self {
             data: RwLock::new(data),
             revision: AtomicU64::new(0),
+            update_revision: AtomicU64::new(0),
         }
     }
 
@@ -24,15 +26,21 @@ impl TerminalModel {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    pub(crate) fn replace(&self, data: TerminalData, revision: u64) {
+    pub(crate) fn replace(&self, data: TerminalData, revision: u64, update_revision: u64) {
         *self
             .data
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
         self.revision.store(revision, Ordering::Release);
+        self.update_revision
+            .store(update_revision, Ordering::Release);
     }
 
     pub(crate) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn update_revision(&self) -> u64 {
+        self.update_revision.load(Ordering::Acquire)
     }
 }

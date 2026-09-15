@@ -309,12 +309,14 @@ impl McpBridgeEndpoint {
         workspace_id: String,
         offset: usize,
         limit: usize,
+        since_revision: Option<u64>,
     ) -> ApplicationResult<TerminalReadPage> {
         match self
             .request(ApplicationCommand::ReadTerminal {
                 workspace_id,
                 offset,
                 limit,
+                since_revision,
             })
             .await?
         {

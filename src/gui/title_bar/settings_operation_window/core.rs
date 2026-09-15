@@ -105,6 +105,16 @@ impl SettingsOperationWindow {
         cx.notify();
     }
 
+    pub(super) fn toggle_mcp_token_enabled(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mcp_token_enabled = !self.mcp_token_enabled;
+        cx.notify();
+    }
+
     pub(super) fn copy_mcp_config(
         &mut self,
         _: &ClickEvent,
@@ -118,19 +128,27 @@ impl SettingsOperationWindow {
             Err("MCP Host 不能为空".to_owned())
         } else if port.as_ref().is_err() || port == Ok(0) {
             Err("MCP Port 必须是 1-65535 的数字".to_owned())
-        } else if self.mcp_token.is_empty() {
+        } else if self.mcp_token_enabled && self.mcp_token.is_empty() {
             Err("MCP Token 不能为空".to_owned())
         } else {
             let port = port.expect("MCP 端口已校验");
+            let server = if self.mcp_token_enabled {
+                serde_json::json!({
+                    "url": format!("http://{host}:{port}/mcp"),
+                    "headers": {
+                        "Authorization": format!("Bearer {}", self.mcp_token),
+                    },
+                    "description": "本地 MCP 服务，用于通过 SSH/SFTP 操作远程主机",
+                })
+            } else {
+                serde_json::json!({
+                    "url": format!("http://{host}:{port}/mcp"),
+                    "description": "本地 MCP 服务，用于通过 SSH/SFTP 操作远程主机",
+                })
+            };
             let config = serde_json::json!({
                 "mcpServers": {
-                    "gpui-remote": {
-                        "url": format!("http://{host}:{port}/mcp"),
-                        "headers": {
-                            "Authorization": format!("Bearer {}", self.mcp_token),
-                        },
-                        "description": "本地 MCP 服务，用于通过 SSH/SFTP 操作远程主机",
-                    },
+                    "gpui-remote": server,
                 },
             });
             serde_json::to_string(&config).map_err(|error| error.to_string())
@@ -170,7 +188,7 @@ impl SettingsOperationWindow {
             cx.notify();
             return;
         }
-        if token.is_empty() {
+        if self.mcp_token_enabled && token.is_empty() {
             self.mcp_error = Some("MCP Token 不能为空".to_owned());
             cx.notify();
             return;
@@ -180,6 +198,7 @@ impl SettingsOperationWindow {
             cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let settings = McpSettings {
             enabled: self.mcp_enabled,
+            token_enabled: self.mcp_token_enabled,
             host,
             port,
             token,

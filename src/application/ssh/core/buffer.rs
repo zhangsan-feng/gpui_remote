@@ -346,6 +346,8 @@ mod core {
                 offset,
                 limit: end.saturating_sub(start),
                 has_more: start > 0,
+                revision: 0,
+                changed: true,
             }
         }
 

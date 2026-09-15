@@ -1,11 +1,22 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+};
 
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, oneshot};
 
-use super::{SftpApplication, remote};
+use super::{SftpApplication, remote, sync::FileSignature};
 
 const WATCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
+const STABILITY_CHECK_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
+const STABILITY_CHECK_RETRIES: usize = 3;
+
+enum LocalSignatureState {
+    Stable(FileSignature),
+    Missing,
+    Unstable(FileSignature),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LocalWatchKind {
@@ -96,27 +107,31 @@ pub(crate) async fn listen_local_directory(
     let task_app = app.clone();
     let task = tokio::spawn(async move {
         let _watcher = watcher;
-        let mut pending_paths = std::collections::HashSet::new();
+        let mut pending_paths = HashSet::new();
+        let mut processed_signatures = HashMap::<PathBuf, FileSignature>::new();
         loop {
-            let Some(event) = (tokio::select! {
-                _ = &mut stop_receiver => return,
-                event = event_receiver.recv() => event,
-            }) else {
-                return;
-            };
-            collect_event_paths(event, kind, &task_local_root, &mut pending_paths);
-            loop {
-                let sleep = tokio::time::sleep(WATCH_DEBOUNCE);
-                tokio::pin!(sleep);
-                tokio::select! {
+            if pending_paths.is_empty() {
+                let Some(event) = (tokio::select! {
                     _ = &mut stop_receiver => return,
-                    event = event_receiver.recv() => {
-                        let Some(event) = event else { return; };
-                        collect_event_paths(event, kind, &task_local_root, &mut pending_paths);
+                    event = event_receiver.recv() => event,
+                }) else {
+                    return;
+                };
+                collect_event_paths(event, kind, &task_local_root, &mut pending_paths);
+                loop {
+                    let sleep = tokio::time::sleep(WATCH_DEBOUNCE);
+                    tokio::pin!(sleep);
+                    tokio::select! {
+                        _ = &mut stop_receiver => return,
+                        event = event_receiver.recv() => {
+                            let Some(event) = event else { return; };
+                            collect_event_paths(event, kind, &task_local_root, &mut pending_paths);
+                        }
+                        _ = &mut sleep => break,
                     }
-                    _ = &mut sleep => break,
                 }
             }
+
             let paths = std::mem::take(&mut pending_paths);
             let mut paths = paths.into_iter().collect::<Vec<_>>();
             paths.sort_by_key(|path| path.components().count());
@@ -127,6 +142,42 @@ pub(crate) async fn listen_local_directory(
                         .iter()
                         .any(|root: &PathBuf| path.starts_with(root))
                 {
+                    continue;
+                }
+
+                let signature = match read_stable_local_signature(&path).await {
+                    Ok(LocalSignatureState::Stable(signature)) => signature,
+                    Ok(LocalSignatureState::Missing) => {
+                        processed_signatures.remove(&path);
+                        continue;
+                    }
+                    Ok(LocalSignatureState::Unstable(signature)) => {
+                        log::debug!(
+                            "SFTP watcher 文件仍在写入，稍后重试: path={}, signature={signature:?}",
+                            path.display()
+                        );
+                        pending_paths.insert(path);
+                        continue;
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "SFTP watcher 无法读取路径元数据: path={}, error={error}",
+                            path.display()
+                        );
+                        processed_signatures.remove(&path);
+                        continue;
+                    }
+                };
+
+                if processed_signatures
+                    .get(&path)
+                    .is_some_and(|previous| *previous == signature)
+                {
+                    log::debug!(
+                        "SFTP watcher 跳过未变化路径: workspace_id={}, path={}",
+                        task_workspace_id,
+                        path.display()
+                    );
                     continue;
                 }
                 let target = match kind {
@@ -143,12 +194,16 @@ pub(crate) async fn listen_local_directory(
                         }
                     }
                 };
-                if task_app
-                    .upload_path_to_remote(&task_workspace_id, path.clone(), target)
-                    .is_some()
-                    && kind == LocalWatchKind::Directory
-                {
-                    uploaded_roots.push(path);
+                let Some(completion) =
+                    task_app.upload_path_to_remote(&task_workspace_id, path.clone(), target)
+                else {
+                    continue;
+                };
+                if completion.await.unwrap_or(false) {
+                    processed_signatures.insert(path.clone(), signature);
+                    if kind == LocalWatchKind::Directory {
+                        uploaded_roots.push(path);
+                    }
                 }
             }
         }
@@ -206,4 +261,46 @@ fn collect_event_paths(
 
 fn same_file_path(left: &Path, right: &Path) -> bool {
     left == right || (left.file_name() == right.file_name() && left.parent() == right.parent())
+}
+
+async fn read_stable_local_signature(path: &Path) -> Result<LocalSignatureState, String> {
+    let Some(mut signature) = read_local_signature(path).await? else {
+        return Ok(LocalSignatureState::Missing);
+    };
+
+    for _ in 0..STABILITY_CHECK_RETRIES {
+        tokio::time::sleep(STABILITY_CHECK_DELAY).await;
+        let Some(current_signature) = read_local_signature(path).await? else {
+            return Ok(LocalSignatureState::Missing);
+        };
+        if current_signature == signature {
+            return Ok(LocalSignatureState::Stable(signature));
+        }
+        signature = current_signature;
+    }
+
+    Ok(LocalSignatureState::Unstable(signature))
+}
+
+async fn read_local_signature(path: &Path) -> Result<Option<FileSignature>, String> {
+    let path = path.to_owned();
+    let display_path = path.clone();
+    let result = tokio::task::spawn_blocking(move || std::fs::symlink_metadata(&path))
+        .await
+        .map_err(|error| format!("join 本地路径元数据任务失败: {error}"))?;
+    let result = match result {
+        Ok(result) => result,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "读取本地路径元数据失败 {}: {error}",
+                display_path.display()
+            ));
+        }
+    };
+    if result.file_type().is_symlink() {
+        log::debug!("SFTP watcher 跳过符号链接: path={}", display_path.display());
+        return Ok(None);
+    }
+    Ok(Some(FileSignature::from_local(&result)))
 }

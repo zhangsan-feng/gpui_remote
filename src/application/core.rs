@@ -72,7 +72,6 @@ impl ApplicationContext {
         }
     }
 
-    #[allow(dead_code)]
     pub fn subscribe(&self) -> broadcast::Receiver<ApplicationEvent> {
         self.inner.events.subscribe()
     }
@@ -227,6 +226,7 @@ impl ApplicationContext {
         let settings = self.inner.infrastructure.current_mcp_settings();
         super::model::McpSettings {
             enabled: settings.enabled,
+            token_enabled: settings.token_enabled,
             host: settings.host,
             port: settings.port,
             token: settings.token,
@@ -240,6 +240,7 @@ impl ApplicationContext {
         let infrastructure = self.inner.infrastructure.clone();
         let settings = crate::infrastructure::agent_mcp::McpSettings {
             enabled: settings.enabled,
+            token_enabled: settings.token_enabled,
             host: settings.host,
             port: settings.port,
             token: settings.token,
@@ -251,6 +252,7 @@ impl ApplicationContext {
                 .map_err(|error| format!("更新 MCP 配置失败: {error}"))?;
         Ok(super::model::McpSettings {
             enabled: settings.enabled,
+            token_enabled: settings.token_enabled,
             host: settings.host,
             port: settings.port,
             token: settings.token,

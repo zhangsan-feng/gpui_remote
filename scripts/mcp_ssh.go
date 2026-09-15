@@ -32,7 +32,8 @@ func main() {
 				"limit":        20,
 			})
 			runner.require(outcome)
-			runner.closeSession(workspaceID)
+			// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+			// runner.closeSession(workspaceID)
 		}
 	} else {
 		runner.failures++

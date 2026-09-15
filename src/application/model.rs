@@ -3,6 +3,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct McpSettings {
     pub enabled: bool,
+    pub token_enabled: bool,
     pub host: String,
     pub port: u16,
     pub token: String,
@@ -36,6 +37,8 @@ pub struct TerminalReadPage {
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
+    pub revision: u64,
+    pub changed: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

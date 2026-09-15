@@ -223,10 +223,13 @@ func (runner *scenarioRunner) openSession(profile profileSummary, protocol strin
 	return opened.WorkspaceID, nil
 }
 
+// MCP 暂不提供 close_session；保留脚本 helper，便于后续恢复。
+/*
 func (runner *scenarioRunner) closeSession(workspaceID string) {
 	outcome := runner.callTool("close_session", map[string]any{"workspace_id": workspaceID})
 	runner.require(outcome)
 }
+*/
 
 func (runner *scenarioRunner) waitForSftp(workspaceID string, timeout time.Duration) (sftpDirectoryOutput, error) {
 	deadline := time.Now().Add(timeout)

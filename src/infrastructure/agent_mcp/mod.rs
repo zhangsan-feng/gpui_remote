@@ -17,6 +17,7 @@ const SETTINGS_PATH: &str = "data/mcp.json";
 #[serde(default)]
 pub struct McpSettings {
     pub enabled: bool,
+    pub token_enabled: bool,
     pub host: String,
     pub port: u16,
     #[serde(skip)]
@@ -27,6 +28,7 @@ impl Default for McpSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            token_enabled: false,
             host: DEFAULT_HOST.to_owned(),
             port: DEFAULT_PORT,
             token: String::new(),

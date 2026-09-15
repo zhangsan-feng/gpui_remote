@@ -52,6 +52,10 @@ impl ApplicationContext {
         self.ssh().terminal_revision(workspace_id)
     }
 
+    pub(crate) fn terminal_update_revision(&self, workspace_id: &str) -> ApplicationResult<u64> {
+        self.ssh().terminal_update_revision(workspace_id)
+    }
+
     pub(crate) fn sftp_workspace_snapshot(
         &self,
         workspace_id: &str,
@@ -335,10 +339,16 @@ impl ApplicationContext {
         workspace_id: String,
         offset: usize,
         limit: usize,
+        since_revision: Option<u64>,
     ) -> ApplicationResult<model::TerminalReadPage> {
         validation::validate_terminal_workspace(self, &workspace_id)?;
         self.ssh()
-            .read(&workspace_id, offset, mapping::normalize_read_limit(limit))
+            .read(
+                &workspace_id,
+                offset,
+                mapping::normalize_read_limit(limit),
+                since_revision,
+            )
             .await
             .map(|page| model::TerminalReadPage {
                 workspace_id,
@@ -347,6 +357,8 @@ impl ApplicationContext {
                 offset: page.offset,
                 limit: page.limit,
                 has_more: page.has_more,
+                revision: page.revision,
+                changed: page.changed,
             })
     }
 

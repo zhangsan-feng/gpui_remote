@@ -20,7 +20,6 @@ var tokenPattern = regexp.MustCompile(`Agent MCP bearer token:\s+(\S+)`)
 var expectedTools = []string{
 	"list_profiles",
 	"open_session",
-	"close_session",
 	"list_sftp_sessions",
 	"list_sftp_local",
 	"change_sftp_local_directory",

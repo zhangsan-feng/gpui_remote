@@ -50,7 +50,7 @@ impl SftpView {
                     );
                     this.initialize_projection(workspace_id.clone(), profile.clone());
                 }
-                GlobalEvent::SelectWorkspaceSession(workspace_id) => {
+                GlobalEvent::WorkspaceSessionSelected(workspace_id) => {
                     if this.selected_workspace_id == *workspace_id {
                         return;
                     }
@@ -67,7 +67,7 @@ impl SftpView {
                     }
                     this.refresh_from_application(cx);
                 }
-                GlobalEvent::CloseWorkspaceSession { workspace_id } => {
+                GlobalEvent::WorkspaceSessionClosed { workspace_id } => {
                     this.close(workspace_id);
                 }
                 _ => return,

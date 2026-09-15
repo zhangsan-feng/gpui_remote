@@ -85,6 +85,7 @@ pub(crate) enum ApplicationCommand {
         workspace_id: String,
         offset: usize,
         limit: usize,
+        since_revision: Option<u64>,
     },
     SendText {
         workspace_id: String,

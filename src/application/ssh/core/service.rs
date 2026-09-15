@@ -47,6 +47,7 @@ impl SshApplication {
         }
         self.close_if_present(&workspace_id);
         let runtime = new_runtime(
+            workspace_id.clone(),
             profile,
             self.inner.updates.clone(),
             self.inner.status_updates.clone(),
@@ -143,6 +144,7 @@ impl SshApplication {
         workspace_id: &str,
         offset: usize,
         limit: usize,
+        since_revision: Option<u64>,
     ) -> Result<TerminalHistoryPage, String> {
         let commands = self.commands(workspace_id)?;
         let (reply, response) = oneshot::channel();
@@ -150,6 +152,7 @@ impl SshApplication {
             .send(TerminalSessionCommand::Read {
                 offset,
                 limit,
+                since_revision,
                 reply,
             })
             .map_err(|_| format!("SSH 会话不可用: {workspace_id}"))?;
@@ -175,6 +178,16 @@ impl SshApplication {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
             .map(|runtime| runtime.model.revision())
+            .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
+    }
+
+    pub fn terminal_update_revision(&self, workspace_id: &str) -> Result<u64, String> {
+        self.inner
+            .runtimes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(workspace_id)
+            .map(|runtime| runtime.model.update_revision())
             .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
     }
 

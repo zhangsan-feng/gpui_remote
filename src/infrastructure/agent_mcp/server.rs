@@ -28,20 +28,24 @@ pub(super) async fn run(bridge: McpBridgeEndpoint, settings: McpSettings) -> Res
             Default::default(),
             config,
         );
-    let router = Router::new()
+    let mut router = Router::new()
         .nest_service("/mcp", service)
-        .layer(middleware::from_fn(trace_mcp_request))
-        .layer(middleware::from_fn_with_state(
+        .layer(middleware::from_fn(trace_mcp_request));
+    if settings.token_enabled {
+        router = router.layer(middleware::from_fn_with_state(
             token.clone(),
             require_bearer_token,
         ));
+    }
     let address = socket_address(&settings.host, settings.port);
     let listener = TcpListener::bind(&address)
         .await
         .with_context(|| format!("绑定 MCP 服务地址失败: {address}"))?;
 
     log::info!("Agent MCP endpoint: http://{address}/mcp");
-    log::info!("Agent MCP bearer token: {token}");
+    if settings.token_enabled {
+        log::info!("Agent MCP bearer token: {token}");
+    }
     axum::serve(listener, router)
         .await
         .context("运行 Agent MCP 服务失败")

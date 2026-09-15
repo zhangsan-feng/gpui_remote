@@ -260,16 +260,19 @@ func runFullInterfaceSuite(suite *testSuite) {
 	sftpWorkspace := openWorkspace(suite, profile, "sftp")
 	if sshWorkspace == "" || sftpWorkspace == "" {
 		if sshWorkspace != "" {
-			suite.callTool("close_session", map[string]any{"workspace_id": sshWorkspace}, false)
+			// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+			// suite.callTool("close_session", map[string]any{"workspace_id": sshWorkspace}, false)
 		}
 		if sftpWorkspace != "" {
-			suite.callTool("close_session", map[string]any{"workspace_id": sftpWorkspace}, false)
+			// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+			// suite.callTool("close_session", map[string]any{"workspace_id": sftpWorkspace}, false)
 		}
 		return
 	}
 	defer func() {
-		suite.callTool("close_session", map[string]any{"workspace_id": sftpWorkspace}, false)
-		suite.callTool("close_session", map[string]any{"workspace_id": sshWorkspace}, false)
+		// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+		// suite.callTool("close_session", map[string]any{"workspace_id": sftpWorkspace}, false)
+		// suite.callTool("close_session", map[string]any{"workspace_id": sshWorkspace}, false)
 	}()
 
 	localDir, err := os.MkdirTemp("", "gpui-mcp-interface-")

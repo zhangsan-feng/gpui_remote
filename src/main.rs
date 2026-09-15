@@ -48,12 +48,10 @@ pub fn logger_init(log_dir: impl AsRef<Path>, date_format: &str) -> [WorkerGuard
         .level(log::LevelFilter::Info)
         .level_for("gpui_remote::application", log::LevelFilter::Debug)
         .level_for("gpui_remote::infrastructure", log::LevelFilter::Debug)
-        .level_for(
-            "gpui_remote::gui::workspace::agent_mcp",
-            log::LevelFilter::Debug,
-        )
+        .level_for("gpui_remote::gui::workspace", log::LevelFilter::Debug)
         .level_for("gpui_remote::gui::workspace::ssh", log::LevelFilter::Debug)
         .level_for("gpui_remote::gui::workspace::sftp", log::LevelFilter::Debug)
+        // .level_for("russh::client", log::LevelFilter::Debug)
         // .level_for("gstreamer", log::LevelFilter::Debug)
         // .level(log::LevelFilter::Debug)
         // .level(log::LevelFilter::Trace)

@@ -41,10 +41,12 @@ func main() {
 				runner.logger.Printf("mcp_test_failure %v", sftpErr)
 			}
 			if sshWorkspace != "" {
-				runner.closeSession(sshWorkspace)
+				// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+				// runner.closeSession(sshWorkspace)
 			}
 			if sftpWorkspace != "" {
-				runner.closeSession(sftpWorkspace)
+				// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+				// runner.closeSession(sftpWorkspace)
 			}
 		} else {
 			if _, waitErr := runner.waitForSftp(sftpWorkspace, cfg.timeout); waitErr != nil {
@@ -52,8 +54,9 @@ func main() {
 				runner.logger.Printf("mcp_test_failure %v", waitErr)
 			}
 			runConcurrentReads(runner, sshWorkspace, sftpWorkspace, cfg.rounds)
-			runner.closeSession(sftpWorkspace)
-			runner.closeSession(sshWorkspace)
+			// MCP 暂不提供 close_session，保留调用示例以便后续恢复。
+			// runner.closeSession(sftpWorkspace)
+			// runner.closeSession(sshWorkspace)
 		}
 	}
 	runner.logger.Printf("mcp_concurrent_finished failures=%d", runner.failures)

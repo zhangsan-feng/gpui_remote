@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use tokio::task::AbortHandle;
+use tokio::sync::watch;
 use uuid::Uuid;
 
 use super::{McpSettings, SETTINGS_PATH, bridge::McpBridgeEndpoint, server};
@@ -19,7 +19,7 @@ pub(super) struct AgentMcpController {
 struct ControllerState {
     bridge: McpBridgeEndpoint,
     settings: McpSettings,
-    server_abort: Option<AbortHandle>,
+    server_settings: Option<watch::Sender<McpSettings>>,
 }
 
 impl AgentMcpController {
@@ -28,7 +28,7 @@ impl AgentMcpController {
             state: Arc::new(Mutex::new(ControllerState {
                 bridge,
                 settings: McpSettings::default(),
-                server_abort: None,
+                server_settings: None,
             })),
         }
     }
@@ -49,23 +49,56 @@ impl AgentMcpController {
             .state
             .lock()
             .map_err(|_| "MCP 服务状态不可用".to_owned())?;
-        if let Some(server_abort) = state.server_abort.take() {
-            server_abort.abort();
-        }
-
         state.settings = settings.clone();
-        if settings.enabled {
+        if let Some(server_settings) = state.server_settings.as_ref() {
+            server_settings
+                .send(settings.clone())
+                .map_err(|_| "MCP 服务重启任务不可用".to_owned())?;
+        } else if state.settings.enabled {
+            let (server_settings, receiver) = watch::channel(state.settings.clone());
             let bridge = state.bridge.clone();
-            let server_settings = settings.clone();
-            let server = tokio::spawn(async move {
-                if let Err(error) = server::run(bridge, server_settings).await {
-                    log::error!("Agent MCP server stopped: {error:#}");
-                }
-            });
-            state.server_abort = Some(server.abort_handle());
+            tokio::spawn(run_server_manager(bridge, receiver));
+            state.server_settings = Some(server_settings);
         }
 
         Ok(settings)
+    }
+}
+
+async fn run_server_manager(bridge: McpBridgeEndpoint, mut settings: watch::Receiver<McpSettings>) {
+    loop {
+        let current_settings = settings.borrow().clone();
+        if !current_settings.enabled {
+            if settings.changed().await.is_err() {
+                break;
+            }
+            continue;
+        }
+
+        let server_bridge = bridge.clone();
+        let server_settings = current_settings.clone();
+        let mut server =
+            tokio::spawn(async move { server::run(server_bridge, server_settings).await });
+
+        tokio::select! {
+            changed = settings.changed() => {
+                server.abort();
+                let _ = server.await;
+                if changed.is_err() {
+                    break;
+                }
+            }
+            result = &mut server => {
+                match result {
+                    Ok(Ok(())) => log::info!("Agent MCP server stopped"),
+                    Ok(Err(error)) => log::error!("Agent MCP server stopped: {error:#}"),
+                    Err(error) => log::error!("Agent MCP server task failed: {error}"),
+                }
+                if settings.changed().await.is_err() {
+                    break;
+                }
+            }
+        }
     }
 }
 

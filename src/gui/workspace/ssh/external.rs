@@ -40,16 +40,22 @@ mod lifecycle {
                 match event {
                     GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
                         if profile.protocol == crate::domain::session::Protocol::Ssh {
+                            log::debug!(
+                                "SSH GUI projection event received: workspace_id={workspace_id}, profile_id={}, host={}",
+                                profile.id,
+                                profile.host
+                            );
                             this.initialize_projection(workspace_id.clone(), profile.clone());
+                            this.notify_if_model_changed(cx);
                         }
-                        return;
                     }
-                    GlobalEvent::CloseWorkspaceSession { workspace_id } => {
-                        this.close_projection(workspace_id)
+                    GlobalEvent::WorkspaceSessionClosed { workspace_id } => {
+                        this.close_projection(workspace_id);
+                        this.reset_active_view();
                     }
-                    GlobalEvent::SelectWorkspaceSession(workspace_id) => {
+                    GlobalEvent::WorkspaceSessionSelected(workspace_id) => {
                         this.set_selected_workspace(workspace_id.clone(), cx);
-                        return;
+                        this.notify_if_model_changed(cx);
                     }
                     _ => return,
                 }
@@ -64,6 +70,9 @@ mod lifecycle {
             workspace_id: String,
             profile: SessionProfile,
         ) {
+            if self.models.contains_key(&workspace_id) {
+                return;
+            }
             self.focus_pending = true;
             self.models.insert(
                 workspace_id,

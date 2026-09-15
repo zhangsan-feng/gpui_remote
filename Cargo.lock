@@ -3522,6 +3522,7 @@ dependencies = [
  "axum",
  "chrono",
  "fern",
+ "filetime",
  "gpui-kit",
  "gpui-pre-reqwest-client",
  "log",

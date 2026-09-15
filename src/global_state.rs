@@ -8,6 +8,8 @@ pub enum GlobalEvent {
     UpdateSession,
     OpenWorkspaceSession(SessionProfile),
     WorkspaceSessionOpened(String, SessionProfile),
+    WorkspaceSessionClosed { workspace_id: String },
+    WorkspaceSessionSelected(Option<String>),
     SelectWorkspaceSession(Option<String>),
     CloseWorkspaceSession { workspace_id: String },
     ThemeColorChanged,

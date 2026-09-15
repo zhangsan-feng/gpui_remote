@@ -1,16 +1,10 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context as _, Result, bail};
 use russh::{Disconnect, client};
 use russh_sftp::client::SftpSession;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, oneshot},
-    task::JoinSet,
-};
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::task::JoinSet;
 
 use crate::{
     domain::session::SessionProfile,
@@ -18,9 +12,8 @@ use crate::{
 };
 
 use super::conn::{SftpClientHandler, ssh_config};
+use super::transfer::{download_path, upload_path};
 use super::{RemoteDeleteItem, SftpCommand, SftpEntry, SftpModel, SftpStatus};
-
-const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
 
 pub(super) async fn run_sftp_session(
     workspace_id: String,
@@ -120,6 +113,7 @@ pub(super) async fn run_sftp_session(
     model.set_connected(initial_path, entries);
 
     let mut transfer_tasks = JoinSet::new();
+    let mut transfer_locks = HashMap::<String, Arc<Mutex<()>>>::new();
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -163,9 +157,13 @@ pub(super) async fn run_sftp_session(
                         local_path,
                         remote_path,
                         refresh_path,
+                        complete,
                     } => {
                         if model.is_cancelled(transfer_id) {
                             model.update_transfer(transfer_id, 0., 0, 0, "已取消");
+                            if let Some(complete) = complete {
+                                let _ = complete.send(false);
+                            }
                             continue;
                         }
                         model.update_transfer(transfer_id, 0., 0, 0, "扫描中");
@@ -173,6 +171,10 @@ pub(super) async fn run_sftp_session(
                             "SFTP 上传任务开始: transfer_id={transfer_id}, local={}, remote={remote_path}",
                             local_path.display()
                         );
+                        let target_lock = transfer_locks
+                            .entry(remote_path.clone())
+                            .or_insert_with(|| Arc::new(Mutex::new(())))
+                            .clone();
                         transfer_tasks.spawn(run_upload(
                             sftp.clone(),
                             model.clone(),
@@ -180,6 +182,8 @@ pub(super) async fn run_sftp_session(
                             local_path,
                             remote_path,
                             refresh_path,
+                            target_lock,
+                            complete,
                         ));
                     }
                     SftpCommand::Download {
@@ -200,6 +204,10 @@ pub(super) async fn run_sftp_session(
                             "SFTP 下载任务开始: transfer_id={transfer_id}, remote={remote_path}, local={}",
                             local_path.display()
                         );
+                        let target_lock = transfer_locks
+                            .entry(remote_path.clone())
+                            .or_insert_with(|| Arc::new(Mutex::new(())))
+                            .clone();
                         transfer_tasks.spawn(run_download(
                             sftp.clone(),
                             model.clone(),
@@ -208,6 +216,7 @@ pub(super) async fn run_sftp_session(
                             local_path,
                             total_size,
                             is_directory,
+                            target_lock,
                             complete,
                         ));
                     }
@@ -267,7 +276,10 @@ async fn run_upload(
     local_path: PathBuf,
     remote_path: String,
     refresh_path: String,
+    target_lock: Arc<Mutex<()>>,
+    complete: Option<oneshot::Sender<bool>>,
 ) {
+    let _target_lock = target_lock.lock().await;
     let result = upload_path(
         &sftp,
         &local_path,
@@ -284,18 +296,40 @@ async fn run_upload(
     )
     .await;
     match result {
-        Ok(is_directory) => {
-            model.set_upload_directory(transfer_id, is_directory);
+        Ok(outcome) => {
+            let succeeded = !model.is_cancelled(transfer_id);
+            model.set_upload_directory(transfer_id, outcome.is_directory);
             if model.is_cancelled(transfer_id) {
                 model.update_transfer(transfer_id, 0., 0, 0, "已取消");
             } else {
-                model.update_transfer(transfer_id, 1., 0, 0, "已完成");
+                let status = if outcome.transferred_files == 0 && outcome.unchanged_entries > 0 {
+                    "未修改"
+                } else {
+                    "已完成"
+                };
+                model.update_transfer(
+                    transfer_id,
+                    1.,
+                    outcome.transferred_bytes,
+                    outcome.total_size,
+                    status,
+                );
+                log::debug!(
+                    "SFTP 上传结果: transfer_id={transfer_id}, transferred_files={}, skipped_files={}, unchanged_entries={}, transferred_bytes={}",
+                    outcome.transferred_files,
+                    outcome.skipped_files,
+                    outcome.unchanged_entries,
+                    outcome.transferred_bytes
+                );
                 if model.snapshot().path == refresh_path {
                     match scan_remote_directory(&sftp, &refresh_path).await {
                         Ok(entries) => model.set_directory(refresh_path, entries),
                         Err(error) => model.set_error(format!("{error:#}")),
                     }
                 }
+            }
+            if let Some(complete) = complete {
+                let _ = complete.send(succeeded);
             }
         }
         Err(error) => {
@@ -304,6 +338,9 @@ async fn run_upload(
             } else {
                 log::error!("上传文件失败: {error:#}");
                 model.set_transfer_error(transfer_id, format!("{error:#}"));
+            }
+            if let Some(complete) = complete {
+                let _ = complete.send(false);
             }
         }
     }
@@ -318,8 +355,10 @@ async fn run_download(
     local_path: PathBuf,
     total_size: u64,
     is_directory: bool,
+    target_lock: Arc<Mutex<()>>,
     complete: oneshot::Sender<bool>,
 ) {
+    let _target_lock = target_lock.lock().await;
     let result = download_path(
         &sftp,
         &remote_path,
@@ -337,234 +376,41 @@ async fn run_download(
         || model.is_cancelled(transfer_id),
     )
     .await;
-    let succeeded = result.is_ok() && !model.is_cancelled(transfer_id);
+    let mut refresh_local_directory = false;
     if model.is_cancelled(transfer_id) {
         model.update_transfer(transfer_id, 0., 0, 0, "已取消");
-    } else if let Err(error) = result {
-        log::error!("下载文件失败: {error:#}");
-        model.set_transfer_error(transfer_id, format!("{error:#}"));
     } else {
-        model.update_transfer(transfer_id, 1., 0, 0, "已完成");
+        match result {
+            Ok(outcome) => {
+                let status = if outcome.transferred_files == 0 && outcome.unchanged_entries > 0 {
+                    "未修改"
+                } else {
+                    "已完成"
+                };
+                model.update_transfer(
+                    transfer_id,
+                    1.,
+                    outcome.transferred_bytes,
+                    outcome.total_size,
+                    status,
+                );
+                refresh_local_directory = outcome.transferred_files > 0;
+                log::debug!(
+                    "SFTP 下载结果: transfer_id={transfer_id}, transferred_files={}, skipped_files={}, unchanged_entries={}, transferred_bytes={}",
+                    outcome.transferred_files,
+                    outcome.skipped_files,
+                    outcome.unchanged_entries,
+                    outcome.transferred_bytes
+                );
+            }
+            Err(error) => {
+                log::error!("下载文件失败: {error:#}");
+                model.set_transfer_error(transfer_id, format!("{error:#}"));
+            }
+        }
     }
-    let _ = complete.send(succeeded);
+    let _ = complete.send(refresh_local_directory);
     log::debug!("SFTP 下载任务结束: transfer_id={transfer_id}");
-}
-
-struct LocalTransferEntry {
-    local_path: PathBuf,
-    remote_path: String,
-    is_directory: bool,
-}
-
-struct RemoteTransferEntry {
-    remote_path: String,
-    local_path: PathBuf,
-    is_directory: bool,
-}
-
-async fn upload_path(
-    sftp: &SftpSession,
-    local_path: &Path,
-    remote_path: &str,
-    mut on_progress: impl FnMut(u64, u64),
-    is_cancelled: impl Fn() -> bool,
-) -> Result<bool> {
-    let local_root = local_path.to_owned();
-    let remote_root = remote_path.to_owned();
-    let (entries, total_size) =
-        tokio::task::spawn_blocking(move || collect_local_entries(&local_root, &remote_root))
-            .await
-            .context("扫描本地上传目录任务失败")??;
-    let is_directory = entries.first().is_some_and(|entry| entry.is_directory);
-    let mut transferred = 0_u64;
-
-    for entry in entries {
-        if is_cancelled() {
-            bail!("传输已取消");
-        }
-        if entry.is_directory {
-            if !sftp
-                .try_exists(&entry.remote_path)
-                .await
-                .with_context(|| format!("检查远程目录 {} 失败", entry.remote_path))?
-            {
-                sftp.create_dir(&entry.remote_path)
-                    .await
-                    .with_context(|| format!("创建远程目录 {} 失败", entry.remote_path))?;
-            }
-            continue;
-        }
-        let mut source = tokio::fs::File::open(&entry.local_path)
-            .await
-            .with_context(|| format!("打开本地文件 {} 失败", entry.local_path.display()))?;
-        let mut target = sftp
-            .create(&entry.remote_path)
-            .await
-            .with_context(|| format!("创建远程文件 {} 失败", entry.remote_path))?;
-        copy_with_progress(
-            &mut source,
-            &mut target,
-            total_size,
-            &mut transferred,
-            &mut on_progress,
-            &is_cancelled,
-        )
-        .await?;
-        target
-            .flush()
-            .await
-            .with_context(|| format!("刷新远程文件 {} 失败", entry.remote_path))?;
-    }
-    on_progress(total_size, total_size);
-    Ok(is_directory)
-}
-
-async fn download_path(
-    sftp: &SftpSession,
-    remote_path: &str,
-    local_path: &Path,
-    known_size: u64,
-    is_directory: bool,
-    mut on_progress: impl FnMut(u64, u64),
-    is_cancelled: impl Fn() -> bool,
-) -> Result<()> {
-    let (entries, total_size) =
-        collect_remote_entries(sftp, remote_path, local_path, known_size, is_directory).await?;
-    let mut transferred = 0_u64;
-    for entry in entries {
-        if is_cancelled() {
-            bail!("传输已取消");
-        }
-        if entry.is_directory {
-            tokio::fs::create_dir_all(&entry.local_path)
-                .await
-                .with_context(|| format!("创建本地目录 {} 失败", entry.local_path.display()))?;
-            continue;
-        }
-        if let Some(parent) = entry.local_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .with_context(|| format!("创建本地目录 {} 失败", parent.display()))?;
-        }
-        let mut source = sftp
-            .open(&entry.remote_path)
-            .await
-            .with_context(|| format!("打开远程文件 {} 失败", entry.remote_path))?;
-        let mut target = tokio::fs::File::create(&entry.local_path)
-            .await
-            .with_context(|| format!("创建本地文件 {} 失败", entry.local_path.display()))?;
-        copy_with_progress(
-            &mut source,
-            &mut target,
-            total_size,
-            &mut transferred,
-            &mut on_progress,
-            &is_cancelled,
-        )
-        .await?;
-        target
-            .flush()
-            .await
-            .with_context(|| format!("刷新本地文件 {} 失败", entry.local_path.display()))?;
-    }
-    on_progress(total_size, total_size);
-    Ok(())
-}
-
-fn collect_local_entries(
-    local_root: &Path,
-    remote_root: &str,
-) -> Result<(Vec<LocalTransferEntry>, u64)> {
-    let mut entries = Vec::new();
-    let mut total_size = 0_u64;
-    let mut pending = vec![(local_root.to_owned(), remote_root.to_owned())];
-    while let Some((local_path, remote_path)) = pending.pop() {
-        let metadata = std::fs::symlink_metadata(&local_path)
-            .with_context(|| format!("读取本地路径 {} 失败", local_path.display()))?;
-        if metadata.file_type().is_symlink() {
-            bail!("暂不支持传输符号链接 {}", local_path.display());
-        }
-        let is_directory = metadata.is_dir();
-        entries.push(LocalTransferEntry {
-            local_path: local_path.clone(),
-            remote_path: remote_path.clone(),
-            is_directory,
-        });
-        if !is_directory {
-            total_size = total_size.saturating_add(metadata.len());
-            continue;
-        }
-        for child in std::fs::read_dir(&local_path)
-            .with_context(|| format!("读取本地目录 {} 失败", local_path.display()))?
-        {
-            let child =
-                child.with_context(|| format!("读取本地目录项 {} 失败", local_path.display()))?;
-            let name = child.file_name().to_string_lossy().into_owned();
-            pending.push((child.path(), join_remote_path(&remote_path, &name)));
-        }
-    }
-    Ok((entries, total_size))
-}
-
-async fn collect_remote_entries(
-    sftp: &SftpSession,
-    remote_root: &str,
-    local_root: &Path,
-    known_size: u64,
-    is_directory: bool,
-) -> Result<(Vec<RemoteTransferEntry>, u64)> {
-    if !is_directory {
-        let total_size = if known_size == 0 {
-            sftp.metadata(remote_root)
-                .await
-                .with_context(|| format!("读取远程文件 {remote_root} 信息失败"))?
-                .len()
-        } else {
-            known_size
-        };
-        return Ok((
-            vec![RemoteTransferEntry {
-                remote_path: remote_root.to_owned(),
-                local_path: local_root.to_owned(),
-                is_directory: false,
-            }],
-            total_size,
-        ));
-    }
-
-    let mut entries = Vec::new();
-    let mut total_size = 0_u64;
-    let mut pending = vec![(remote_root.to_owned(), local_root.to_owned())];
-    while let Some((remote_path, local_path)) = pending.pop() {
-        entries.push(RemoteTransferEntry {
-            remote_path: remote_path.clone(),
-            local_path: local_path.clone(),
-            is_directory: true,
-        });
-        let children = sftp
-            .read_dir(&remote_path)
-            .await
-            .with_context(|| format!("读取远程目录 {remote_path} 失败"))?;
-        for child in children {
-            let name = child.file_name();
-            if name == "." || name == ".." {
-                continue;
-            }
-            let metadata = child.metadata();
-            let child_local_path = local_path.join(&name);
-            if metadata.is_dir() {
-                pending.push((child.path(), child_local_path));
-            } else {
-                total_size = total_size.saturating_add(metadata.len());
-                entries.push(RemoteTransferEntry {
-                    remote_path: child.path(),
-                    local_path: child_local_path,
-                    is_directory: false,
-                });
-            }
-        }
-    }
-    Ok((entries, total_size))
 }
 
 async fn delete_remote_path(
@@ -629,36 +475,6 @@ async fn delete_remote_paths(sftp: &SftpSession, items: &[RemoteDeleteItem]) -> 
         bail!("{}", errors.join("\n"));
     }
     log::debug!("SFTP 批量删除远程路径完成: count={}", items.len());
-    Ok(())
-}
-
-async fn copy_with_progress(
-    source: &mut (impl AsyncRead + Unpin),
-    target: &mut (impl AsyncWrite + Unpin),
-    total_size: u64,
-    transferred: &mut u64,
-    on_progress: &mut impl FnMut(u64, u64),
-    is_cancelled: &impl Fn() -> bool,
-) -> Result<()> {
-    let mut buffer = vec![0; TRANSFER_BUFFER_SIZE];
-    loop {
-        if is_cancelled() {
-            bail!("传输已取消");
-        }
-        let read = source.read(&mut buffer).await.context("读取传输数据失败")?;
-        if read == 0 {
-            break;
-        }
-        if is_cancelled() {
-            bail!("传输已取消");
-        }
-        target
-            .write_all(&buffer[..read])
-            .await
-            .context("写入传输数据失败")?;
-        *transferred = transferred.saturating_add(read as u64);
-        on_progress(*transferred, total_size);
-    }
     Ok(())
 }
 

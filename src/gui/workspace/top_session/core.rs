@@ -10,29 +10,14 @@ impl WorkspaceSession {
         {
             return;
         }
-        self.selected_id = Some(id.to_owned());
-        self.select_tab(id, cx);
-        self.emit_selected_workspace(self.selected_id.clone(), cx);
-        cx.notify();
+        self.emit_selected_workspace(Some(id.to_owned()), cx);
     }
 
     pub fn close(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some(index) = self.sessions.iter().position(|item| item.id == id) else {
+        if !self.sessions.iter().any(|item| item.id == id) {
             return;
-        };
-        self.sessions.remove(index);
-        self.statuses.remove(id);
-        let active_session_closed = self.selected_id.as_deref() == Some(id);
-        if active_session_closed {
-            self.selected_id = next_selected_session(&self.sessions, index);
         }
-        self.rebuild_tabs(cx);
-
         self.emit_closed_workspace(id.to_owned(), cx);
-        if active_session_closed {
-            self.emit_selected_workspace(self.selected_id.clone(), cx);
-        }
-        cx.notify();
     }
 
     pub(in crate::gui::workspace) fn open(
@@ -46,22 +31,54 @@ impl WorkspaceSession {
             profile.id,
             profile.protocol
         );
+        if self
+            .sessions
+            .iter()
+            .any(|session| session.id == workspace_id)
+        {
+            return;
+        }
         self.sessions.push(OpenedWorkspaceSession {
-            id: workspace_id.clone(),
+            id: workspace_id,
             profile,
         });
-        self.selected_id = Some(workspace_id.clone());
         self.rebuild_tabs(cx);
-        self.emit_selected_workspace(Some(workspace_id), cx);
         cx.notify();
     }
-}
 
-fn next_selected_session(
-    sessions: &[OpenedWorkspaceSession],
-    removed_index: usize,
-) -> Option<String> {
-    sessions
-        .get(removed_index.min(sessions.len().saturating_sub(1)))
-        .map(|item| item.id.clone())
+    pub(super) fn select_from_application(
+        &mut self,
+        selected_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let selected_id = selected_id.filter(|id| {
+            self.sessions
+                .iter()
+                .any(|opened_session| opened_session.id.as_str() == id)
+        });
+        if self.selected_id == selected_id {
+            if let Some(selected_id) = selected_id.as_deref() {
+                self.select_tab(selected_id, cx);
+            }
+            return;
+        }
+        self.selected_id = selected_id.clone();
+        if let Some(selected_id) = selected_id.as_deref() {
+            self.select_tab(selected_id, cx);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn close_from_application(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(index) = self.sessions.iter().position(|item| item.id == id) else {
+            return;
+        };
+        self.sessions.remove(index);
+        self.statuses.remove(id);
+        if self.selected_id.as_deref() == Some(id) {
+            self.selected_id = None;
+        }
+        self.rebuild_tabs(cx);
+        cx.notify();
+    }
 }

@@ -15,6 +15,7 @@ use super::run_ssh_session;
 pub(crate) struct TerminalModel {
     data: RwLock<TerminalData>,
     revision: AtomicU64,
+    update_revision: AtomicU64,
     updates: Arc<Notify>,
     status_updates: Arc<Notify>,
 }
@@ -34,6 +35,7 @@ impl TerminalModel {
         Self {
             data: RwLock::new(data),
             revision: AtomicU64::new(0),
+            update_revision: AtomicU64::new(0),
             updates,
             status_updates,
         }
@@ -51,12 +53,32 @@ impl TerminalModel {
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
         let revision = self.revision.fetch_add(1, Ordering::Release) + 1;
+        self.update_revision.fetch_add(1, Ordering::Release);
         self.updates.notify_waiters();
         revision
     }
 
+    pub(crate) fn replace_view(&self, data: TerminalData) {
+        *self
+            .data
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
+        self.update_revision.fetch_add(1, Ordering::Release);
+        self.updates.notify_waiters();
+    }
+
+    pub(crate) fn mark_input(&self) {
+        self.revision.fetch_add(1, Ordering::Release);
+        self.update_revision.fetch_add(1, Ordering::Release);
+        self.updates.notify_waiters();
+    }
+
     pub(crate) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn update_revision(&self) -> u64 {
+        self.update_revision.load(Ordering::Acquire)
     }
 
     pub(crate) fn set_status(&self, status: TerminalStatus, message: Option<String>) {
@@ -68,13 +90,14 @@ impl TerminalModel {
             data.status = status;
             data.message = message;
         }
-        self.revision.fetch_add(1, Ordering::Release);
+        self.update_revision.fetch_add(1, Ordering::Release);
         self.updates.notify_waiters();
         self.status_updates.notify_waiters();
     }
 }
 
 pub(crate) fn new_runtime(
+    workspace_id: String,
     profile: SessionProfile,
     updates: Arc<Notify>,
     status_updates: Arc<Notify>,
@@ -91,6 +114,7 @@ pub(crate) fn new_runtime(
     let (commands, command_rx) = mpsc::unbounded_channel();
     let task = if supports_terminal_protocol(&profile.protocol) {
         Some(tokio::spawn(run_ssh_session(
+            workspace_id,
             profile,
             commands.clone(),
             command_rx,

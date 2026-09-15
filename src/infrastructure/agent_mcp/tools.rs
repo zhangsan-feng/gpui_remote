@@ -49,6 +49,8 @@ struct ReadTerminalInput {
     offset: usize,
     #[serde(default = "default_read_limit")]
     limit: usize,
+    #[serde(default)]
+    since_revision: Option<u64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -145,6 +147,8 @@ struct TerminalReadOutput {
     offset: usize,
     limit: usize,
     has_more: bool,
+    revision: u64,
+    changed: bool,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -251,6 +255,8 @@ impl AgentTerminalMcp {
             .map_err(mcp_error)
     }
 
+    // 暂不向 MCP 注册 close_session；保留实现代码，便于后续恢复。
+    /*
     #[tool(description = "Close an open SSH or SFTP workspace by workspace id.")]
     async fn close_session(
         &self,
@@ -262,6 +268,7 @@ impl AgentTerminalMcp {
             .map(|()| Json(ActionOutput { success: true }))
             .map_err(mcp_error)
     }
+    */
 
     #[tool(description = "List open SFTP sessions by workspace id.")]
     async fn list_sftp_sessions(&self) -> Result<Json<Vec<TerminalOutput>>, ErrorData> {
@@ -414,14 +421,19 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Read terminal output for an SSH workspace without changing GUI scroll position. Offset counts lines back from the newest output."
+        description = "Read terminal output for an SSH workspace without changing GUI scroll position. offset=0 reads the newest tail. The response includes revision and total_lines as the current tail anchor; pass the previous revision as since_revision on the next poll. When the revision has not changed, changed=false and text is empty."
     )]
     async fn read_terminal(
         &self,
         Parameters(input): Parameters<ReadTerminalInput>,
     ) -> Result<Json<TerminalReadOutput>, ErrorData> {
         self.bridge
-            .read_terminal(input.workspace_id, input.offset, input.limit)
+            .read_terminal(
+                input.workspace_id,
+                input.offset,
+                input.limit,
+                input.since_revision,
+            )
             .await
             .map(|page| Json(TerminalReadOutput::from(page)))
             .map_err(mcp_error)
@@ -510,6 +522,8 @@ impl From<TerminalReadPage> for TerminalReadOutput {
             offset: page.offset,
             limit: page.limit,
             has_more: page.has_more,
+            revision: page.revision,
+            changed: page.changed,
         }
     }
 }

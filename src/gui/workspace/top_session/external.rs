@@ -16,6 +16,12 @@ impl WorkspaceSession {
             GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
                 this.open(workspace_id.clone(), profile.clone(), cx);
             }
+            GlobalEvent::WorkspaceSessionClosed { workspace_id } => {
+                this.close_from_application(workspace_id, cx);
+            }
+            GlobalEvent::WorkspaceSessionSelected(workspace_id) => {
+                this.select_from_application(workspace_id.clone(), cx);
+            }
             _ => {}
         })
         .detach();

@@ -109,8 +109,9 @@ pub(crate) async fn dispatch(
             workspace_id,
             offset,
             limit,
+            since_revision,
         } => application
-            .read_terminal(workspace_id, offset, limit)
+            .read_terminal(workspace_id, offset, limit, since_revision)
             .await
             .map(ApplicationResponse::TerminalRead),
         ApplicationCommand::SendText { workspace_id, text } => application

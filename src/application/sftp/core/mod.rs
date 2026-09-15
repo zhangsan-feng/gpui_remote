@@ -3,6 +3,8 @@ mod local;
 mod path;
 mod remote;
 mod service;
+mod sync;
+mod transfer;
 mod watcher;
 
 use std::{
@@ -372,6 +374,7 @@ enum SftpCommand {
         local_path: PathBuf,
         remote_path: String,
         refresh_path: String,
+        complete: Option<oneshot::Sender<bool>>,
     },
     Download {
         transfer_id: u64,

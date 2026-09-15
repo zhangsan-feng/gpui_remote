@@ -71,6 +71,7 @@ impl SftpApplication {
                     local_path: path,
                     remote_path: target,
                     refresh_path: remote_path.clone(),
+                    complete: None,
                 })
                 .is_err()
             {
@@ -224,6 +225,7 @@ impl SftpApplication {
                         local_path,
                         remote_path: transfer.target,
                         refresh_path,
+                        complete: None,
                     })
                     .is_err()
                 {
@@ -302,7 +304,7 @@ impl SftpApplication {
         workspace_id: &str,
         local_path: PathBuf,
         remote_path: String,
-    ) -> Option<u64> {
+    ) -> Option<oneshot::Receiver<bool>> {
         let runtime = self.runtime(workspace_id).ok()?;
         let name = local_path
             .file_name()
@@ -328,6 +330,7 @@ impl SftpApplication {
             error: None,
         });
         let refresh_path = runtime.model.snapshot().path;
+        let (complete, completion) = oneshot::channel();
         if runtime
             .commands
             .send(SftpCommand::Upload {
@@ -335,6 +338,7 @@ impl SftpApplication {
                 local_path,
                 remote_path,
                 refresh_path,
+                complete: Some(complete),
             })
             .is_err()
         {
@@ -344,6 +348,6 @@ impl SftpApplication {
             return None;
         }
         self.inner.updates.notify_one();
-        Some(transfer_id)
+        Some(completion)
     }
 }

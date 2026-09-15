@@ -180,7 +180,6 @@ impl SftpView {
         let colors = cx.theme();
         let ui_colors = theme::CustomerUiTheme::colors(cx);
         let watched_background = Self::watched_row_background(cx);
-        let watched_overlay_background = Self::watched_row_overlay_background(cx);
         let path = PathBuf::from(&entry.path);
         let is_directory = entry.is_directory;
         let drag_paths = if selected {
@@ -231,23 +230,6 @@ impl SftpView {
                     .text_color(colors.muted_foreground)
                     .child(Self::format_local_modified(entry.modified_at)),
             )
-            .when(watched, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .right_2()
-                        .h_full()
-                        .px_2()
-                        .flex()
-                        .items_center()
-                        .bg(watched_overlay_background)
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(colors.primary)
-                        .child("监听中"),
-                )
-            })
             .on_mouse_down(MouseButton::Right, move |_, _, cx| {
                 let _ = context_view.update(cx, |this, cx| {
                     this.local_context_path = Some(context_path.clone());
@@ -302,12 +284,6 @@ impl SftpView {
         } else {
             (background.l + 0.06).clamp(0.08, 0.92)
         };
-        background
-    }
-
-    fn watched_row_overlay_background(cx: &App) -> Hsla {
-        let mut background = cx.theme().primary;
-        background.a = 0.16;
         background
     }
 }

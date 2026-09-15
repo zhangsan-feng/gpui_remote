@@ -22,14 +22,7 @@ impl SftpView {
         path: String,
         cx: &mut Context<Self>,
     ) {
-        let current_path = self
-            .selected_snapshot()
-            .map(|snapshot| snapshot.remote.path);
-        let should_persist = should_persist_remote_path(current_path.as_deref(), &path);
-        self.change_remote_directory(path.clone(), cx);
-        if should_persist {
-            self.persist_remote_directory(&path, cx);
-        }
+        self.change_remote_directory(path, cx);
         cx.notify();
     }
 
@@ -131,8 +124,4 @@ fn parent_path(path: &str) -> String {
 
 fn should_persist_local_path(current: &std::path::Path, next: &std::path::Path) -> bool {
     current != next
-}
-
-fn should_persist_remote_path(current: Option<&str>, next: &str) -> bool {
-    !next.is_empty() && current != Some(next)
 }

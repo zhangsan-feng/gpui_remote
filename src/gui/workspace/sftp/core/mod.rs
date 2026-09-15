@@ -96,6 +96,7 @@ impl SftpView {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
+        self.persist_remote_directory(&path, cx);
         let _ = self.change_remote_directory_for_workspace(&workspace_id, path, cx);
     }
 

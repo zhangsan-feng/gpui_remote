@@ -35,12 +35,7 @@ impl SftpView {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        let current_path = PathBuf::from(&self.local.path);
-        let should_persist = should_persist_local_path(&current_path, &path);
-        self.change_local_directory(path.clone(), cx);
-        if should_persist {
-            self.persist_local_path_for_selected_workspace(&path, cx);
-        }
+        self.change_local_directory(path, cx);
     }
 
     pub(super) fn go_local_parent(
@@ -120,8 +115,4 @@ fn parent_path(path: &str) -> String {
             }
         })
         .unwrap_or_else(|| ".".to_owned())
-}
-
-fn should_persist_local_path(current: &std::path::Path, next: &std::path::Path) -> bool {
-    current != next
 }

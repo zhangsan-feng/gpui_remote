@@ -12,7 +12,11 @@ impl SftpView {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        self.change_local_directory_inner(path, cx);
+        let should_persist = PathBuf::from(&self.local.path) != path;
+        self.change_local_directory_inner(path.clone(), cx);
+        if should_persist {
+            self.persist_local_path_for_selected_workspace(&path, cx);
+        }
     }
 
     fn change_local_directory_inner(&mut self, path: PathBuf, cx: &mut Context<Self>) {

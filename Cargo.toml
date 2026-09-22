@@ -21,12 +21,12 @@ serde_json = "1.0.149"
 rust-embed = "8.11.0"
 uuid = { version = "1.22.0", features = ["v4"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
-russh = "0.62.3"
-russh-sftp = "2.3.0"
+russh = "0.63.3"
+russh-sftp = "3.0.0"
 rmcp = { version = "3.0.0", features = ["transport-streamable-http-server"] }
 tokio-socks = "0.5.2"
 unicode-width = "0.2.2"
-notify = "7.0.0"
+notify = "8.2.0"
 filetime = "0.2.25"
 
 [build-dependencies]

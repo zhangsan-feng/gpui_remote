@@ -3,7 +3,11 @@ mod external;
 mod internal;
 mod ui;
 
-use gpui_kit::component::input::InputState;
+use gpui_kit::component::{
+    IndexPath,
+    input::InputState,
+    select::{SearchableVec, SelectEvent, SelectState},
+};
 use gpui_kit::*;
 
 use crate::domain::session::SessionProfile;
@@ -12,9 +16,10 @@ pub(crate) use external::{open_edit_session_window, open_new_session_window};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConnectionProtocol {
-    Ssh,
-    Sftp,
-    Telnet,
+    SshAndSftp,
+    Mysql,
+    Pgsql,
+    Redis,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +44,7 @@ pub struct SessionOperationWindow {
     username: Entity<InputState>,
     password: Entity<InputState>,
     private_key_path: Option<String>,
+    protocol_select: Entity<SelectState<SearchableVec<ConnectionProtocol>>>,
     proxy_host: Entity<InputState>,
     proxy_port: Entity<InputState>,
     proxy_username: Entity<InputState>,
@@ -48,10 +54,11 @@ pub struct SessionOperationWindow {
 
 impl ConnectionProtocol {
     fn from_label(label: &str) -> Self {
-        match label {
-            "SFTP" => Self::Sftp,
-            "TELNET" => Self::Telnet,
-            _ => Self::Ssh,
+        match label.to_ascii_uppercase().as_str() {
+            "MYSQL" => Self::Mysql,
+            "PGSQL" | "POSTGRES" | "POSTGRESQL" => Self::Pgsql,
+            "REDIS" => Self::Redis,
+            _ => Self::SshAndSftp,
         }
     }
 }
@@ -76,9 +83,26 @@ impl SessionOperationWindow {
     ) -> Self {
         let protocol = profile
             .as_ref()
-            .map(|profile| ConnectionProtocol::from_label(profile.protocol.as_str()))
-            .unwrap_or(ConnectionProtocol::Ssh);
+            .map(|profile| ConnectionProtocol::from_label(profile.connection_protocol.as_str()))
+            .unwrap_or(ConnectionProtocol::SshAndSftp);
         let proxy = profile.as_ref().and_then(|profile| profile.proxy.as_ref());
+        let protocol_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(ConnectionProtocol::ALL.to_vec()),
+                Some(IndexPath::new(protocol.index())),
+                window,
+                cx,
+            )
+        });
+        cx.subscribe(
+            &protocol_select,
+            |this, _, event: &SelectEvent<SearchableVec<ConnectionProtocol>>, cx| {
+                if let SelectEvent::Confirm(Some(protocol)) = event {
+                    this.select_protocol(*protocol, cx);
+                }
+            },
+        )
+        .detach();
 
         Self {
             mode,
@@ -126,6 +150,7 @@ impl SessionOperationWindow {
                     .masked(true)
             }),
             private_key_path: profile.as_ref().and_then(|p| p.private_key_path.clone()),
+            protocol_select,
             proxy_host: Self::input_with_value(
                 proxy.map(|p| p.host.clone()).unwrap_or_default(),
                 "留空表示直连",

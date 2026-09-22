@@ -1,17 +1,29 @@
 use gpui_kit::*;
 
-use crate::domain::session::{NewSession, Protocol, ProxyConfig};
+use crate::domain::session::{
+    ConnectionProtocol as DomainConnectionProtocol, NewSession, ProxyConfig,
+};
 
 use super::{ConnectionProtocol, SessionOperationWindow};
 
 impl ConnectionProtocol {
-    pub(super) const ALL: [Self; 2] = [Self::Ssh, Self::Sftp];
+    pub(super) const ALL: [Self; 4] = [Self::SshAndSftp, Self::Mysql, Self::Pgsql, Self::Redis];
+
+    pub(super) const fn index(self) -> usize {
+        match self {
+            Self::SshAndSftp => 0,
+            Self::Mysql => 1,
+            Self::Pgsql => 2,
+            Self::Redis => 3,
+        }
+    }
 
     pub(super) fn label(self) -> &'static str {
         match self {
-            Self::Ssh => "SSH",
-            Self::Sftp => "SFTP",
-            Self::Telnet => "TELNET",
+            Self::SshAndSftp => "SSH",
+            Self::Mysql => "mysql",
+            Self::Pgsql => "pgsql",
+            Self::Redis => "redis",
         }
     }
 }
@@ -29,13 +41,14 @@ impl SessionOperationWindow {
                 password: self.proxy_password.read(cx).value().to_string(),
             })
         };
-        let protocol = match self.protocol {
-            ConnectionProtocol::Ssh => Protocol::Ssh,
-            ConnectionProtocol::Sftp => Protocol::Sftp,
-            ConnectionProtocol::Telnet => return Err("暂不支持 TELNET 协议".to_owned()),
+        let connection_protocol = match self.protocol {
+            ConnectionProtocol::SshAndSftp => DomainConnectionProtocol::SshAndSftp,
+            ConnectionProtocol::Mysql => DomainConnectionProtocol::Mysql,
+            ConnectionProtocol::Pgsql => DomainConnectionProtocol::Pgsql,
+            ConnectionProtocol::Redis => DomainConnectionProtocol::Redis,
         };
         let draft = NewSession {
-            protocol,
+            connection_protocol,
             name: self.name.read(cx).value().trim().to_owned(),
             host: self.host.read(cx).value().trim().to_owned(),
             port: parse_port(self.port.read(cx).value().as_ref(), "连接")?,

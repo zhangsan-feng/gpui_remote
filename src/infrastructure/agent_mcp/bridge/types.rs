@@ -6,8 +6,8 @@ use crate::{
     application::{
         ApplicationResult,
         model::{
-            ProfileSummary, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary,
-            SftpWatchSummary, TerminalReadPage, TerminalSummary,
+            McpTerminalReadPage, ProfileSummary, SftpDirectorySummary, SftpTransferInfo,
+            SftpTransferSummary, SftpWatchSummary, TerminalSummary,
         },
     },
     domain::session::Protocol,
@@ -81,11 +81,11 @@ pub(crate) enum ApplicationCommand {
         title: String,
     },
     ListTerminals,
-    ReadTerminal {
+    McpReadTerminal {
         workspace_id: String,
         offset: usize,
         limit: usize,
-        since_revision: Option<u64>,
+        since_mcp_snapshot_version: Option<u64>,
     },
     SendText {
         workspace_id: String,
@@ -118,7 +118,7 @@ impl ApplicationCommand {
             Self::StopSftpLocalWatch { .. } => "stop_sftp_local_watch",
             Self::ListSftpLocalWatches { .. } => "list_sftp_local_watches",
             Self::ListTerminals => "list_terminals",
-            Self::ReadTerminal { .. } => "read_terminal",
+            Self::McpReadTerminal { .. } => "mcp_read_terminal",
             Self::SendText { .. } => "send_text",
             Self::SendKey { .. } => "send_key",
         }
@@ -137,7 +137,7 @@ impl ApplicationCommand {
             | Self::WatchSftpLocal { workspace_id, .. }
             | Self::StopSftpLocalWatch { workspace_id, .. }
             | Self::ListSftpLocalWatches { workspace_id, .. }
-            | Self::ReadTerminal { workspace_id, .. }
+            | Self::McpReadTerminal { workspace_id, .. }
             | Self::SendText { workspace_id, .. }
             | Self::SendKey { workspace_id, .. } => Some(workspace_id),
             Self::ListProfiles
@@ -163,7 +163,7 @@ pub(crate) enum ApplicationResponse {
     Profiles(Vec<ProfileSummary>),
     WorkspaceId(String),
     TerminalSummaries(Vec<TerminalSummary>),
-    TerminalRead(TerminalReadPage),
+    McpTerminalRead(McpTerminalReadPage),
     SftpDirectory(SftpDirectorySummary),
     SftpTransferSummary(SftpTransferSummary),
     SftpTransferInfos(Vec<SftpTransferInfo>),

@@ -41,9 +41,71 @@ impl FromStr for Protocol {
     }
 }
 
+/// A saved connection profile groups the protocols that share one set of
+/// connection credentials. SSH and SFTP intentionally belong to one profile;
+/// the workspace `Protocol` above describes which view was opened from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConnectionProtocol {
+    SshAndSftp,
+    Mysql,
+    Pgsql,
+    Redis,
+}
+
+impl ConnectionProtocol {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SshAndSftp => "SSH",
+            Self::Mysql => "mysql",
+            Self::Pgsql => "pgsql",
+            Self::Redis => "redis",
+        }
+    }
+
+    pub const fn storage_key(self) -> &'static str {
+        match self {
+            Self::SshAndSftp => "SSH_AND_SFTP",
+            Self::Mysql => "MYSQL",
+            Self::Pgsql => "PGSQL",
+            Self::Redis => "REDIS",
+        }
+    }
+
+    pub const fn supports(self, protocol: Protocol) -> bool {
+        match self {
+            Self::SshAndSftp => matches!(protocol, Protocol::Ssh | Protocol::Sftp),
+            Self::Mysql | Self::Pgsql | Self::Redis => false,
+        }
+    }
+}
+
+impl fmt::Display for ConnectionProtocol {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ConnectionProtocol {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_uppercase().as_str() {
+            // SSH and SFTP were previously persisted as separate profile
+            // protocols. Read both legacy values as the combined profile.
+            "SSH" | "SFTP" | "SSH+SFTP" | "SSH + SFTP" | "SSH_AND_SFTP" => Ok(Self::SshAndSftp),
+            "MYSQL" => Ok(Self::Mysql),
+            "PGSQL" | "POSTGRES" | "POSTGRESQL" => Ok(Self::Pgsql),
+            "REDIS" => Ok(Self::Redis),
+            protocol => Err(format!("不支持的连接协议: {protocol}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionProfile {
     pub id: String,
+    pub connection_protocol: ConnectionProtocol,
+    /// The protocol of the currently opened workspace view.
     pub protocol: Protocol,
     pub name: String,
     pub host: String,
@@ -63,7 +125,7 @@ pub struct SftpSessionState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewSession {
-    pub protocol: Protocol,
+    pub connection_protocol: ConnectionProtocol,
     pub name: String,
     pub host: String,
     pub port: u16,

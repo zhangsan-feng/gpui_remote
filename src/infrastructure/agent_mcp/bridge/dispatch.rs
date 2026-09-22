@@ -105,15 +105,15 @@ pub(crate) async fn dispatch(
             .list_terminals()
             .await
             .map(ApplicationResponse::TerminalSummaries),
-        ApplicationCommand::ReadTerminal {
+        ApplicationCommand::McpReadTerminal {
             workspace_id,
             offset,
             limit,
-            since_revision,
+            since_mcp_snapshot_version,
         } => application
-            .read_terminal(workspace_id, offset, limit, since_revision)
+            .mcp_read_terminal(workspace_id, offset, limit, since_mcp_snapshot_version)
             .await
-            .map(ApplicationResponse::TerminalRead),
+            .map(ApplicationResponse::McpTerminalRead),
         ApplicationCommand::SendText { workspace_id, text } => application
             .send_text(workspace_id, text)
             .await
@@ -142,7 +142,7 @@ pub(crate) fn map_event(event: ApplicationEvent) -> NotificationEnvelope {
                 id: profile.id,
                 title: profile.name,
                 host: profile.host,
-                protocol: profile.protocol.as_str().to_owned(),
+                protocol: profile.connection_protocol.as_str().to_owned(),
             },
         },
         ApplicationEvent::SessionClosed { workspace_id } => {

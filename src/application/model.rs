@@ -30,14 +30,14 @@ pub struct TerminalSummary {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct TerminalReadPage {
+pub struct McpTerminalReadPage {
     pub workspace_id: String,
     pub text: String,
     pub total_lines: usize,
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
-    pub revision: u64,
+    pub mcp_snapshot_version: u64,
     pub changed: bool,
 }
 

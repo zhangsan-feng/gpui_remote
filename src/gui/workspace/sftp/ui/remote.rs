@@ -4,7 +4,7 @@ use super::super::{
 };
 use super::PathTarget;
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable,
+    ActiveTheme, Disableable, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::ContextMenuExt,
@@ -70,6 +70,14 @@ impl SftpView {
                     .border_b_1()
                     .border_color(colors.border)
                     .bg(theme::CustomerUiTheme::panel_background(cx))
+                    .child(
+                        Button::new("sftp-remote-back")
+                            .ghost()
+                            .small()
+                            .icon(IconName::ArrowLeft)
+                            .disabled(!connected || remote.loading || !self.can_go_remote_back())
+                            .on_click(cx.listener(Self::go_remote_back)),
+                    )
                     .child(
                         Button::new("sftp-remote-parent")
                             .outline()

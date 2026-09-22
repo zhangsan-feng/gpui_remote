@@ -28,7 +28,7 @@ impl SqliteDrive {
             .execute_batch(
                 "CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY NOT NULL,
-                    protocol TEXT NOT NULL DEFAULT 'SSH',
+                    protocol TEXT NOT NULL DEFAULT 'SSH_AND_SFTP',
                     name TEXT NOT NULL,
                     host TEXT NOT NULL,
                     port INTEGER NOT NULL,
@@ -49,7 +49,7 @@ impl SqliteDrive {
             .context("initialize SQLite tables")?;
 
         let _ = self.connection.execute(
-            "ALTER TABLE sessions ADD COLUMN protocol TEXT NOT NULL DEFAULT 'SSH'",
+            "ALTER TABLE sessions ADD COLUMN protocol TEXT NOT NULL DEFAULT 'SSH_AND_SFTP'",
             [],
         );
         let _ = self

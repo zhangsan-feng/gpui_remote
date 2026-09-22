@@ -38,6 +38,13 @@ impl SftpView {
         self.change_local_directory(path, cx);
     }
 
+    pub(super) fn go_local_back(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.pop_local_back_path() else {
+            return;
+        };
+        self.change_local_directory_without_history(path, cx);
+    }
+
     pub(super) fn go_local_parent(
         &mut self,
         _: &ClickEvent,
@@ -52,6 +59,19 @@ impl SftpView {
 
     pub(super) fn refresh_local(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.change_local_directory(PathBuf::from(&self.local.path), cx);
+    }
+
+    pub(super) fn go_remote_back(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(path) = self.pop_remote_back_path() else {
+            return;
+        };
+        self.change_remote_directory_without_history(path, cx);
+        cx.notify();
     }
 
     pub(super) fn go_parent(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {

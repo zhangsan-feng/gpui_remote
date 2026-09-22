@@ -1,8 +1,10 @@
 use gpui_kit::component::{
-    ActiveTheme, Icon, IconName, Sizable, ThemeColor,
+    ActiveTheme, Icon, IconName, Sizable, Size as ComponentSize, ThemeColor,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
+    searchable_list::SearchableListItem,
+    select::Select,
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -13,20 +15,85 @@ use crate::component::theme;
 use super::{ConnectionProtocol, FormSection, SessionFormMode, SessionOperationWindow};
 
 impl ConnectionProtocol {
-    fn description(self) -> &'static str {
+    pub(super) fn icon(self) -> IconName {
         match self {
-            Self::Ssh => "安全终端",
-            Self::Sftp => "安全文件传输",
-            Self::Telnet => "传统终端",
+            Self::SshAndSftp => IconName::SquareTerminal,
+            Self::Mysql | Self::Pgsql => IconName::HardDrive,
+            Self::Redis => IconName::HardDrive,
         }
     }
+}
 
-    fn icon(self) -> IconName {
-        match self {
-            Self::Ssh => IconName::SquareTerminal,
-            Self::Sftp => IconName::FolderOpen,
-            Self::Telnet => IconName::Globe,
-        }
+impl SearchableListItem for ConnectionProtocol {
+    type Value = Self;
+
+    fn title(&self) -> SharedString {
+        self.label().into()
+    }
+
+    fn display_title(&self) -> Option<AnyElement> {
+        Some(
+            h_flex()
+                .gap_2()
+                .items_center()
+                .child(Icon::new(self.icon()).small())
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(self.label()),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn value(&self) -> &Self::Value {
+        self
+    }
+
+    fn disabled(&self) -> bool {
+        !matches!(self, Self::SshAndSftp)
+    }
+
+    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let colors = cx.theme().colors;
+        let disabled = self.disabled();
+        h_flex()
+            .w_full()
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .size(px(28.))
+                    .flex_shrink_0()
+                    .rounded_md()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(if disabled {
+                        colors.muted_foreground.opacity(0.1)
+                    } else {
+                        colors.accent.opacity(0.14)
+                    })
+                    .child(Icon::new(self.icon()).small().text_color(if disabled {
+                        colors.muted_foreground
+                    } else {
+                        colors.accent
+                    })),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(if disabled {
+                        colors.muted_foreground
+                    } else {
+                        colors.foreground
+                    })
+                    .child(self.label()),
+            )
     }
 }
 
@@ -56,75 +123,21 @@ impl FormSection {
 }
 
 impl SessionOperationWindow {
-    fn protocol_option(&self, protocol: ConnectionProtocol, cx: &Context<Self>) -> AnyElement {
-        let colors = cx.theme().colors;
+    fn protocol_selector(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = cx.theme();
         let ui_colors = theme::CustomerUiTheme::colors(cx);
-        let selected = self.protocol == protocol;
-        let icon_color = if selected {
-            colors.accent
-        } else {
-            colors.muted_foreground
-        };
-
-        div()
-            .id(format!("protocol-{}", protocol.label()))
-            .flex_1()
-            .px_3()
-            .py_2()
+        Select::new(&self.protocol_select)
+            .id("session-protocol-select")
+            .with_size(ComponentSize::Small)
+            .w(px(220.))
+            .h(px(38.))
+            .menu_width(px(220.))
+            .bg(ui_colors.background)
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .text_color(colors.foreground)
             .rounded_lg()
-            .border_1()
-            .border_color(if selected {
-                colors.primary
-            } else {
-                theme::CustomerUiTheme::border_color(cx)
-            })
-            .bg(if selected {
-                ui_colors.select_background
-            } else {
-                theme::CustomerUiTheme::panel_background(cx)
-            })
-            .cursor_pointer()
-            .hover(|style| style.bg(ui_colors.hover_background))
-            .child(
-                h_flex()
-                    .gap_2()
-                    .items_center()
-                    .child(
-                        div()
-                            .size(px(30.))
-                            .rounded_md()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(if selected {
-                                colors.accent
-                            } else {
-                                ui_colors.hover_background
-                            })
-                            .child(Icon::new(protocol.icon()).small().text_color(icon_color)),
-                    )
-                    .child(
-                        v_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(colors.foreground)
-                                    .child(protocol.label()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(colors.muted_foreground)
-                                    .child(protocol.description()),
-                            ),
-                    ),
-            )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.select_protocol(protocol, cx);
-            }))
-            .into_any_element()
+            .placeholder("选择协议")
+            .accessibility_label("连接协议")
     }
 
     fn field(label: &'static str, input: &Entity<InputState>, colors: ThemeColor) -> Div {
@@ -354,9 +367,55 @@ impl SessionOperationWindow {
             .p_2()
             .size_full()
             .bg(ui_colors.background)
-            // .child(v_flex().p_2().gap_2().child(h_flex().gap_2().children(
-            //     ConnectionProtocol::ALL.map(|protocol| self.protocol_option(protocol, cx)),
-            // )))
+            .child(
+                h_flex()
+                    .h(px(52.))
+                    .flex_shrink_0()
+                    .px_3()
+                    .gap_3()
+                    .items_center()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(theme::CustomerUiTheme::border_color(cx))
+                    .bg(theme::CustomerUiTheme::panel_background(cx))
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                div()
+                                    .size(px(28.))
+                                    .rounded_md()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(ui_colors.select_background)
+                                    .child(
+                                        Icon::new(IconName::Settings2)
+                                            .small()
+                                            .text_color(colors.accent),
+                                    ),
+                            )
+                            .child(
+                                v_flex()
+                                    .gap_0p5()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(colors.foreground)
+                                            .child("连接协议"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors.muted_foreground)
+                                            .child("选择远程连接类型"),
+                                    ),
+                            ),
+                    )
+                    .child(self.protocol_selector(cx)),
+            )
             .child(
                 h_flex()
                     .flex_1()
@@ -373,6 +432,16 @@ impl SessionOperationWindow {
                             .border_1()
                             .border_color(theme::CustomerUiTheme::border_color(cx))
                             .bg(theme::CustomerUiTheme::panel_background(cx))
+                            .child(
+                                div()
+                                    .px_3()
+                                    .pt_1()
+                                    .pb_1()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(colors.muted_foreground)
+                                    .child("配置"),
+                            )
                             .children(
                                 FormSection::ALL.map(|section| self.section_option(section, cx)),
                             ),

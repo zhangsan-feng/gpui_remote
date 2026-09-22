@@ -15,7 +15,7 @@ use super::{
 };
 
 impl SftpView {
-    pub(super) fn persist_remote_directory(&mut self, path: &str, cx: &mut Context<Self>) {
+    fn save_remote_path_after_navigation(&mut self, path: &str, cx: &mut Context<Self>) {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
@@ -88,16 +88,70 @@ impl SftpView {
     pub(super) fn close(&mut self, workspace_id: &str) {
         self.clear_local_watch_projection_for_workspace(workspace_id);
         self.local_restore_requests.remove(workspace_id);
+        self.local_back_history.remove(workspace_id);
+        self.remote_back_history.remove(workspace_id);
         self.persisted_remote_paths.remove(workspace_id);
         self.projections.remove(workspace_id);
     }
 
     pub(super) fn change_remote_directory(&mut self, path: String, cx: &mut Context<Self>) {
+        self.navigate_remote_directory(path, true, cx);
+    }
+
+    pub(super) fn change_remote_directory_without_history(
+        &mut self,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.navigate_remote_directory(path, false, cx);
+    }
+
+    // Parent, back, double-click and dialog navigation all use this entry point.
+    fn navigate_remote_directory(
+        &mut self,
+        path: String,
+        record_history: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             return;
         };
-        self.persist_remote_directory(&path, cx);
+        if record_history {
+            let current_path = self
+                .projections
+                .get(&workspace_id)
+                .map(|projection| projection.snapshot.remote.path.clone())
+                .unwrap_or_default();
+            if !current_path.is_empty() && current_path != path {
+                self.push_remote_back_path(&workspace_id, current_path);
+            }
+        }
+        self.save_remote_path_after_navigation(&path, cx);
         let _ = self.change_remote_directory_for_workspace(&workspace_id, path, cx);
+    }
+
+    pub(super) fn can_go_remote_back(&self) -> bool {
+        self.selected_workspace_id
+            .as_deref()
+            .and_then(|workspace_id| self.remote_back_history.get(workspace_id))
+            .is_some_and(|history| !history.is_empty())
+    }
+
+    pub(super) fn pop_remote_back_path(&mut self) -> Option<String> {
+        let workspace_id = self.selected_workspace_id.as_deref()?;
+        self.remote_back_history
+            .get_mut(workspace_id)
+            .and_then(Vec::pop)
+    }
+
+    fn push_remote_back_path(&mut self, workspace_id: &str, path: String) {
+        let history = self
+            .remote_back_history
+            .entry(workspace_id.to_owned())
+            .or_default();
+        if history.last() != Some(&path) {
+            history.push(path);
+        }
     }
 
     pub(super) fn change_remote_directory_for_workspace(

@@ -155,7 +155,7 @@ mod core {
     };
 
     use crate::domain::terminal::{
-        TerminalCursor, TerminalCursorShape, TerminalFrame, TerminalHistoryPage, TerminalLine,
+        McpTerminalHistoryPage, TerminalCursor, TerminalCursorShape, TerminalFrame, TerminalLine,
         TerminalSessionCommand, TerminalSpan, TerminalStyle,
     };
 
@@ -318,7 +318,7 @@ mod core {
             }
         }
 
-        pub(crate) fn read_text(&self, offset: usize, limit: usize) -> TerminalHistoryPage {
+        pub(crate) fn read_text(&self, offset: usize, limit: usize) -> McpTerminalHistoryPage {
             let grid = self.terminal.grid();
             let total_lines = grid.total_lines();
             let offset = offset.min(total_lines);
@@ -340,13 +340,13 @@ mod core {
                 }
             }
 
-            TerminalHistoryPage {
+            McpTerminalHistoryPage {
                 text,
                 total_lines,
                 offset,
                 limit: end.saturating_sub(start),
                 has_more: start > 0,
-                revision: 0,
+                mcp_snapshot_version: 0,
                 changed: true,
             }
         }

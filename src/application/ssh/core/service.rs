@@ -7,7 +7,7 @@ use tokio::sync::{Notify, oneshot};
 
 use crate::domain::{
     session::{Protocol, SessionProfile},
-    terminal::{TerminalData, TerminalHistoryPage, TerminalSessionCommand},
+    terminal::{McpTerminalHistoryPage, TerminalData, TerminalSessionCommand, TerminalStatus},
 };
 
 use super::key::{encode_control_key, encode_special_key};
@@ -73,31 +73,31 @@ impl SshApplication {
     }
 
     pub async fn send_input(&self, workspace_id: &str, input: Vec<u8>) -> Result<(), String> {
-        let commands = self.commands(workspace_id)?;
+        let commands = self.live_commands(workspace_id, "send_input")?;
         commands
             .send(TerminalSessionCommand::Input(input))
-            .map_err(|_| format!("SSH 会话不可用: {workspace_id}"))
+            .map_err(|_| Self::command_unavailable(workspace_id, "send_input"))
     }
 
     pub async fn resize(&self, workspace_id: &str, columns: u32, rows: u32) -> Result<(), String> {
         let commands = self.commands(workspace_id)?;
         commands
             .send(TerminalSessionCommand::Resize { columns, rows })
-            .map_err(|_| format!("SSH 会话不可用: {workspace_id}"))
+            .map_err(|_| Self::command_unavailable(workspace_id, "resize"))
     }
 
     pub async fn scroll(&self, workspace_id: &str, lines: i32) -> Result<(), String> {
         let commands = self.commands(workspace_id)?;
         commands
             .send(TerminalSessionCommand::Scroll { lines })
-            .map_err(|_| format!("SSH 会话不可用: {workspace_id}"))
+            .map_err(|_| Self::command_unavailable(workspace_id, "scroll"))
     }
 
     pub async fn scroll_to(&self, workspace_id: &str, offset: usize) -> Result<(), String> {
         let commands = self.commands(workspace_id)?;
         commands
             .send(TerminalSessionCommand::ScrollTo { offset })
-            .map_err(|_| format!("SSH 会话不可用: {workspace_id}"))
+            .map_err(|_| Self::command_unavailable(workspace_id, "scroll_to"))
     }
 
     pub async fn send_key(
@@ -139,23 +139,23 @@ impl SshApplication {
         self.send_input(workspace_id, input).await
     }
 
-    pub async fn read(
+    pub async fn mcp_read_terminal(
         &self,
         workspace_id: &str,
         offset: usize,
         limit: usize,
-        since_revision: Option<u64>,
-    ) -> Result<TerminalHistoryPage, String> {
+        since_mcp_snapshot_version: Option<u64>,
+    ) -> Result<McpTerminalHistoryPage, String> {
         let commands = self.commands(workspace_id)?;
         let (reply, response) = oneshot::channel();
         commands
             .send(TerminalSessionCommand::Read {
                 offset,
                 limit,
-                since_revision,
+                since_mcp_snapshot_version,
                 reply,
             })
-            .map_err(|_| format!("SSH 会话不可用: {workspace_id}"))?;
+            .map_err(|_| Self::command_unavailable(workspace_id, "read"))?;
         response
             .await
             .map_err(|_| format!("SSH 历史读取已取消: {workspace_id}"))
@@ -171,23 +171,23 @@ impl SshApplication {
             .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
     }
 
-    pub fn terminal_revision(&self, workspace_id: &str) -> Result<u64, String> {
+    pub fn terminal_mcp_snapshot_version(&self, workspace_id: &str) -> Result<u64, String> {
         self.inner
             .runtimes
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
-            .map(|runtime| runtime.model.revision())
+            .map(|runtime| runtime.model.mcp_snapshot_version())
             .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
     }
 
-    pub fn terminal_update_revision(&self, workspace_id: &str) -> Result<u64, String> {
+    pub fn terminal_gui_snapshot_version(&self, workspace_id: &str) -> Result<u64, String> {
         self.inner
             .runtimes
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
-            .map(|runtime| runtime.model.update_revision())
+            .map(|runtime| runtime.model.gui_snapshot_version())
             .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
     }
 
@@ -205,20 +205,62 @@ impl SshApplication {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
-            .is_some_and(|runtime| !runtime.commands.is_closed())
+            .is_some_and(|runtime| {
+                let status = runtime.model.read().status.clone();
+                matches!(
+                    status,
+                    TerminalStatus::Connecting | TerminalStatus::Connected
+                )
+            })
+    }
+
+    fn live_commands(
+        &self,
+        workspace_id: &str,
+        operation: &str,
+    ) -> Result<tokio::sync::mpsc::UnboundedSender<TerminalSessionCommand>, String> {
+        let commands = self.commands(workspace_id)?;
+        let status = self
+            .inner
+            .runtimes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(workspace_id)
+            .map(|runtime| runtime.model.read().status.clone());
+        if matches!(
+            status,
+            Some(TerminalStatus::Disconnected | TerminalStatus::Failed)
+        ) {
+            return Err(Self::command_unavailable(workspace_id, operation));
+        }
+        Ok(commands)
     }
 
     fn commands(
         &self,
         workspace_id: &str,
     ) -> Result<tokio::sync::mpsc::UnboundedSender<TerminalSessionCommand>, String> {
-        self.inner
+        let commands = self
+            .inner
             .runtimes
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
             .map(|runtime| runtime.commands.clone())
-            .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
+            .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))?;
+        if commands.is_closed() {
+            log::warn!(
+                "SSH runtime command channel is closed: workspace_id={workspace_id}, reason=runtime_stopped"
+            );
+        }
+        Ok(commands)
+    }
+
+    fn command_unavailable(workspace_id: &str, operation: &str) -> String {
+        log::warn!(
+            "SSH command rejected: workspace_id={workspace_id}, operation={operation}, reason=runtime_command_channel_closed"
+        );
+        format!("SSH 会话不可用: {workspace_id}")
     }
 
     fn close_if_present(&self, workspace_id: &str) {

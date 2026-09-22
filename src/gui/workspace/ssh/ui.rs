@@ -316,8 +316,8 @@ impl TerminalView {
         let Some(terminal_model) = self.model(&workspace_id) else {
             return div().size_full().into_any_element();
         };
-        self.observed_update_revision =
-            Some((workspace_id.clone(), terminal_model.update_revision()));
+        self.observed_gui_snapshot_version =
+            Some((workspace_id.clone(), terminal_model.gui_snapshot_version()));
         let (frame, status, message) = {
             let terminal = terminal_model.read();
             (

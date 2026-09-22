@@ -1,4 +1,7 @@
-#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 pub(crate) mod application;
 mod build_info;

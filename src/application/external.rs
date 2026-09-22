@@ -48,12 +48,18 @@ impl ApplicationContext {
         self.ssh().terminal_snapshot(workspace_id)
     }
 
-    pub(crate) fn terminal_revision(&self, workspace_id: &str) -> ApplicationResult<u64> {
-        self.ssh().terminal_revision(workspace_id)
+    pub(crate) fn terminal_mcp_snapshot_version(
+        &self,
+        workspace_id: &str,
+    ) -> ApplicationResult<u64> {
+        self.ssh().terminal_mcp_snapshot_version(workspace_id)
     }
 
-    pub(crate) fn terminal_update_revision(&self, workspace_id: &str) -> ApplicationResult<u64> {
-        self.ssh().terminal_update_revision(workspace_id)
+    pub(crate) fn terminal_gui_snapshot_version(
+        &self,
+        workspace_id: &str,
+    ) -> ApplicationResult<u64> {
+        self.ssh().terminal_gui_snapshot_version(workspace_id)
     }
 
     pub(crate) fn sftp_workspace_snapshot(
@@ -334,30 +340,30 @@ impl ApplicationContext {
         Ok(mapping::list_terminals(self))
     }
 
-    pub(crate) async fn read_terminal(
+    pub(crate) async fn mcp_read_terminal(
         &self,
         workspace_id: String,
         offset: usize,
         limit: usize,
-        since_revision: Option<u64>,
-    ) -> ApplicationResult<model::TerminalReadPage> {
+        since_mcp_snapshot_version: Option<u64>,
+    ) -> ApplicationResult<model::McpTerminalReadPage> {
         validation::validate_terminal_workspace(self, &workspace_id)?;
         self.ssh()
-            .read(
+            .mcp_read_terminal(
                 &workspace_id,
                 offset,
                 mapping::normalize_read_limit(limit),
-                since_revision,
+                since_mcp_snapshot_version,
             )
             .await
-            .map(|page| model::TerminalReadPage {
+            .map(|page| model::McpTerminalReadPage {
                 workspace_id,
                 text: page.text,
                 total_lines: page.total_lines,
                 offset: page.offset,
                 limit: page.limit,
                 has_more: page.has_more,
-                revision: page.revision,
+                mcp_snapshot_version: page.mcp_snapshot_version,
                 changed: page.changed,
             })
     }

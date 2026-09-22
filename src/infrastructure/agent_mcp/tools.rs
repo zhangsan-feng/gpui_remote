@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     application::model::{
-        ProfileSummary, SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo,
-        SftpTransferSummary, SftpWatchSummary, TerminalReadPage, TerminalSummary,
+        McpTerminalReadPage, ProfileSummary, SftpDirectorySummary, SftpEntrySummary,
+        SftpTransferInfo, SftpTransferSummary, SftpWatchSummary, TerminalSummary,
     },
     domain::session::Protocol,
 };
@@ -43,14 +43,14 @@ enum OpenSessionProtocol {
 }
 
 #[derive(Deserialize, JsonSchema)]
-struct ReadTerminalInput {
+struct McpReadTerminalInput {
     workspace_id: String,
     #[serde(default)]
     offset: usize,
     #[serde(default = "default_read_limit")]
     limit: usize,
     #[serde(default)]
-    since_revision: Option<u64>,
+    since_mcp_snapshot_version: Option<u64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -140,14 +140,14 @@ struct TerminalOutput {
 }
 
 #[derive(Serialize, JsonSchema)]
-struct TerminalReadOutput {
+struct McpTerminalReadOutput {
     workspace_id: String,
     text: String,
     total_lines: usize,
     offset: usize,
     limit: usize,
     has_more: bool,
-    revision: u64,
+    mcp_snapshot_version: u64,
     changed: bool,
 }
 
@@ -421,21 +421,21 @@ impl AgentTerminalMcp {
     }
 
     #[tool(
-        description = "Read terminal output for an SSH workspace without changing GUI scroll position. offset=0 reads the newest tail. The response includes revision and total_lines as the current tail anchor; pass the previous revision as since_revision on the next poll. When the revision has not changed, changed=false and text is empty."
+        description = "Read terminal output for an SSH workspace without changing GUI scroll position. offset=0 reads the newest tail. The response includes mcp_snapshot_version and total_lines as the current tail anchor; pass the previous mcp_snapshot_version as since_mcp_snapshot_version on the next poll. When the mcp_snapshot_version has not changed, changed=false and text is empty."
     )]
-    async fn read_terminal(
+    async fn mcp_read_terminal(
         &self,
-        Parameters(input): Parameters<ReadTerminalInput>,
-    ) -> Result<Json<TerminalReadOutput>, ErrorData> {
+        Parameters(input): Parameters<McpReadTerminalInput>,
+    ) -> Result<Json<McpTerminalReadOutput>, ErrorData> {
         self.bridge
-            .read_terminal(
+            .mcp_read_terminal(
                 input.workspace_id,
                 input.offset,
                 input.limit,
-                input.since_revision,
+                input.since_mcp_snapshot_version,
             )
             .await
-            .map(|page| Json(TerminalReadOutput::from(page)))
+            .map(|page| Json(McpTerminalReadOutput::from(page)))
             .map_err(mcp_error)
     }
 
@@ -513,8 +513,8 @@ impl From<TerminalSummary> for TerminalOutput {
     }
 }
 
-impl From<TerminalReadPage> for TerminalReadOutput {
-    fn from(page: TerminalReadPage) -> Self {
+impl From<McpTerminalReadPage> for McpTerminalReadOutput {
+    fn from(page: McpTerminalReadPage) -> Self {
         Self {
             workspace_id: page.workspace_id,
             text: page.text,
@@ -522,7 +522,7 @@ impl From<TerminalReadPage> for TerminalReadOutput {
             offset: page.offset,
             limit: page.limit,
             has_more: page.has_more,
-            revision: page.revision,
+            mcp_snapshot_version: page.mcp_snapshot_version,
             changed: page.changed,
         }
     }

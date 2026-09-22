@@ -9,8 +9,8 @@ use crate::{
     application::{
         ApplicationResult,
         model::{
-            ProfileSummary, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary,
-            SftpWatchSummary, TerminalReadPage, TerminalSummary,
+            McpTerminalReadPage, ProfileSummary, SftpDirectorySummary, SftpTransferInfo,
+            SftpTransferSummary, SftpWatchSummary, TerminalSummary,
         },
     },
     domain::session::Protocol,
@@ -304,23 +304,23 @@ impl McpBridgeEndpoint {
         }
     }
 
-    pub(crate) async fn read_terminal(
+    pub(crate) async fn mcp_read_terminal(
         &self,
         workspace_id: String,
         offset: usize,
         limit: usize,
-        since_revision: Option<u64>,
-    ) -> ApplicationResult<TerminalReadPage> {
+        since_mcp_snapshot_version: Option<u64>,
+    ) -> ApplicationResult<McpTerminalReadPage> {
         match self
-            .request(ApplicationCommand::ReadTerminal {
+            .request(ApplicationCommand::McpReadTerminal {
                 workspace_id,
                 offset,
                 limit,
-                since_revision,
+                since_mcp_snapshot_version,
             })
             .await?
         {
-            ApplicationResponse::TerminalRead(page) => Ok(page),
+            ApplicationResponse::McpTerminalRead(page) => Ok(page),
             _ => Err("MCP application bridge 返回了错误的终端读取响应".to_owned()),
         }
     }

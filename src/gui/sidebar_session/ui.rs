@@ -1,4 +1,5 @@
 use crate::component::{draggable_list::DraggableList, theme};
+use crate::domain::session::ConnectionProtocol;
 use crate::gui::sidebar_session::{
     ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent,
 };
@@ -70,6 +71,11 @@ impl SessionComponent {
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
         let mut list = DraggableList::new();
         let session = cx.weak_entity();
+        let session_protocols = self
+            .sessions
+            .iter()
+            .map(|profile| (profile.id.clone(), profile.connection_protocol))
+            .collect::<std::collections::HashMap<_, _>>();
 
         list.set_item_height(px(58.))
             .set_item_bg(Hsla::transparent_black().into())
@@ -80,19 +86,28 @@ impl SessionComponent {
                 theme::CustomerUiTheme::colors(cx).hover_background.into()
             })
             .set_context_menu(
-                |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
+                move |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();
+                    let menu = match session_protocols.get(&session_id).copied() {
+                        Some(ConnectionProtocol::SshAndSftp) => menu
+                            .menu_with_icon(
+                                "打开 SSH",
+                                IconName::SquareTerminal,
+                                Box::new(ConnectSession(session_id.clone())),
+                            )
+                            .menu_with_icon(
+                                "打开 SFTP",
+                                IconName::FolderOpen,
+                                Box::new(ConnectSftpSession(session_id.clone())),
+                            ),
+                        Some(
+                            ConnectionProtocol::Mysql
+                            | ConnectionProtocol::Pgsql
+                            | ConnectionProtocol::Redis,
+                        )
+                        | None => menu,
+                    };
                     menu.menu_with_icon(
-                        "打开ssh",
-                        IconName::SquareTerminal,
-                        Box::new(ConnectSession(session_id.clone())),
-                    )
-                    .menu_with_icon(
-                        "打开sftp",
-                        IconName::FolderOpen,
-                        Box::new(ConnectSftpSession(session_id.clone())),
-                    )
-                    .menu_with_icon(
                         "编辑",
                         IconName::Settings2,
                         Box::new(EditSession(session_id.clone())),
@@ -129,7 +144,7 @@ impl SessionComponent {
                     session.name,
                     session.host,
                     session.username,
-                    session.protocol.as_str(),
+                    session.connection_protocol.as_str(),
                 )
                 .to_lowercase()
                 .contains(&query)

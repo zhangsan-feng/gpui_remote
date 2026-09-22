@@ -22,7 +22,7 @@ impl TerminalView {
     pub(in crate::gui::workspace::ssh) fn reset_active_view(&mut self) {
         self.listed_workspace_id = None;
         self.last_pty_size = None;
-        self.observed_update_revision = None;
+        self.observed_gui_snapshot_version = None;
         self.selection = None;
         self.selection_origin = None;
         self.selecting_text = false;
@@ -36,37 +36,40 @@ impl TerminalView {
             cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
         let workspace_ids = self.models.keys().cloned().collect::<Vec<_>>();
         for workspace_id in workspace_ids {
-            let Ok(update_revision) = application.terminal_update_revision(&workspace_id) else {
+            let Ok(gui_snapshot_version) = application.terminal_gui_snapshot_version(&workspace_id)
+            else {
                 continue;
             };
             let Some(model) = self.models.get(&workspace_id) else {
                 continue;
             };
-            let previous_update_revision = model.update_revision();
-            if previous_update_revision != update_revision {
-                let Ok(revision) = application.terminal_revision(&workspace_id) else {
+            let previous_gui_snapshot_version = model.gui_snapshot_version();
+            if previous_gui_snapshot_version != gui_snapshot_version {
+                let Ok(mcp_snapshot_version) =
+                    application.terminal_mcp_snapshot_version(&workspace_id)
+                else {
                     continue;
                 };
                 if let Ok(data) = application.terminal_snapshot(&workspace_id) {
-                    let previous_revision = model.revision();
-                    if previous_revision != revision {
+                    let previous_mcp_snapshot_version = model.mcp_snapshot_version();
+                    if previous_mcp_snapshot_version != mcp_snapshot_version {
                         log::debug!(
-                            "SSH GUI terminal projection refreshed: workspace_id={workspace_id}, from_revision={previous_revision}, to_revision={revision}"
+                            "SSH GUI terminal projection refreshed: workspace_id={workspace_id}, from_mcp_snapshot_version={previous_mcp_snapshot_version}, to_mcp_snapshot_version={mcp_snapshot_version}"
                         );
                     }
-                    model.replace(data, revision, update_revision);
+                    model.replace(data, mcp_snapshot_version, gui_snapshot_version);
                 }
             }
         }
-        let current_update_revision =
+        let current_gui_snapshot_version =
             self.selected_workspace_id
                 .as_deref()
                 .and_then(|workspace_id| {
                     self.model(workspace_id)
-                        .map(|model| (workspace_id.to_owned(), model.update_revision()))
+                        .map(|model| (workspace_id.to_owned(), model.gui_snapshot_version()))
                 });
-        if current_update_revision != self.observed_update_revision {
-            self.observed_update_revision = current_update_revision;
+        if current_gui_snapshot_version != self.observed_gui_snapshot_version {
+            self.observed_gui_snapshot_version = current_gui_snapshot_version;
             cx.notify();
         }
     }

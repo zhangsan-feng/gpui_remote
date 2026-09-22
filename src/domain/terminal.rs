@@ -71,13 +71,13 @@ pub struct TerminalData {
 }
 
 #[derive(Clone, Debug)]
-pub struct TerminalHistoryPage {
+pub struct McpTerminalHistoryPage {
     pub text: String,
     pub total_lines: usize,
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
-    pub revision: u64,
+    pub mcp_snapshot_version: u64,
     pub changed: bool,
 }
 
@@ -96,8 +96,8 @@ pub enum TerminalSessionCommand {
     Read {
         offset: usize,
         limit: usize,
-        since_revision: Option<u64>,
-        reply: oneshot::Sender<TerminalHistoryPage>,
+        since_mcp_snapshot_version: Option<u64>,
+        reply: oneshot::Sender<McpTerminalHistoryPage>,
     },
     Disconnect,
 }

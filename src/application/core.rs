@@ -101,6 +101,12 @@ impl ApplicationContext {
                 "连接配置与 ip/title 不匹配: {profile_id}，请确认 ip 和 title"
             ));
         }
+        if !profile.connection_protocol.supports(protocol) {
+            return Err(format!(
+                "连接类型 {} 暂不支持打开 {} 视图",
+                profile.connection_protocol, protocol
+            ));
+        }
         let mut profile = profile;
         profile.protocol = protocol;
         let workspace_id = Uuid::new_v4().to_string();

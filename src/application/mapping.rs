@@ -53,7 +53,7 @@ pub(crate) fn map_profile_summary(profile: SessionProfile) -> super::model::Prof
         id: profile.id,
         title: profile.name,
         host: profile.host,
-        protocol: profile.protocol.as_str().to_owned(),
+        protocol: profile.connection_protocol.as_str().to_owned(),
     }
 }
 

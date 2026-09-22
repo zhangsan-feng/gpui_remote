@@ -13,10 +13,10 @@ impl client::Handler for SftpClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::ssh_key::PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         let endpoint = self.endpoint.clone();
-        let public_key = server_public_key.clone();
+        let public_key = server_public_key.public_key();
         match tokio::task::spawn_blocking(move || verify_host_key(&endpoint, &public_key)).await {
             Ok(Ok(accepted)) => Ok(accepted),
             Ok(Err(error)) => {

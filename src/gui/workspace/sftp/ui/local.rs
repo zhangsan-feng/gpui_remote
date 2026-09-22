@@ -6,7 +6,7 @@ use super::PathTarget;
 use std::path::PathBuf;
 
 use gpui_kit::component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Disableable, IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::ContextMenuExt,
@@ -73,6 +73,14 @@ impl SftpView {
                     .border_b_1()
                     .border_color(colors.border)
                     .bg(theme::CustomerUiTheme::panel_background(cx))
+                    .child(
+                        Button::new("sftp-local-back")
+                            .ghost()
+                            .small()
+                            .icon(IconName::ArrowLeft)
+                            .disabled(snapshot.loading || !self.can_go_local_back())
+                            .on_click(cx.listener(Self::go_local_back)),
+                    )
                     .child(
                         Button::new("sftp-local-parent")
                             .outline()

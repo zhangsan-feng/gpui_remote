@@ -14,8 +14,8 @@ use super::run_ssh_session;
 
 pub(crate) struct TerminalModel {
     data: RwLock<TerminalData>,
-    revision: AtomicU64,
-    update_revision: AtomicU64,
+    mcp_snapshot_version: AtomicU64,
+    gui_snapshot_version: AtomicU64,
     updates: Arc<Notify>,
     status_updates: Arc<Notify>,
 }
@@ -34,8 +34,8 @@ impl TerminalModel {
     ) -> Self {
         Self {
             data: RwLock::new(data),
-            revision: AtomicU64::new(0),
-            update_revision: AtomicU64::new(0),
+            mcp_snapshot_version: AtomicU64::new(0),
+            gui_snapshot_version: AtomicU64::new(0),
             updates,
             status_updates,
         }
@@ -52,10 +52,10 @@ impl TerminalModel {
             .data
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
-        let revision = self.revision.fetch_add(1, Ordering::Release) + 1;
-        self.update_revision.fetch_add(1, Ordering::Release);
+        let mcp_snapshot_version = self.mcp_snapshot_version.fetch_add(1, Ordering::Release) + 1;
+        self.gui_snapshot_version.fetch_add(1, Ordering::Release);
         self.updates.notify_waiters();
-        revision
+        mcp_snapshot_version
     }
 
     pub(crate) fn replace_view(&self, data: TerminalData) {
@@ -63,22 +63,16 @@ impl TerminalModel {
             .data
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
-        self.update_revision.fetch_add(1, Ordering::Release);
+        self.gui_snapshot_version.fetch_add(1, Ordering::Release);
         self.updates.notify_waiters();
     }
 
-    pub(crate) fn mark_input(&self) {
-        self.revision.fetch_add(1, Ordering::Release);
-        self.update_revision.fetch_add(1, Ordering::Release);
-        self.updates.notify_waiters();
+    pub(crate) fn mcp_snapshot_version(&self) -> u64 {
+        self.mcp_snapshot_version.load(Ordering::Acquire)
     }
 
-    pub(crate) fn revision(&self) -> u64 {
-        self.revision.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn update_revision(&self) -> u64 {
-        self.update_revision.load(Ordering::Acquire)
+    pub(crate) fn gui_snapshot_version(&self) -> u64 {
+        self.gui_snapshot_version.load(Ordering::Acquire)
     }
 
     pub(crate) fn set_status(&self, status: TerminalStatus, message: Option<String>) {
@@ -90,7 +84,7 @@ impl TerminalModel {
             data.status = status;
             data.message = message;
         }
-        self.update_revision.fetch_add(1, Ordering::Release);
+        self.gui_snapshot_version.fetch_add(1, Ordering::Release);
         self.updates.notify_waiters();
         self.status_updates.notify_waiters();
     }
@@ -135,9 +129,20 @@ pub(crate) fn new_runtime(
 }
 
 pub(crate) fn disconnect(runtime: TerminalRuntime) {
-    let _ = runtime.commands.send(TerminalSessionCommand::Disconnect);
-    if let Some(task) = runtime.task {
-        task.abort();
+    if runtime
+        .commands
+        .send(TerminalSessionCommand::Disconnect)
+        .is_ok()
+    {
+        log::debug!(
+            "SSH runtime disconnect requested: mode=graceful, action=send_disconnect_command"
+        );
+    } else {
+        log::debug!("SSH runtime disconnect requested: mode=forced, reason=command_channel_closed");
+        if let Some(task) = runtime.task {
+            task.abort();
+            log::debug!("SSH runtime task aborted after command channel closed");
+        }
     }
 }
 

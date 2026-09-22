@@ -34,6 +34,8 @@ struct SftpProjection {
 pub(in crate::gui::workspace) struct SftpView {
     projections: HashMap<String, SftpProjection>,
     local_restore_requests: HashSet<String>,
+    local_back_history: HashMap<String, Vec<PathBuf>>,
+    remote_back_history: HashMap<String, Vec<String>>,
     persisted_remote_paths: HashMap<String, String>,
     selected_workspace_id: Option<String>,
     local: SftpDirectorySummary,
@@ -226,6 +228,8 @@ impl SftpView {
         let this = Self {
             projections: HashMap::new(),
             local_restore_requests: HashSet::new(),
+            local_back_history: HashMap::new(),
+            remote_back_history: HashMap::new(),
             persisted_remote_paths: HashMap::new(),
             selected_workspace_id: None,
             local: SftpDirectorySummary::default(),

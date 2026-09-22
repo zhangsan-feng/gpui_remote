@@ -12,10 +12,58 @@ impl SftpView {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
+        self.navigate_local_directory(path, true, cx);
+    }
+
+    pub(in crate::gui::workspace::sftp) fn change_local_directory_without_history(
+        &mut self,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.navigate_local_directory(path, false, cx);
+    }
+
+    // Parent, back, double-click and dialog navigation all use this entry point.
+    fn navigate_local_directory(
+        &mut self,
+        path: PathBuf,
+        record_history: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let current_path = PathBuf::from(&self.local.path);
         let should_persist = PathBuf::from(&self.local.path) != path;
+        if record_history && should_persist && !self.local.path.is_empty() {
+            if let Some(workspace_id) = self.selected_workspace_id.clone() {
+                self.push_local_back_path(&workspace_id, current_path);
+            }
+        }
         self.change_local_directory_inner(path.clone(), cx);
         if should_persist {
-            self.persist_local_path_for_selected_workspace(&path, cx);
+            self.save_local_path_after_navigation(&path, cx);
+        }
+    }
+
+    pub(in crate::gui::workspace::sftp) fn can_go_local_back(&self) -> bool {
+        self.selected_workspace_id
+            .as_deref()
+            .and_then(|workspace_id| self.local_back_history.get(workspace_id))
+            .is_some_and(|history| !history.is_empty())
+    }
+
+    pub(in crate::gui::workspace::sftp) fn pop_local_back_path(&mut self) -> Option<PathBuf> {
+        let workspace_id = self.selected_workspace_id.as_deref()?;
+        self.local_back_history
+            .get_mut(workspace_id)
+            .and_then(Vec::pop)
+    }
+
+    fn push_local_back_path(&mut self, workspace_id: &str, path: PathBuf) {
+        let history = self
+            .local_back_history
+            .entry(workspace_id.to_owned())
+            .or_default();
+        if history.last() != Some(&path) {
+            history.push(path);
         }
     }
 
@@ -62,15 +110,11 @@ impl SftpView {
         .detach();
     }
 
-    pub(in crate::gui::workspace::sftp) fn persist_local_path_for_selected_workspace(
-        &self,
-        path: &std::path::Path,
-        cx: &mut Context<Self>,
-    ) {
+    fn save_local_path_after_navigation(&self, path: &std::path::Path, cx: &mut Context<Self>) {
         let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
             return;
         };
-        self.persist_local_directory(workspace_id, path, cx);
+        self.save_local_path(workspace_id, path, cx);
     }
 
     pub(in crate::gui::workspace::sftp) fn restore_local_path(
@@ -88,12 +132,7 @@ impl SftpView {
         self.local_restore_requests.remove(workspace_id);
     }
 
-    fn persist_local_directory(
-        &self,
-        workspace_id: &str,
-        path: &std::path::Path,
-        cx: &mut Context<Self>,
-    ) {
+    fn save_local_path(&self, workspace_id: &str, path: &std::path::Path, cx: &mut Context<Self>) {
         let Some(profile_id) = self
             .projections
             .get(workspace_id)

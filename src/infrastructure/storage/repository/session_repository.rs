@@ -9,7 +9,9 @@ use rusqlite::{OptionalExtension, Row, params, types::Type};
 use uuid::Uuid;
 
 use crate::{
-    domain::session::{NewSession, Protocol, ProxyConfig, SessionProfile, SftpSessionState},
+    domain::session::{
+        ConnectionProtocol, NewSession, Protocol, ProxyConfig, SessionProfile, SftpSessionState,
+    },
     infrastructure::storage::derive::sqlite_drive::SqliteDrive,
 };
 
@@ -65,7 +67,8 @@ impl SessionStorageRepository {
     pub fn insert_session(&self, draft: NewSession) -> Result<SessionProfile> {
         let profile = SessionProfile {
             id: Uuid::new_v4().to_string(),
-            protocol: draft.protocol,
+            connection_protocol: draft.connection_protocol,
+            protocol: Protocol::Ssh,
             name: draft.name.trim().to_owned(),
             host: draft.host.trim().to_owned(),
             port: draft.port,
@@ -85,7 +88,7 @@ impl SessionStorageRepository {
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 profile.id,
-                profile.protocol.as_str(),
+                profile.connection_protocol.storage_key(),
                 profile.name,
                 profile.host,
                 profile.port,
@@ -114,7 +117,8 @@ impl SessionStorageRepository {
             .context("find top_session to update")?;
         let profile = SessionProfile {
             id: id.to_owned(),
-            protocol: draft.protocol,
+            connection_protocol: draft.connection_protocol,
+            protocol: Protocol::Ssh,
             name: draft.name.trim().to_owned(),
             host: draft.host.trim().to_owned(),
             port: draft.port,
@@ -134,7 +138,7 @@ impl SessionStorageRepository {
              WHERE id = ?1",
             params![
                 profile.id,
-                profile.protocol.as_str(),
+                profile.connection_protocol.storage_key(),
                 profile.name,
                 profile.host,
                 profile.port,
@@ -210,9 +214,9 @@ impl SessionStorageRepository {
 }
 
 fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
-    let protocol = row
+    let connection_protocol = row
         .get::<_, String>(1)?
-        .parse::<Protocol>()
+        .parse::<ConnectionProtocol>()
         .map_err(|error| {
             rusqlite::Error::FromSqlConversionFailure(
                 1,
@@ -234,7 +238,8 @@ fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
     };
     Ok(SessionProfile {
         id: row.get(0)?,
-        protocol,
+        connection_protocol,
+        protocol: Protocol::Ssh,
         name: row.get(2)?,
         host: row.get(3)?,
         port: row.get(4)?,

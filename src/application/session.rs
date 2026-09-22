@@ -11,6 +11,7 @@ use super::{ApplicationEvent, ApplicationResult};
 
 struct SessionState {
     sessions: RwLock<HashMap<String, SessionProfile>>,
+    session_order: RwLock<Vec<String>>,
     selected_workspace_id: RwLock<Option<String>>,
     events: broadcast::Sender<ApplicationEvent>,
 }
@@ -25,6 +26,7 @@ impl SessionApplication {
         Self {
             inner: Arc::new(SessionState {
                 sessions: RwLock::new(HashMap::new()),
+                session_order: RwLock::new(Vec::new()),
                 selected_workspace_id: RwLock::new(None),
                 events,
             }),
@@ -36,15 +38,23 @@ impl SessionApplication {
         workspace_id: String,
         profile: SessionProfile,
     ) -> ApplicationResult<()> {
-        let already_open = self
-            .inner
-            .sessions
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(workspace_id.clone(), profile.clone())
-            .is_some();
-        if already_open {
-            return Err(format!("会话已打开: {workspace_id}"));
+        {
+            let mut sessions = self
+                .inner
+                .sessions
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if sessions
+                .insert(workspace_id.clone(), profile.clone())
+                .is_some()
+            {
+                return Err(format!("会话已打开: {workspace_id}"));
+            }
+            self.inner
+                .session_order
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(workspace_id.clone());
         }
 
         let _ = self.inner.events.send(ApplicationEvent::SessionOpened {
@@ -55,29 +65,49 @@ impl SessionApplication {
     }
 
     pub async fn close(&self, workspace_id: &str) -> ApplicationResult<()> {
-        let removed = self
-            .inner
-            .sessions
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(workspace_id)
-            .is_some();
-        if !removed {
-            return Err(format!("会话不存在: {workspace_id}"));
-        }
+        let (was_selected, selected_after_close) = {
+            let mut sessions = self
+                .inner
+                .sessions
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if sessions.remove(workspace_id).is_none() {
+                return Err(format!("会话不存在: {workspace_id}"));
+            }
 
-        let was_selected = self
-            .inner
-            .selected_workspace_id
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .as_deref()
-            == Some(workspace_id);
+            let mut session_order = self
+                .inner
+                .session_order
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let closed_index = session_order
+                .iter()
+                .position(|session_id| session_id == workspace_id);
+            if let Some(closed_index) = closed_index {
+                session_order.remove(closed_index);
+            }
+
+            let was_selected = self
+                .inner
+                .selected_workspace_id
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_deref()
+                == Some(workspace_id);
+            let selected_after_close = was_selected.then(|| {
+                closed_index
+                    .and_then(|index| {
+                        session_order.get(index.min(session_order.len().saturating_sub(1)))
+                    })
+                    .cloned()
+            });
+            (was_selected, selected_after_close.flatten())
+        };
         let _ = self.inner.events.send(ApplicationEvent::SessionClosed {
             workspace_id: workspace_id.to_owned(),
         });
         if was_selected {
-            self.select_sync(None)?;
+            self.select_sync(selected_after_close)?;
         }
         Ok(())
     }

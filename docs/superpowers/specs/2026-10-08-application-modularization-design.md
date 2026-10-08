@@ -39,6 +39,7 @@ Application
 
 ### Application
 
+- 应用层负责校验请求数据是否合法、操作资源是否存在以及对应业务规则；校验通过后才调用 Infrastructure。
 - `sessions` 管理会话配置用例、运行时会话映射和打开/关闭会话所需的跨模块协调。
 - `ssh`、`sftp`、`database` 管理各自客户端连接的应用生命周期和工作区行为。
 - `ssh_server` 管理服务配置的验证、启动/更新/关闭用例以及状态向 DataContext 的同步。
@@ -52,14 +53,15 @@ Application
 - `ssh_server` 持有 SSH 监听器、russh 服务处理器、主机密钥和配置持久化。
 - `sftp_server` 持有 russh-sftp 协议适配、本地文件句柄和文件系统操作。
 - InfrastructureContext 组合并初始化这些具体控制器；协议处理、网络和文件 IO 不放入 Application。
-- SFTP 协议处理在请求时调用 Application 的既有 `SftpServerGateway` 边界，由 Application 校验根目录、会话和句柄规则，再由 Infrastructure 执行文件 IO。保留这一实际在用的边界，不新增 trait。
+- Infrastructure 在启动 SSH/SFTP Server 时接收 Application 的具体 `SftpServerApplication` 实例；SFTP handler 直接调用其会话、句柄和根目录校验方法，不通过 trait 接口转发。
+- SFTP 文件系统由 Infrastructure 的具体控制器实现并调用，不保留仅供 Infrastructure 内部使用的文件系统 trait。
 - 其他 Infrastructure 服务继续提供底层能力和持久化；业务校验留在 Application。
 
 ## Ports 清理规则
 
 - 逐项通过全仓引用确认未使用的类型或导出后再删除，不删除仍被基础设施或应用模块使用的 Port。
-- 本轮检索中 `PortTestFuture` 只有定义，没有消费者，应删除。
-- SFTP Server 的 Application Gateway 是 Infrastructure 回调应用规则的现有边界，应保留；文件系统端口及其他类型是否保留，按迁移后实际调用关系复核。
+- 删除 `SftpServerGateway` 和 `SftpServerFilesystem` trait；SFTP Server 使用具体 Application 服务与 Infrastructure 文件系统控制器。
+- 删除经全仓检索确认无消费者的 `PortTestFuture`、`SftpServerFuture`、`SftpFilesystemFuture` 等类型及导出；其余现有端口逐项按实际调用关系保留或删除。
 - 不新增 trait 或依赖。
 
 ## 行为与约束
@@ -75,5 +77,5 @@ Application
 1. `Application` 有明确的模块字段，所有现有应用服务均有归属；代理和端口转发等模块不能遗漏。
 2. 各模块的用例入口位于对应 Application 模块，根 `core.rs` 不再承载各服务的独立配置操作。
 3. SSH/SFTP Server 的协议、监听和文件 IO 由 Infrastructure 直接拥有；SFTP 根目录和会话授权仍由 Application 校验。
-4. `application/ports` 中被删除的每个类型均无全仓消费者；仍被使用的边界保持兼容。
+4. 不存在 SFTP Server Gateway/FileSystem trait；`application/ports` 中被删除的每个类型均无全仓消费者。
 5. GUI、MCP、`main.rs` 与关闭流程完成迁移，格式和 `cargo check --locked --offline` 通过；不增加或运行测试。

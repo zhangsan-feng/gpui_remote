@@ -1,83 +1,90 @@
-use std::sync::Arc;
-
 use gpui_kit::*;
 
 use crate::{
-    application::ApplicationContext,
+    data_context::{DATA_CONTEXT, DataContext, DataSnapshot},
     domain::session::Protocol,
-    global_state::{GlobalEvent, read_global_state},
 };
 
 use super::SftpView;
 
 impl SftpView {
-    pub(super) fn refresh_from_application(&mut self, cx: &mut Context<Self>) {
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+    pub(super) fn refresh_from_context(&mut self, _cx: &mut Context<Self>) {
+        let context = &*DATA_CONTEXT;
         let workspace_ids = self.projections.keys().cloned().collect::<Vec<_>>();
-        let selected_workspace_id = self.selected_workspace_id.clone();
         for workspace_id in workspace_ids {
-            let snapshot = match application.sftp_workspace_snapshot(&workspace_id) {
-                Ok(snapshot) => snapshot,
-                Err(error) => {
-                    log::debug!(
-                        "SFTP GUI projection refresh skipped: workspace_id={workspace_id}, error={error}"
-                    );
-                    continue;
-                }
-            };
-            if selected_workspace_id.as_deref() == Some(workspace_id.as_str()) {
-                self.local = snapshot.local.clone();
-                self.transfers = snapshot.transfers.clone();
-            }
-            if let Some(projection) = self.projections.get_mut(&workspace_id) {
-                projection.snapshot = snapshot;
-            }
+            self.refresh_workspace_from_context(&context, &workspace_id);
         }
     }
 
-    pub(super) fn start_subscribe(&self, cx: &mut Context<Self>) {
-        let global_state = read_global_state(cx);
-        cx.subscribe(&global_state, |this, _, event, cx| {
-            match event {
-                GlobalEvent::WorkspaceSessionOpened(workspace_id, profile)
-                    if profile.protocol == Protocol::Sftp =>
-                {
-                    log::debug!(
-                        "SFTP GUI projection event received: workspace_id={workspace_id}, profile_id={}, host={}",
-                        profile.id,
-                        profile.host
-                    );
-                    this.initialize_projection(workspace_id.clone(), profile.clone());
-                }
-                GlobalEvent::WorkspaceSessionSelected(workspace_id) => {
-                    if this.selected_workspace_id == *workspace_id {
-                        return;
-                    }
-                    if let Some(previous_workspace_id) = this.selected_workspace_id.as_deref() {
-                        this.local_restore_requests.remove(previous_workspace_id);
-                    }
-                    this.selected_workspace_id = workspace_id.clone();
-                    this.remote_list_state.reset_with_uniform_height(0, px(38.));
-                    if let Some(workspace_id) = workspace_id
-                        .as_deref()
-                        .filter(|workspace_id| this.projections.contains_key(*workspace_id))
-                    {
-                        this.restore_local_path(workspace_id, cx);
-                    }
-                    this.refresh_from_application(cx);
-                }
-                GlobalEvent::WorkspaceSessionClosed { workspace_id } => {
-                    this.close(workspace_id);
-                }
-                _ => return,
+    fn refresh_workspace_from_context(&mut self, context: &DataContext, workspace_id: &str) {
+        let snapshot = match context.sftp_workspace_snapshot(workspace_id) {
+            Some(snapshot) => snapshot,
+            None => {
+                log::debug!("SFTP GUI projection refresh skipped: workspace_id={workspace_id}");
+                return;
             }
-            cx.notify();
-        })
-        .detach();
+        };
+        if self.selected_workspace_id.as_deref() == Some(workspace_id) {
+            self.local = snapshot.local.clone();
+            self.transfers = snapshot.transfers.clone();
+        }
+        if let Some(projection) = self.projections.get_mut(workspace_id) {
+            projection.snapshot = snapshot;
+        }
     }
 
-    pub(in crate::gui::workspace) fn status_updates(&self) -> Arc<tokio::sync::Notify> {
-        self.status_updates.clone()
+    pub(in crate::gui::workspace) fn apply_snapshot(
+        &mut self,
+        snapshot: &DataSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let existing = self.projections.keys().cloned().collect::<Vec<_>>();
+        for workspace_id in existing {
+            if !snapshot.workspaces.iter().any(|workspace| {
+                workspace.workspace_id == workspace_id && workspace.protocol == Protocol::Sftp
+            }) {
+                self.close(&workspace_id);
+            }
+        }
+        let context = &*DATA_CONTEXT;
+        let mut refresh_workspaces = Vec::new();
+        for workspace in snapshot
+            .workspaces
+            .iter()
+            .filter(|workspace| workspace.protocol == Protocol::Sftp)
+        {
+            let is_new = !self.projections.contains_key(&workspace.workspace_id);
+            if is_new {
+                self.initialize_projection(workspace.workspace_id.clone(), workspace.clone());
+            }
+            let previous_revision = self
+                .observed_sftp_revisions
+                .insert(workspace.workspace_id.clone(), workspace.sftp_revision);
+            if is_new || previous_revision != Some(workspace.sftp_revision) {
+                refresh_workspaces.push(workspace.workspace_id.as_str());
+            }
+        }
+        let selected = snapshot
+            .selected_workspace_id
+            .as_ref()
+            .filter(|workspace_id| self.projections.contains_key(workspace_id.as_str()));
+        let selection_changed = self.selected_workspace_id != selected.cloned();
+        if selection_changed {
+            if let Some(previous_workspace_id) = self.selected_workspace_id.as_deref() {
+                self.local_restore_requests.remove(previous_workspace_id);
+            }
+            self.selected_workspace_id = selected.cloned();
+            self.remote_list_state.reset_with_uniform_height(0, px(38.));
+            if let Some(workspace_id) = selected {
+                self.restore_local_path(workspace_id, cx);
+            }
+        }
+        let has_refresh = !refresh_workspaces.is_empty();
+        for workspace_id in refresh_workspaces {
+            self.refresh_workspace_from_context(&context, workspace_id);
+        }
+        if selection_changed || has_refresh {
+            cx.notify();
+        }
     }
 }

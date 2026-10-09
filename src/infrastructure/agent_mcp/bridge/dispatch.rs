@@ -1,5 +1,6 @@
-use crate::application::{
-    ApplicationContext, ApplicationEvent, ApplicationResult, model::ProfileSummary,
+use crate::{
+    application::{Application, ApplicationResult, session::model::ProfileSummary},
+    data_context::DataChange,
 };
 
 use super::types::{
@@ -7,11 +8,13 @@ use super::types::{
 };
 
 pub(crate) async fn dispatch(
-    application: &ApplicationContext,
+    application: &Application,
     command: ApplicationCommand,
 ) -> ApplicationResult<ApplicationResponse> {
+    let _accepted = application.begin_operation().await?;
     match command {
         ApplicationCommand::ListProfiles => application
+            .sessions
             .list_profile_summaries()
             .await
             .map(ApplicationResponse::Profiles),
@@ -21,68 +24,61 @@ pub(crate) async fn dispatch(
             ip,
             title,
         } => application
-            .open_session(profile_id, protocol, ip, title)
+            .open_session(profile_id, protocol, ip, title, false)
             .await
             .map(ApplicationResponse::WorkspaceId),
+        ApplicationCommand::OpenSshTunnel { profile_id } => application
+            .open_ssh_tunnel(profile_id)
+            .await
+            .map(ApplicationResponse::SshTunnelWorkspace),
         ApplicationCommand::CloseSession { workspace_id } => application
             .close_session(&workspace_id)
             .await
             .map(|_| ApplicationResponse::Empty),
-        ApplicationCommand::ListSftpSessions => application
-            .list_sftp_workspace_summaries()
-            .await
-            .map(ApplicationResponse::TerminalSummaries),
-        ApplicationCommand::ListSftpLocal { workspace_id } => application
-            .read_sftp_local_directory(workspace_id)
-            .await
-            .map(ApplicationResponse::SftpDirectory),
         ApplicationCommand::ChangeSftpLocalDirectory {
             workspace_id,
             ip,
             title,
             path,
         } => application
-            .change_sftp_local_directory(workspace_id, ip, title, path)
+            .sftp
+            .change_local_directory_checked(workspace_id, ip, title, path)
             .await
             .map(|_| ApplicationResponse::Empty),
-        ApplicationCommand::ListSftpRemote { workspace_id } => application
-            .read_sftp_remote_directory(workspace_id)
-            .await
-            .map(ApplicationResponse::SftpDirectory),
         ApplicationCommand::ChangeSftpRemoteDirectory {
             workspace_id,
             ip,
             title,
             path,
         } => application
-            .change_sftp_remote_directory(workspace_id, ip, title, path)
+            .sftp
+            .change_remote_directory_checked(workspace_id, ip, title, path)
             .await
             .map(|_| ApplicationResponse::Empty),
         ApplicationCommand::UploadSftp {
             workspace_id,
             local_paths,
         } => application
-            .upload_sftp(workspace_id, local_paths)
+            .sftp
+            .upload_checked(workspace_id, local_paths)
             .await
             .map(ApplicationResponse::SftpTransferSummary),
         ApplicationCommand::DownloadSftp {
             workspace_id,
             remote_paths,
         } => application
-            .download_sftp(workspace_id, remote_paths)
+            .sftp
+            .download_checked(workspace_id, remote_paths)
             .await
             .map(ApplicationResponse::SftpTransferSummary),
-        ApplicationCommand::ListSftpTransfers { workspace_id } => application
-            .read_sftp_transfer_records(workspace_id)
-            .await
-            .map(ApplicationResponse::SftpTransferInfos),
         ApplicationCommand::WatchSftpLocal {
             workspace_id,
             ip,
             title,
             local_path,
         } => application
-            .start_sftp_local_watch(workspace_id, ip, title, local_path)
+            .sftp
+            .start_local_watch(workspace_id, ip, title, local_path)
             .await
             .map(ApplicationResponse::SftpWatch),
         ApplicationCommand::StopSftpLocalWatch {
@@ -91,30 +87,12 @@ pub(crate) async fn dispatch(
             title,
             local_path,
         } => application
-            .stop_sftp_local_watch(workspace_id, ip, title, local_path)
+            .sftp
+            .stop_local_watch(workspace_id, ip, title, local_path)
             .await
             .map(|_| ApplicationResponse::Empty),
-        ApplicationCommand::ListSftpLocalWatches {
-            workspace_id,
-            ip,
-            title,
-        } => application
-            .sftp_local_watch_summaries(workspace_id, ip, title)
-            .map(ApplicationResponse::SftpWatches),
-        ApplicationCommand::ListTerminals => application
-            .list_terminals()
-            .await
-            .map(ApplicationResponse::TerminalSummaries),
-        ApplicationCommand::McpReadTerminal {
-            workspace_id,
-            offset,
-            limit,
-            since_mcp_snapshot_version,
-        } => application
-            .mcp_read_terminal(workspace_id, offset, limit, since_mcp_snapshot_version)
-            .await
-            .map(ApplicationResponse::McpTerminalRead),
         ApplicationCommand::SendText { workspace_id, text } => application
+            .ssh
             .send_text(workspace_id, text)
             .await
             .map(|_| ApplicationResponse::Empty),
@@ -125,30 +103,31 @@ pub(crate) async fn dispatch(
             alt,
             shift,
         } => application
-            .send_key(workspace_id, key, control, alt, shift)
+            .ssh
+            .send_key_checked(workspace_id, key, control, alt, shift)
             .await
             .map(|_| ApplicationResponse::Empty),
     }
 }
 
-pub(crate) fn map_event(event: ApplicationEvent) -> NotificationEnvelope {
+pub(crate) fn map_event(event: DataChange) -> NotificationEnvelope {
     let event = match event {
-        ApplicationEvent::SessionOpened {
+        DataChange::SessionOpened {
             workspace_id,
             profile,
         } => ApplicationNotification::SessionOpened {
             workspace_id,
             profile: ProfileSummary {
-                id: profile.id,
-                title: profile.name,
+                id: profile.profile_id,
+                title: profile.title,
                 host: profile.host,
                 protocol: profile.connection_protocol.as_str().to_owned(),
             },
         },
-        ApplicationEvent::SessionClosed { workspace_id } => {
+        DataChange::SessionClosed { workspace_id } => {
             ApplicationNotification::SessionClosed { workspace_id }
         }
-        ApplicationEvent::SessionSelected { workspace_id } => {
+        DataChange::SessionSelected { workspace_id } => {
             ApplicationNotification::SessionSelected { workspace_id }
         }
     };

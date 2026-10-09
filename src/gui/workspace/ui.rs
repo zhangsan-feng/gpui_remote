@@ -27,6 +27,12 @@ impl Workspace {
             )
             .child(match self.active_protocol {
                 Some(Protocol::Sftp) => self.sftp.clone().into_any_element(),
+                Some(Protocol::Mysql | Protocol::Pgsql | Protocol::Redis) => v_flex()
+                    .size_full()
+                    .items_center()
+                    .justify_center()
+                    .child("数据库工作区尚未实现")
+                    .into_any_element(),
                 _ => self.terminal.clone().into_any_element(),
             })
     }

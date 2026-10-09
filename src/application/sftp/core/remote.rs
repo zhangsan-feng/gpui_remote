@@ -1,19 +1,16 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use anyhow::{Context as _, Result, bail};
-use russh::{Disconnect, client};
-use russh_sftp::client::SftpSession;
+use anyhow::{Context as _, Result};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::{
-    domain::session::SessionProfile,
-    infrastructure::proxy::{ProxySettings, connect},
+    application::ports::SftpConnection,
+    domain::{session::SessionProfile, terminal::TerminalStatus},
+    infrastructure::INFRASTRUCTURE,
 };
 
-use super::conn::{SftpClientHandler, ssh_config};
-use super::transfer::{download_path, upload_path};
-use super::{RemoteDeleteItem, SftpCommand, SftpEntry, SftpModel, SftpStatus};
+use super::{SftpCommand, SftpModel};
 
 pub(super) async fn run_sftp_session(
     workspace_id: String,
@@ -28,65 +25,8 @@ pub(super) async fn run_sftp_session(
         profile.host,
         profile.port
     );
-    let proxy = profile.proxy.as_ref().map(|proxy| ProxySettings {
-        host: proxy.host.clone(),
-        port: proxy.port,
-        username: proxy.username.clone(),
-        password: proxy.password.clone(),
-    });
-    let stream = connect((profile.host.as_str(), profile.port), proxy.as_ref()).await?;
-    let config = Arc::new(ssh_config());
-    let mut session = client::connect_stream(
-        config,
-        stream,
-        SftpClientHandler {
-            endpoint: format!("[{}]:{}", profile.host, profile.port),
-        },
-    )
-    .await
-    .context("SFTP SSH 握手或主机密钥校验失败")?;
-    let authentication = if let Some(path) = profile.private_key_path.as_deref() {
-        let key_path = path.to_owned();
-        let key = tokio::task::spawn_blocking({
-            let key_path = key_path.clone();
-            move || russh::keys::load_secret_key(&key_path, None)
-        })
-        .await
-        .context("加载 SFTP SSH 私钥任务失败")?
-        .with_context(|| format!("加载 SFTP SSH 私钥失败: {key_path}"))?;
-        session
-            .authenticate_publickey(
-                profile.username.clone(),
-                russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
-            )
-            .await
-            .context("SFTP SSH 私钥认证失败")?
-    } else {
-        session
-            .authenticate_password(profile.username.clone(), profile.password.clone())
-            .await
-            .context("SFTP SSH 密码认证失败")?
-    };
-    if !authentication.success() {
-        if profile.private_key_path.is_some() {
-            bail!("SFTP 用户名或私钥错误");
-        }
-        bail!("SFTP 用户名或密码错误");
-    }
-
-    let channel = session
-        .channel_open_session()
-        .await
-        .context("创建 SFTP 会话通道失败")?;
-    channel
-        .request_subsystem(true, "sftp")
-        .await
-        .context("启动远程 SFTP 子系统失败")?;
-    let sftp = Arc::new(
-        SftpSession::new(channel.into_stream())
-            .await
-            .context("初始化 SFTP 协议失败")?,
-    );
+    let sftp: Arc<dyn SftpConnection> =
+        Arc::from(INFRASTRUCTURE.connect_sftp(&workspace_id, &profile).await?);
 
     let initial_path = if let Some(path) = initial_remote_path.as_deref() {
         match sftp.canonicalize(path).await {
@@ -104,7 +44,7 @@ pub(super) async fn run_sftp_session(
             .context("读取 SFTP 初始目录失败")?
     };
     log::debug!("SFTP 初始远程目录扫描开始: workspace_id={workspace_id}, path={initial_path}");
-    let entries = scan_remote_directory(&sftp, &initial_path).await?;
+    let entries = sftp.read_directory(&initial_path).await?;
     log::debug!(
         "SFTP 初始远程目录扫描完成: workspace_id={workspace_id}, path={}, entries={}",
         initial_path,
@@ -130,11 +70,11 @@ pub(super) async fn run_sftp_session(
                     }
                 };
                 match command {
-                    SftpCommand::ChangeRemoteDirectory(path) => {
+                    SftpCommand::ChangeRemoteDirectory { path, complete } => {
                         log::debug!("SFTP 远程目录扫描开始: {path}");
                         let result = async {
-                            let path = sftp.canonicalize(path).await.context("解析远程目录失败")?;
-                            let entries = scan_remote_directory(&sftp, &path).await?;
+                            let path = sftp.canonicalize(&path).await.context("解析远程目录失败")?;
+                            let entries = sftp.read_directory(&path).await?;
                             Ok::<_, anyhow::Error>((path, entries))
                         }
                         .await;
@@ -144,11 +84,13 @@ pub(super) async fn run_sftp_session(
                                     "SFTP 远程目录扫描完成: path={path}, entries={}",
                                     entries.len()
                                 );
-                                model.set_directory(path, entries)
+                                model.set_directory(path.clone(), entries);
+                                let _ = complete.send(Ok(path));
                             }
                             Err(error) => {
                                 log::warn!("SFTP 远程目录扫描失败: {error:#}");
                                 model.set_error(format!("{error:#}"));
+                                let _ = complete.send(Err(format!("{error:#}")));
                             }
                         }
                     }
@@ -224,15 +166,40 @@ pub(super) async fn run_sftp_session(
                         items,
                         refresh_path,
                     } => {
-                        let delete_result = delete_remote_paths(&sftp, &items).await;
-                        match scan_remote_directory(&sftp, &refresh_path).await {
-                            Ok(entries) => {
-                                model.set_directory(refresh_path, entries);
-                                if let Err(error) = delete_result {
-                                    model.set_error(format!("{error:#}"));
+                        let refresh_generation = model.remote_refresh_generation(&refresh_path);
+                        let delete_result = sftp.delete_paths(&items).await;
+                        if let Err(error) = &delete_result {
+                            log::warn!("SFTP 远程删除失败: workspace_id={workspace_id}, error={error:#}");
+                        }
+                        if let Some(generation) = refresh_generation {
+                            match sftp.read_directory(&refresh_path).await {
+                                Ok(entries) => {
+                                    if model.set_directory_if_current(
+                                        refresh_path.clone(), generation, entries,
+                                    ) {
+                                        if let Err(error) = delete_result {
+                                            model.set_error_if_current(
+                                                &refresh_path,
+                                                generation,
+                                                format!("{error:#}"),
+                                            );
+                                        }
+                                    } else {
+                                        log::debug!(
+                                            "SFTP delete directory refresh skipped after navigation: workspace_id={workspace_id}, path={refresh_path}"
+                                        );
+                                    }
                                 }
+                                Err(error) => model.set_error_if_current(
+                                    &refresh_path,
+                                    generation,
+                                    format!("{error:#}"),
+                                ),
                             }
-                            Err(error) => model.set_error(format!("{error:#}")),
+                        } else {
+                            log::debug!(
+                                "SFTP delete directory refresh skipped for stale path: workspace_id={workspace_id}, path={refresh_path}"
+                            );
                         }
                     }
                     SftpCommand::Disconnect => {
@@ -254,23 +221,21 @@ pub(super) async fn run_sftp_session(
         }
     }
 
-    let _ = sftp.close().await;
-    let _ = session
-        .disconnect(Disconnect::ByApplication, "", "zh-CN")
-        .await;
-    model.update(
-        |snapshot| {
-            snapshot.status = SftpStatus::Disconnected;
-            snapshot.loading = false;
-        },
-        true,
-    );
+    if let Err(error) = sftp.close().await {
+        log::debug!(
+            "SFTP protocol adapter close failed: workspace_id={workspace_id}, error={error:#}"
+        );
+    }
+    model.update(|snapshot| {
+        snapshot.status = TerminalStatus::Disconnected;
+        snapshot.loading = false;
+    });
     log::debug!("SFTP runtime stopped: workspace_id={workspace_id}");
     Ok(())
 }
 
 async fn run_upload(
-    sftp: Arc<SftpSession>,
+    sftp: Arc<dyn SftpConnection>,
     model: Arc<SftpModel>,
     transfer_id: u64,
     local_path: PathBuf,
@@ -280,21 +245,23 @@ async fn run_upload(
     complete: Option<oneshot::Sender<bool>>,
 ) {
     let _target_lock = target_lock.lock().await;
-    let result = upload_path(
-        &sftp,
-        &local_path,
-        &remote_path,
-        |transferred, total| {
-            let progress = if total == 0 {
-                1.
-            } else {
-                transferred as f32 / total as f32
-            };
-            model.update_transfer(transfer_id, progress, transferred, total, "传输中")
-        },
-        || model.is_cancelled(transfer_id),
-    )
-    .await;
+    let progress_model = model.clone();
+    let cancel_model = model.clone();
+    let result = sftp
+        .upload_path(
+            &local_path,
+            &remote_path,
+            Box::new(move |transferred, total| {
+                let progress = if total == 0 {
+                    1.
+                } else {
+                    transferred as f32 / total as f32
+                };
+                progress_model.update_transfer(transfer_id, progress, transferred, total, "传输中")
+            }),
+            Box::new(move || cancel_model.is_cancelled(transfer_id)),
+        )
+        .await;
     match result {
         Ok(outcome) => {
             let succeeded = !model.is_cancelled(transfer_id);
@@ -321,10 +288,22 @@ async fn run_upload(
                     outcome.unchanged_entries,
                     outcome.transferred_bytes
                 );
-                if model.snapshot().path == refresh_path {
-                    match scan_remote_directory(&sftp, &refresh_path).await {
-                        Ok(entries) => model.set_directory(refresh_path, entries),
-                        Err(error) => model.set_error(format!("{error:#}")),
+                if let Some(generation) = model.remote_refresh_generation(&refresh_path) {
+                    match sftp.read_directory(&refresh_path).await {
+                        Ok(entries) => {
+                            if !model.set_directory_if_current(refresh_path, generation, entries) {
+                                log::debug!(
+                                    "SFTP upload directory refresh skipped after navigation: transfer_id={transfer_id}"
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            model.set_error_if_current(
+                                &refresh_path,
+                                generation,
+                                format!("{error:#}"),
+                            );
+                        }
                     }
                 }
             }
@@ -348,34 +327,35 @@ async fn run_upload(
 }
 
 async fn run_download(
-    sftp: Arc<SftpSession>,
+    sftp: Arc<dyn SftpConnection>,
     model: Arc<SftpModel>,
     transfer_id: u64,
     remote_path: String,
     local_path: PathBuf,
-    total_size: u64,
+    _total_size: u64,
     is_directory: bool,
     target_lock: Arc<Mutex<()>>,
     complete: oneshot::Sender<bool>,
 ) {
     let _target_lock = target_lock.lock().await;
-    let result = download_path(
-        &sftp,
-        &remote_path,
-        &local_path,
-        total_size,
-        is_directory,
-        |transferred, total| {
-            let progress = if total == 0 {
-                1.
-            } else {
-                transferred as f32 / total as f32
-            };
-            model.update_transfer(transfer_id, progress, transferred, total, "传输中")
-        },
-        || model.is_cancelled(transfer_id),
-    )
-    .await;
+    let progress_model = model.clone();
+    let cancel_model = model.clone();
+    let result = sftp
+        .download_path(
+            &remote_path,
+            &local_path,
+            is_directory,
+            Box::new(move |transferred, total| {
+                let progress = if total == 0 {
+                    1.
+                } else {
+                    transferred as f32 / total as f32
+                };
+                progress_model.update_transfer(transfer_id, progress, transferred, total, "传输中")
+            }),
+            Box::new(move || cancel_model.is_cancelled(transfer_id)),
+        )
+        .await;
     let mut refresh_local_directory = false;
     if model.is_cancelled(transfer_id) {
         model.update_transfer(transfer_id, 0., 0, 0, "已取消");
@@ -413,100 +393,10 @@ async fn run_download(
     log::debug!("SFTP 下载任务结束: transfer_id={transfer_id}");
 }
 
-async fn delete_remote_path(
-    sftp: &SftpSession,
-    remote_path: &str,
-    is_directory: bool,
-) -> Result<()> {
-    if !is_directory {
-        return sftp
-            .remove_file(remote_path)
-            .await
-            .with_context(|| format!("删除远程文件 {remote_path} 失败"));
-    }
-    let mut directories = Vec::new();
-    let mut pending = vec![remote_path.to_owned()];
-    while let Some(directory) = pending.pop() {
-        directories.push(directory.clone());
-        let children = sftp
-            .read_dir(&directory)
-            .await
-            .with_context(|| format!("读取远程目录 {directory} 失败"))?;
-        for child in children {
-            let name = child.file_name();
-            if name == "." || name == ".." {
-                continue;
-            }
-            if child.metadata().is_dir() {
-                pending.push(child.path());
-            } else {
-                let child_path = child.path();
-                sftp.remove_file(&child_path)
-                    .await
-                    .with_context(|| format!("删除远程文件 {child_path} 失败"))?;
-            }
-        }
-    }
-    for directory in directories.into_iter().rev() {
-        sftp.remove_dir(&directory)
-            .await
-            .with_context(|| format!("删除远程目录 {directory} 失败"))?;
-    }
-    Ok(())
-}
-
-async fn delete_remote_paths(sftp: &SftpSession, items: &[RemoteDeleteItem]) -> Result<()> {
-    log::debug!("SFTP 批量删除远程路径开始: count={}", items.len());
-    let mut errors = Vec::new();
-    for item in items {
-        log::debug!(
-            "SFTP 删除远程路径: path={}, is_directory={}",
-            item.path,
-            item.is_directory
-        );
-        if let Err(error) = delete_remote_path(sftp, &item.path, item.is_directory).await {
-            let error =
-                anyhow::anyhow!(error).context(format!("批量删除远程路径 {} 失败", item.path));
-            log::warn!("{error:#}");
-            errors.push(format!("{error:#}"));
-        }
-    }
-    if !errors.is_empty() {
-        bail!("{}", errors.join("\n"));
-    }
-    log::debug!("SFTP 批量删除远程路径完成: count={}", items.len());
-    Ok(())
-}
-
 pub(super) fn join_remote_path(directory: &str, file_name: &str) -> String {
     if directory == "/" {
         format!("/{file_name}")
     } else {
         format!("{}/{file_name}", directory.trim_end_matches('/'))
     }
-}
-
-async fn scan_remote_directory(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>> {
-    let mut entries = sftp
-        .read_dir(path)
-        .await
-        .with_context(|| format!("读取远程目录 {path} 失败"))?
-        .map(|entry| {
-            let metadata = entry.metadata();
-            SftpEntry {
-                name: entry.file_name(),
-                path: entry.path(),
-                is_directory: metadata.is_dir(),
-                size: metadata.len(),
-                modified_at: metadata.mtime,
-            }
-        })
-        .collect::<Vec<_>>();
-    entries.sort_by(|left, right| {
-        right
-            .is_directory
-            .cmp(&left.is_directory)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-    });
-    Ok(entries)
 }

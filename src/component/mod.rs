@@ -1,3 +1,4 @@
+pub(crate) mod assets;
 pub mod color;
 pub mod draggable_list;
 pub mod resizable_panel;

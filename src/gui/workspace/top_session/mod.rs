@@ -8,15 +8,13 @@ use std::collections::HashMap;
 use gpui_kit::*;
 
 use crate::component::draggable_list::DraggableList;
-use crate::domain::session::SessionProfile;
+use crate::data_context::WorkspaceSummary;
 use crate::domain::terminal::TerminalStatus;
 
-pub(super) use external::terminal_statuses;
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct OpenedWorkspaceSession {
     pub(super) id: String,
-    pub(super) profile: SessionProfile,
+    pub(super) profile: WorkspaceSummary,
 }
 
 pub(super) struct WorkspaceSession {
@@ -28,14 +26,12 @@ pub(super) struct WorkspaceSession {
 
 impl WorkspaceSession {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let this = Self {
+        Self {
             sessions: Vec::new(),
             tabs: cx.new(|cx| ui::new_workspace_tabs(cx)),
             selected_id: None,
             statuses: HashMap::new(),
-        };
-        this.start_subscribe(cx);
-        this
+        }
     }
 }
 

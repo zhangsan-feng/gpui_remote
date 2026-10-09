@@ -280,7 +280,6 @@ use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
 use crate::{
-    application::ApplicationContext,
     component::{color::rgb_to_u32, theme},
     domain::terminal::TerminalStatus,
     gui::workspace::ui::render_empty_workspace,
@@ -339,8 +338,7 @@ impl TerminalView {
 
         let focus = self.focus.clone();
         let scroll_workspace_id = workspace_id.clone();
-        let scroll_application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let scroll_application = crate::application::APPLICATION.clone();
         let content = if status == TerminalStatus::Failed {
             render_connection_error(message).into_any_element()
         } else {
@@ -370,7 +368,7 @@ impl TerminalView {
                     let application = scroll_application.clone();
                     let workspace_id = scroll_workspace_id.clone();
                     cx.spawn(async move |_cx| {
-                        if let Err(error) = application.scroll_terminal(workspace_id, lines).await {
+                        if let Err(error) = application.ssh.scroll(&workspace_id, lines).await {
                             log::debug!("滚动 SSH 终端失败: {error}");
                         }
                     })
@@ -420,14 +418,10 @@ impl TerminalView {
             .max(6.0) as u32;
         let pty_size = (workspace_id.to_owned(), columns, rows);
         if self.last_pty_size.as_ref() != Some(&pty_size) {
-            let application =
-                cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+            let application = crate::application::APPLICATION.clone();
             let workspace_id = workspace_id.to_owned();
             cx.spawn(async move |_this, _cx| {
-                if let Err(error) = application
-                    .resize_terminal(workspace_id, columns, rows)
-                    .await
-                {
+                if let Err(error) = application.ssh.resize(&workspace_id, columns, rows).await {
                     log::debug!("调整 SSH 终端大小失败: {error}");
                 }
             })

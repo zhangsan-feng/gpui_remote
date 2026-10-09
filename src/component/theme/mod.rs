@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
+pub use crate::domain::theme::AppTheme;
+use crate::domain::theme::{StoredColors, ThemeSettings};
 use gpui_kit::{App, Global, Hsla};
-use serde::{Deserialize, Serialize};
 
 mod core;
 mod external;
@@ -10,42 +11,11 @@ mod ui;
 pub use external::{CustomerTheme, CustomerUiColor, CustomerUiTheme};
 pub use ui::GuiColor;
 
-const SETTINGS_PATH: &str = "data/theme.json";
-const WALLPAPER_DIRECTORY: &str = "data/background";
 const MIN_SELECTION_LIGHTNESS_CONTRAST: f32 = 0.12;
 const SELECTION_LIGHTNESS_OFFSET: f32 = 0.14;
 const REGION_BACKGROUND_OFFSET: f32 = 0.02;
 const MIN_HOVER_SELECTION_CONTRAST: f32 = 0.08;
 const HOVER_LIGHTNESS_OFFSET: f32 = 0.05;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AppTheme {
-    #[serde(
-        alias = "monochrome",
-        alias = "wisteria",
-        alias = "sea_salt",
-        alias = "moss",
-        alias = "warm_sand",
-        alias = "material_red",
-        alias = "material_pink",
-        alias = "material_deep_orange",
-        alias = "material_orange",
-        alias = "material_amber",
-        alias = "material_brown",
-        alias = "peach_cream",
-        alias = "sunset_coral",
-        alias = "pomegranate_tea"
-    )]
-    RoseBerry,
-    #[default]
-    DefaultTheme,
-    LightBlue,
-    LightOrange,
-    LightPurple,
-    LightPink,
-    Custom,
-}
 
 impl AppTheme {
     pub const BUILT_IN: [Self; 6] = [
@@ -100,6 +70,8 @@ struct CustomerUiThemeState {
     theme: AppTheme,
     colors: ColorOverrides,
     visual: VisualSettings,
+    persist_settings: tokio::sync::watch::Sender<ThemeSettings>,
+    settings_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Global for CustomerUiThemeState {}
@@ -113,38 +85,12 @@ pub struct ThemePreview {
 
 pub struct ChangeComponentThemeColor;
 
-#[derive(Serialize, Deserialize, Default)]
-#[serde(default)]
-struct ThemeSettings {
-    theme: AppTheme,
-    colors: StoredColors,
-    wallpaper: Option<String>,
-    wallpaper_opacity: f32,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(default)]
-struct StoredColors {
-    accent: String,
-    font: Option<String>,
-    background: Option<String>,
-    hover: Option<String>,
-    selected: Option<String>,
-}
-
-impl Default for StoredColors {
-    fn default() -> Self {
-        Self {
-            accent: core::default_accent(),
-            font: None,
-            background: None,
-            hover: None,
-            selected: None,
-        }
-    }
-}
-
-pub fn init(cx: &mut App) {
-    core::initialize(cx);
+pub(crate) fn init(
+    cx: &mut App,
+    settings: ThemeSettings,
+    persist_settings: tokio::sync::watch::Sender<ThemeSettings>,
+    settings_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    core::initialize(cx, settings, persist_settings, settings_changed);
     CustomerUiTheme::apply(cx);
 }

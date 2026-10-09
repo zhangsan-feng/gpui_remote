@@ -1,9 +1,7 @@
-use std::sync::{
-    Arc, RwLock, RwLockReadGuard,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
 
-use tokio::sync::{Notify, mpsc};
+use crate::data_context::DATA_CONTEXT;
+use tokio::sync::mpsc;
 
 use crate::domain::{
     session::{Protocol, SessionProfile},
@@ -13,11 +11,7 @@ use crate::domain::{
 use super::run_ssh_session;
 
 pub(crate) struct TerminalModel {
-    data: RwLock<TerminalData>,
-    mcp_snapshot_version: AtomicU64,
-    gui_snapshot_version: AtomicU64,
-    updates: Arc<Notify>,
-    status_updates: Arc<Notify>,
+    workspace_id: String,
 }
 
 pub(crate) struct TerminalRuntime {
@@ -27,90 +21,84 @@ pub(crate) struct TerminalRuntime {
 }
 
 impl TerminalModel {
-    pub(crate) fn new(
-        data: TerminalData,
-        updates: Arc<Notify>,
-        status_updates: Arc<Notify>,
-    ) -> Self {
-        Self {
-            data: RwLock::new(data),
-            mcp_snapshot_version: AtomicU64::new(0),
-            gui_snapshot_version: AtomicU64::new(0),
-            updates,
-            status_updates,
-        }
+    pub(crate) fn new(workspace_id: String) -> Self {
+        Self { workspace_id }
     }
 
-    pub(crate) fn read(&self) -> RwLockReadGuard<'_, TerminalData> {
-        self.data
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    pub(crate) fn read(&self) -> Option<crate::data_context::TerminalReadSnapshot> {
+        DATA_CONTEXT.terminal_snapshot(&self.workspace_id)
     }
 
     pub(crate) fn replace(&self, data: TerminalData) -> u64 {
-        *self
-            .data
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
-        let mcp_snapshot_version = self.mcp_snapshot_version.fetch_add(1, Ordering::Release) + 1;
-        self.gui_snapshot_version.fetch_add(1, Ordering::Release);
-        self.updates.notify_waiters();
-        mcp_snapshot_version
+        DATA_CONTEXT.publish_terminal(&self.workspace_id, data, true);
+        self.mcp_snapshot_version()
     }
 
     pub(crate) fn replace_view(&self, data: TerminalData) {
-        *self
-            .data
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = data;
-        self.gui_snapshot_version.fetch_add(1, Ordering::Release);
-        self.updates.notify_waiters();
+        DATA_CONTEXT.publish_terminal(&self.workspace_id, data, false);
     }
 
     pub(crate) fn mcp_snapshot_version(&self) -> u64 {
-        self.mcp_snapshot_version.load(Ordering::Acquire)
+        self.read()
+            .map_or(0, |snapshot| snapshot.mcp_snapshot_version)
     }
 
     pub(crate) fn gui_snapshot_version(&self) -> u64 {
-        self.gui_snapshot_version.load(Ordering::Acquire)
+        self.read()
+            .map_or(0, |snapshot| snapshot.gui_snapshot_version)
     }
 
     pub(crate) fn set_status(&self, status: TerminalStatus, message: Option<String>) {
-        {
-            let mut data = self
-                .data
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            data.status = status;
-            data.message = message;
-        }
-        self.gui_snapshot_version.fetch_add(1, Ordering::Release);
-        self.updates.notify_waiters();
-        self.status_updates.notify_waiters();
+        DATA_CONTEXT.update_terminal_status(&self.workspace_id, status, message);
+    }
+
+    pub(crate) fn initialize_buffer(&self) -> bool {
+        DATA_CONTEXT.initialize_terminal_buffer(&self.workspace_id)
+    }
+
+    pub(crate) fn process(&self, bytes: &[u8]) -> Vec<Vec<u8>> {
+        DATA_CONTEXT
+            .with_terminal_buffer(&self.workspace_id, |buffer| {
+                buffer.process(bytes);
+                buffer.drain_pty_writes()
+            })
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn resize(&self, columns: u32, rows: u32) -> bool {
+        DATA_CONTEXT
+            .with_terminal_buffer(&self.workspace_id, |buffer| buffer.resize(columns, rows))
+            .is_some()
+    }
+
+    pub(crate) fn scroll(&self, lines: i32) -> bool {
+        DATA_CONTEXT
+            .with_terminal_buffer(&self.workspace_id, |buffer| buffer.scroll(lines))
+            .is_some()
+    }
+
+    pub(crate) fn scroll_to(&self, offset: usize) -> bool {
+        DATA_CONTEXT
+            .with_terminal_buffer(&self.workspace_id, |buffer| buffer.scroll_to(offset))
+            .is_some()
+    }
+
+    pub(crate) fn frame_reusing(&self, previous: Option<&TerminalFrame>) -> Option<TerminalFrame> {
+        DATA_CONTEXT
+            .with_terminal_buffer(&self.workspace_id, |buffer| buffer.frame_reusing(previous))
     }
 }
 
-pub(crate) fn new_runtime(
-    workspace_id: String,
-    profile: SessionProfile,
-    updates: Arc<Notify>,
-    status_updates: Arc<Notify>,
-) -> TerminalRuntime {
-    let model = Arc::new(TerminalModel::new(
-        TerminalData {
-            frame: Arc::new(TerminalFrame::default()),
-            status: TerminalStatus::Connecting,
-            message: Some("正在建立 SSH 连接…".into()),
-        },
-        updates,
-        status_updates,
-    ));
+pub(crate) fn new_runtime(workspace_id: String, profile: SessionProfile) -> TerminalRuntime {
+    let model = Arc::new(TerminalModel::new(workspace_id.clone()));
     let (commands, command_rx) = mpsc::unbounded_channel();
     let task = if supports_terminal_protocol(&profile.protocol) {
+        if !model.initialize_buffer() {
+            log::warn!("SSH terminal buffer initialization skipped: workspace_id={workspace_id}");
+        }
         Some(tokio::spawn(run_ssh_session(
             workspace_id,
             profile,
-            commands.clone(),
             command_rx,
             model.clone(),
         )))

@@ -4,7 +4,13 @@ use std::sync::{
 };
 
 use anyhow::{Context as _, Result};
-use axum::{Router, extract::Request, middleware, response::Response};
+use axum::{
+    Router,
+    extract::Request,
+    http::{Method, StatusCode, header},
+    middleware,
+    response::{IntoResponse, Response},
+};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -19,17 +25,28 @@ use super::{
 pub(super) async fn run(bridge: McpBridgeEndpoint, settings: McpSettings) -> Result<()> {
     let token: Arc<str> = settings.token.clone().into();
 
-    let config = StreamableHttpServerConfig::default()
+    let stateless_config = StreamableHttpServerConfig::default()
         .with_legacy_session_mode(false)
         .with_json_response(true);
-    let service: StreamableHttpService<AgentTerminalMcp, LocalSessionManager> =
+    let stateless_bridge = bridge.clone();
+    let stateless: StreamableHttpService<AgentTerminalMcp, LocalSessionManager> =
         StreamableHttpService::new(
-            move || Ok(AgentTerminalMcp::new(bridge.clone())),
+            move || Ok(AgentTerminalMcp::new(stateless_bridge.clone())),
             Default::default(),
-            config,
+            stateless_config,
+        );
+    let stream_config = StreamableHttpServerConfig::default()
+        .with_legacy_session_mode(true)
+        .with_json_response(true);
+    let stream: StreamableHttpService<AgentTerminalMcp, LocalSessionManager> =
+        StreamableHttpService::new(
+            move || Ok(AgentTerminalMcp::with_notifications(bridge.clone())),
+            Default::default(),
+            stream_config,
         );
     let mut router = Router::new()
-        .nest_service("/mcp", service)
+        .route_service("/mcp", stateless)
+        .route_service("/mcp/stream", stream)
         .layer(middleware::from_fn(trace_mcp_request));
     if settings.token_enabled {
         router = router.layer(middleware::from_fn_with_state(
@@ -37,18 +54,32 @@ pub(super) async fn run(bridge: McpBridgeEndpoint, settings: McpSettings) -> Res
             require_bearer_token,
         ));
     }
+    router = router.layer(middleware::from_fn(only_get_post));
     let address = socket_address(&settings.host, settings.port);
     let listener = TcpListener::bind(&address)
         .await
         .with_context(|| format!("绑定 MCP 服务地址失败: {address}"))?;
 
     log::info!("Agent MCP endpoint: http://{address}/mcp");
+    log::info!("Agent MCP notification endpoint: http://{address}/mcp/stream");
     if settings.token_enabled {
-        log::info!("Agent MCP bearer token: {token}");
+        log::info!("Agent MCP bearer authentication enabled");
     }
     axum::serve(listener, router)
         .await
         .context("运行 Agent MCP 服务失败")
+}
+
+async fn only_get_post(request: Request, next: middleware::Next) -> Response {
+    if matches!(request.method(), &Method::GET | &Method::POST) {
+        return next.run(request).await;
+    }
+    (
+        StatusCode::METHOD_NOT_ALLOWED,
+        [(header::ALLOW, "GET, POST")],
+        "Method Not Allowed",
+    )
+        .into_response()
 }
 
 async fn trace_mcp_request(request: Request, next: middleware::Next) -> Response {

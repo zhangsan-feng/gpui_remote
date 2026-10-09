@@ -3,47 +3,54 @@ use std::collections::HashMap;
 use gpui_kit::Context;
 
 use crate::{
-    domain::terminal::TerminalStatus,
+    data_context::DataSnapshot,
     global_state::{GlobalEvent, read_global_state},
 };
 
 use super::{OpenedWorkspaceSession, WorkspaceSession};
 
 impl WorkspaceSession {
-    pub(super) fn start_subscribe(&self, cx: &mut Context<Self>) {
-        let global_state = read_global_state(cx);
-        cx.subscribe(&global_state, |this, _, event, cx| match event {
-            GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
-                this.open(workspace_id.clone(), profile.clone(), cx);
-            }
-            GlobalEvent::WorkspaceSessionClosed { workspace_id } => {
-                this.close_from_application(workspace_id, cx);
-            }
-            GlobalEvent::WorkspaceSessionSelected(workspace_id) => {
-                this.select_from_application(workspace_id.clone(), cx);
-            }
-            _ => {}
-        })
-        .detach();
+    pub(in crate::gui::workspace) fn apply_snapshot(
+        &mut self,
+        snapshot: &DataSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let sessions = snapshot
+            .workspaces
+            .iter()
+            .map(|workspace| OpenedWorkspaceSession {
+                id: workspace.workspace_id.clone(),
+                profile: workspace.clone(),
+            })
+            .collect::<Vec<_>>();
+        let statuses = snapshot
+            .workspaces
+            .iter()
+            .map(|workspace| (workspace.workspace_id.clone(), workspace.status.clone()))
+            .collect::<HashMap<_, _>>();
+        let same_sessions = self.sessions.len() == sessions.len()
+            && self.sessions.iter().zip(&sessions).all(|(old, new)| {
+                old.id == new.id
+                    && old.profile.profile_id == new.profile.profile_id
+                    && old.profile.title == new.profile.title
+                    && old.profile.host == new.profile.host
+                    && old.profile.protocol == new.profile.protocol
+            });
+        if same_sessions
+            && self.selected_id == snapshot.selected_workspace_id
+            && self.statuses == statuses
+        {
+            return;
+        }
+        self.sessions = sessions;
+        self.selected_id = snapshot.selected_workspace_id.clone();
+        self.statuses = statuses;
+        self.rebuild_tabs(cx);
+        cx.notify();
     }
 
     pub(in crate::gui::workspace) fn sessions(&self) -> &[OpenedWorkspaceSession] {
         &self.sessions
-    }
-
-    pub(in crate::gui::workspace) fn selected_id(&self) -> Option<&str> {
-        self.selected_id.as_deref()
-    }
-
-    pub(in crate::gui::workspace) fn update_statuses(
-        &mut self,
-        statuses: HashMap<String, TerminalStatus>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.statuses != statuses {
-            self.statuses = statuses;
-            self.rebuild_tabs(cx);
-        }
     }
 
     pub(super) fn emit_selected_workspace(
@@ -61,18 +68,4 @@ impl WorkspaceSession {
             cx.emit(GlobalEvent::CloseWorkspaceSession { workspace_id });
         });
     }
-}
-
-pub(in crate::gui::workspace) fn terminal_statuses(
-    sessions: &[OpenedWorkspaceSession],
-    terminal_status: impl Fn(&str) -> Option<TerminalStatus>,
-) -> HashMap<String, TerminalStatus> {
-    sessions
-        .iter()
-        .map(|opened_session| {
-            let id = opened_session.id.clone();
-            let status = terminal_status(&id).unwrap_or(TerminalStatus::Connecting);
-            (id, status)
-        })
-        .collect()
 }

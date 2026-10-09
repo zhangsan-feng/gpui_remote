@@ -1,7 +1,7 @@
 use anyhow::{Context as _, Result, anyhow};
-use gpui_kit::{AppContext, Context};
+use gpui_kit::Context;
 
-use crate::{application::ApplicationContext, domain::session::SessionProfile};
+use crate::application::session::model::SessionSummary;
 
 use super::SessionComponent;
 
@@ -9,10 +9,12 @@ impl SessionComponent {
     pub(super) fn refresh_sessions(&mut self, cx: &mut Context<Self>) {
         self.refresh_generation = self.refresh_generation.wrapping_add(1);
         let refresh_generation = self.refresh_generation;
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let result = application.list_session_profiles().await;
+            let result = crate::global_state::run_application(async move {
+                application.sessions.list_session_summaries().await
+            })
+            .await;
             let _ = this.update(cx, |this, cx| {
                 if this.refresh_generation != refresh_generation {
                     return;
@@ -32,7 +34,7 @@ impl SessionComponent {
         .detach();
     }
 
-    pub(super) fn find_session_in_projection(&self, id: &str) -> Result<SessionProfile> {
+    pub(super) fn find_session_in_projection(&self, id: &str) -> Result<SessionSummary> {
         self.sessions
             .iter()
             .into_iter()

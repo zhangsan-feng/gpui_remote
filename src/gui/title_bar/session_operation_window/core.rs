@@ -1,7 +1,7 @@
 use gpui_kit::*;
 
 use crate::domain::session::{
-    ConnectionProtocol as DomainConnectionProtocol, NewSession, ProxyConfig,
+    ConnectionProtocol as DomainConnectionProtocol, NewSession, ProxyConfig, SshReverseTunnelConfig,
 };
 
 use super::{ConnectionProtocol, SessionOperationWindow};
@@ -47,6 +47,32 @@ impl SessionOperationWindow {
             ConnectionProtocol::Pgsql => DomainConnectionProtocol::Pgsql,
             ConnectionProtocol::Redis => DomainConnectionProtocol::Redis,
         };
+        let remote_port = self
+            .ssh_tunnel_remote_port
+            .read(cx)
+            .value()
+            .trim()
+            .to_owned();
+        let forward_port = self
+            .ssh_tunnel_forward_port
+            .read(cx)
+            .value()
+            .trim()
+            .to_owned();
+        let ssh_reverse_tunnel = if remote_port.is_empty() && forward_port.is_empty() {
+            None
+        } else {
+            Some(SshReverseTunnelConfig {
+                remote_port: parse_port(&remote_port, "SSH 隧道远端")?,
+                forward_address: self
+                    .ssh_tunnel_forward_address
+                    .read(cx)
+                    .value()
+                    .trim()
+                    .to_owned(),
+                forward_port: parse_port(&forward_port, "SSH 隧道转发")?,
+            })
+        };
         let draft = NewSession {
             connection_protocol,
             name: self.name.read(cx).value().trim().to_owned(),
@@ -56,6 +82,7 @@ impl SessionOperationWindow {
             password: self.password.read(cx).value().to_string(),
             private_key_path: self.private_key_path.clone(),
             proxy,
+            ssh_reverse_tunnel,
         };
 
         draft.validate().map_err(str::to_owned)?;

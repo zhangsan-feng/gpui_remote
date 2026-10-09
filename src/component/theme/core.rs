@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::PathBuf;
 
 use gpui_kit::component::{Colorize, Theme, ThemeMode};
 use gpui_kit::{App, Hsla, Rgba};
@@ -13,8 +10,8 @@ use crate::{
 
 use super::{
     AppTheme, ColorOverrides, CustomerUiThemeState, HOVER_LIGHTNESS_OFFSET,
-    MIN_HOVER_SELECTION_CONTRAST, REGION_BACKGROUND_OFFSET, SETTINGS_PATH, StoredColors,
-    ThemePreview, ThemeSettings, VisualSettings,
+    MIN_HOVER_SELECTION_CONTRAST, REGION_BACKGROUND_OFFSET, StoredColors, ThemePreview,
+    ThemeSettings, VisualSettings,
 };
 
 #[derive(Clone, Copy)]
@@ -97,14 +94,13 @@ impl AppTheme {
     }
 }
 
-pub(super) fn initialize(cx: &mut App) {
-    let settings = load_settings();
-    log::info!(
-        "主题初始化: theme={:?}, settings_path={}, settings_exists={}",
-        settings.theme,
-        SETTINGS_PATH,
-        Path::new(SETTINGS_PATH).exists()
-    );
+pub(super) fn initialize(
+    cx: &mut App,
+    settings: ThemeSettings,
+    persist_settings: tokio::sync::watch::Sender<ThemeSettings>,
+    settings_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    log::info!("主题初始化: theme={:?}", settings.theme);
     let colors = ColorOverrides {
         accent: parse_color(&settings.colors.accent).unwrap_or_else(default_custom_color),
         font: parse_optional_color(settings.colors.font),
@@ -121,6 +117,8 @@ pub(super) fn initialize(cx: &mut App) {
         theme: settings.theme,
         colors,
         visual,
+        persist_settings,
+        settings_changed,
     });
 }
 
@@ -231,7 +229,6 @@ pub(super) fn apply_theme(cx: &mut App) {
     theme.table_head = surface;
     theme.table_row_border = border;
     theme.group_box = surface;
-    theme.tiles = background;
     theme.primary = accent;
     theme.primary_hover = primary_hover;
     theme.primary_active = primary_active;
@@ -391,13 +388,6 @@ fn with_alpha(mut color: Hsla, alpha: f32) -> Hsla {
     color
 }
 
-fn load_settings() -> ThemeSettings {
-    fs::read(SETTINGS_PATH)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
-}
-
 fn persist(cx: &mut App) {
     let settings = {
         let state = cx.global::<CustomerUiThemeState>();
@@ -419,18 +409,12 @@ fn persist(cx: &mut App) {
         }
     };
 
-    if let Err(error) = save_settings(&settings) {
-        log::error!("保存主题设置失败: {error}");
-    }
+    let state = cx.global::<CustomerUiThemeState>();
+    state
+        .settings_changed
+        .store(true, std::sync::atomic::Ordering::Release);
+    state.persist_settings.send_replace(settings);
     read_global_state(cx).update(cx, |_, cx| cx.emit(GlobalEvent::ThemeColorChanged));
-}
-
-fn save_settings(settings: &ThemeSettings) -> std::io::Result<()> {
-    if let Some(parent) = Path::new(SETTINGS_PATH).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let bytes = serde_json::to_vec_pretty(settings).map_err(std::io::Error::other)?;
-    fs::write(SETTINGS_PATH, bytes)
 }
 
 fn parse_optional_color(value: Option<String>) -> Option<Hsla> {

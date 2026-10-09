@@ -7,6 +7,21 @@ mod tools;
 
 pub(crate) use external::AgentMcpRuntime;
 
+pub(super) struct McpRuntime {
+    service: AgentMcpRuntime,
+    receiver: std::sync::Mutex<Option<bridge::McpBridgeReceiver>>,
+}
+
+impl McpRuntime {
+    pub(super) fn new() -> Self {
+        let (endpoint, receiver) = bridge::new();
+        Self {
+            service: AgentMcpRuntime::new(endpoint),
+            receiver: std::sync::Mutex::new(Some(receiver)),
+        }
+    }
+}
+
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_HOST: &str = "127.0.0.1";

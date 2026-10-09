@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::{
     domain::session::{
         ConnectionProtocol, NewSession, Protocol, ProxyConfig, SessionProfile, SftpSessionState,
+        SshReverseTunnelConfig,
     },
     infrastructure::storage::derive::sqlite_drive::SqliteDrive,
 };
@@ -39,7 +40,8 @@ impl SessionStorageRepository {
         let mut statement = drive.connection.prepare(
             "SELECT id, protocol, name, host, port, username, password,
                     private_key_path, proxy_host, proxy_port, proxy_username,
-                    proxy_password, created_at
+                    proxy_password, created_at, ssh_tunnel_remote_port,
+                    ssh_tunnel_forward_address, ssh_tunnel_forward_port
              FROM sessions ORDER BY created_at DESC",
         )?;
         let rows = statement.query_map([], map_session)?;
@@ -55,7 +57,8 @@ impl SessionStorageRepository {
             .query_row(
                 "SELECT id, protocol, name, host, port, username, password,
                         private_key_path, proxy_host, proxy_port, proxy_username,
-                        proxy_password, created_at
+                        proxy_password, created_at, ssh_tunnel_remote_port,
+                        ssh_tunnel_forward_address, ssh_tunnel_forward_port
                  FROM sessions WHERE id = ?1",
                 [id],
                 map_session,
@@ -76,16 +79,19 @@ impl SessionStorageRepository {
             password: draft.password,
             private_key_path: normalize_private_key_path(draft.private_key_path),
             proxy: draft.proxy,
+            ssh_reverse_tunnel: draft.ssh_reverse_tunnel,
             created_at: Utc::now().to_rfc3339(),
         };
         let proxy = profile.proxy.as_ref();
+        let tunnel = profile.ssh_reverse_tunnel.as_ref();
         let drive = self.lock_drive();
         drive.connection.execute(
             "INSERT INTO sessions (
                 id, protocol, name, host, port, username, password,
                 private_key_path, proxy_host, proxy_port, proxy_username,
-                proxy_password, created_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                proxy_password, created_at, ssh_tunnel_remote_port,
+                ssh_tunnel_forward_address, ssh_tunnel_forward_port
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 profile.id,
                 profile.connection_protocol.storage_key(),
@@ -100,6 +106,9 @@ impl SessionStorageRepository {
                 proxy.map(|value| value.username.as_str()),
                 proxy.map(|value| value.password.as_str()),
                 profile.created_at,
+                tunnel.map(|value| value.remote_port),
+                tunnel.map(|value| value.forward_address.as_str()),
+                tunnel.map(|value| value.forward_port),
             ],
         )?;
         Ok(profile)
@@ -126,15 +135,18 @@ impl SessionStorageRepository {
             password: draft.password,
             private_key_path: normalize_private_key_path(draft.private_key_path),
             proxy: draft.proxy,
+            ssh_reverse_tunnel: draft.ssh_reverse_tunnel,
             created_at,
         };
         let proxy = profile.proxy.as_ref();
+        let tunnel = profile.ssh_reverse_tunnel.as_ref();
         drive.connection.execute(
             "UPDATE sessions SET
                 protocol = ?2, name = ?3, host = ?4, port = ?5,
                 username = ?6, password = ?7, private_key_path = ?8,
                 proxy_host = ?9, proxy_port = ?10, proxy_username = ?11,
-                proxy_password = ?12
+                proxy_password = ?12, ssh_tunnel_remote_port = ?13,
+                ssh_tunnel_forward_address = ?14, ssh_tunnel_forward_port = ?15
              WHERE id = ?1",
             params![
                 profile.id,
@@ -149,6 +161,9 @@ impl SessionStorageRepository {
                 proxy.map(|value| value.port),
                 proxy.map(|value| value.username.as_str()),
                 proxy.map(|value| value.password.as_str()),
+                tunnel.map(|value| value.remote_port),
+                tunnel.map(|value| value.forward_address.as_str()),
+                tunnel.map(|value| value.forward_port),
             ],
         )?;
         Ok(profile)
@@ -156,10 +171,13 @@ impl SessionStorageRepository {
 
     pub fn delete_session(&self, id: &str) -> Result<()> {
         let drive = self.lock_drive();
-        drive
+        let affected = drive
             .connection
             .execute("DELETE FROM sessions WHERE id = ?1", [id])
             .context("delete top_session from SQLite")?;
+        if affected == 0 {
+            anyhow::bail!("连接配置不存在: {id}");
+        }
         Ok(())
     }
 
@@ -236,6 +254,20 @@ fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
     } else {
         None
     };
+    let ssh_reverse_tunnel = match (
+        row.get::<_, Option<u16>>(13)?,
+        row.get::<_, Option<String>>(14)?,
+        row.get::<_, Option<u16>>(15)?,
+    ) {
+        (Some(remote_port), Some(forward_address), Some(forward_port)) => {
+            Some(SshReverseTunnelConfig {
+                remote_port,
+                forward_address,
+                forward_port,
+            })
+        }
+        _ => None,
+    };
     Ok(SessionProfile {
         id: row.get(0)?,
         connection_protocol,
@@ -247,6 +279,7 @@ fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
         password: row.get(6)?,
         private_key_path,
         proxy,
+        ssh_reverse_tunnel,
         created_at: row.get(12)?,
     })
 }

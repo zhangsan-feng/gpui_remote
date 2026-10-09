@@ -17,8 +17,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::application::model::{SftpTransferInfo, SftpWorkspaceSnapshot};
 use crate::component::theme;
+use crate::data_context::{SftpTransferInfo, SftpWorkspaceSnapshot, is_transfer_cancellable};
 
 const TRANSFER_PANEL_RATIO: f32 = 1. / 3.;
 
@@ -249,7 +249,7 @@ impl SftpView {
                 let Some(record) = record else {
                     return menu;
                 };
-                let can_cancel = matches!(record.status.as_str(), "等待中" | "扫描中" | "传输中");
+                let can_cancel = is_transfer_cancellable(&record.status);
                 let can_retry = matches!(record.status.as_str(), "失败" | "已取消");
                 let menu = if can_cancel {
                     menu.menu("取消", Box::new(CancelTransfer(transfer_id)))

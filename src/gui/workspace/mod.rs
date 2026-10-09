@@ -27,15 +27,14 @@ impl Workspace {
         let terminal = cx.new(TerminalView::new);
         let sftp = cx.new(SftpView::new);
 
-        let this = Self {
+        let mut this = Self {
             workspace,
             terminal,
             sftp,
             active_protocol: None,
         };
-        this.start_status_watchers(cx);
         this.start_subscribe(cx);
-        this.refresh_session_statuses(cx);
+        this.sync_from_context(cx);
         this
     }
 }

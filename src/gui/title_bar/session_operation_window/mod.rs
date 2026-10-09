@@ -26,6 +26,7 @@ enum ConnectionProtocol {
 enum FormSection {
     Connection,
     Proxy,
+    SshTunnel,
 }
 
 #[derive(Clone)]
@@ -49,6 +50,9 @@ pub struct SessionOperationWindow {
     proxy_port: Entity<InputState>,
     proxy_username: Entity<InputState>,
     proxy_password: Entity<InputState>,
+    ssh_tunnel_remote_port: Entity<InputState>,
+    ssh_tunnel_forward_address: Entity<InputState>,
+    ssh_tunnel_forward_port: Entity<InputState>,
     error: Option<String>,
 }
 
@@ -86,6 +90,9 @@ impl SessionOperationWindow {
             .map(|profile| ConnectionProtocol::from_label(profile.connection_protocol.as_str()))
             .unwrap_or(ConnectionProtocol::SshAndSftp);
         let proxy = profile.as_ref().and_then(|profile| profile.proxy.as_ref());
+        let ssh_tunnel = profile
+            .as_ref()
+            .and_then(|profile| profile.ssh_reverse_tunnel.as_ref());
         let protocol_select = cx.new(|cx| {
             SelectState::new(
                 SearchableVec::new(ConnectionProtocol::ALL.to_vec()),
@@ -177,6 +184,30 @@ impl SessionOperationWindow {
                     .default_value(proxy.map(|p| p.password.clone()).unwrap_or_default())
                     .masked(true)
             }),
+            ssh_tunnel_remote_port: Self::input_with_value(
+                ssh_tunnel
+                    .map(|tunnel| tunnel.remote_port.to_string())
+                    .unwrap_or_default(),
+                "远端监听端口",
+                window,
+                cx,
+            ),
+            ssh_tunnel_forward_address: Self::input_with_value(
+                ssh_tunnel
+                    .map(|tunnel| tunnel.forward_address.clone())
+                    .unwrap_or_else(|| "127.0.0.1".into()),
+                "转发地址",
+                window,
+                cx,
+            ),
+            ssh_tunnel_forward_port: Self::input_with_value(
+                ssh_tunnel
+                    .map(|tunnel| tunnel.forward_port.to_string())
+                    .unwrap_or_default(),
+                "转发端口",
+                window,
+                cx,
+            ),
             error: None,
         }
     }

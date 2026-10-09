@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 
-use crate::application::ApplicationContext;
+use crate::application::Application;
 
 use super::dispatch;
 use super::types::{COMMAND_CAPACITY, CommandEnvelope, ResponseEnvelope, RouteKey};
@@ -13,7 +14,7 @@ const ROUTE_ENQUEUE_TIMEOUT: Duration = Duration::from_secs(5);
 const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 pub(crate) struct McpCommandRouter {
-    application: ApplicationContext,
+    application: Application,
     control_tx: mpsc::Sender<CommandEnvelope>,
     session_lanes: std::collections::HashMap<String, SessionLane>,
     lane_event_rx: mpsc::UnboundedReceiver<LaneEvent>,
@@ -31,7 +32,7 @@ enum LaneEvent {
 }
 
 impl McpCommandRouter {
-    pub(crate) fn new(application: ApplicationContext) -> Self {
+    pub(crate) fn new(application: Application) -> Self {
         let (lane_event_tx, lane_event_rx) = mpsc::unbounded_channel();
         let (control_tx, control_rx) = mpsc::channel(CONTROL_LANE_CAPACITY);
         tokio::spawn(run_lane(
@@ -105,6 +106,12 @@ impl McpCommandRouter {
         if self.session_lanes.remove(workspace_id).is_some() {
             log::debug!("MCP bridge workspace lane removed: workspace_id={workspace_id}");
         }
+    }
+
+    pub(crate) fn retain_open_workspaces(&mut self, open_workspaces: &HashSet<String>) {
+        self.drain_lane_events();
+        self.session_lanes
+            .retain(|workspace_id, _| open_workspaces.contains(workspace_id));
     }
 
     pub(crate) fn lane_count(&mut self) -> usize {
@@ -233,7 +240,7 @@ fn reject(command: CommandEnvelope, message: String) {
 async fn run_lane(
     lane_name: String,
     workspace_id: Option<String>,
-    application: ApplicationContext,
+    application: Application,
     mut receiver: mpsc::Receiver<CommandEnvelope>,
     lane_event_tx: mpsc::UnboundedSender<LaneEvent>,
 ) {
@@ -267,7 +274,7 @@ async fn run_lane(
 
 async fn process_command(
     lane_name: &str,
-    application: &ApplicationContext,
+    application: &Application,
     command: CommandEnvelope,
 ) -> bool {
     let request_id = command.request_id.clone();

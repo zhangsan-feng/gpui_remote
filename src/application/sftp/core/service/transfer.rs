@@ -6,22 +6,6 @@ use super::SftpApplication;
 use crate::application::sftp::core::{SftpCommand, TransferRecord, TransferRequest, remote};
 
 impl SftpApplication {
-    pub fn sftp_transfer_snapshot(
-        &self,
-        workspace_id: &str,
-    ) -> Result<Vec<TransferRecord>, String> {
-        self.ensure_workspace(workspace_id)?;
-        Ok(self
-            .inner
-            .transfers
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .filter(|transfer| transfer.request.workspace_id() == workspace_id)
-            .cloned()
-            .collect())
-    }
-
     pub async fn upload(
         &self,
         workspace_id: &str,
@@ -43,9 +27,9 @@ impl SftpApplication {
             else {
                 continue;
             };
-            let transfer_id = self.next_transfer_id();
+            let transfer_id = runtime.model.next_transfer_id();
             let target = remote::join_remote_path(&remote_path, &name);
-            self.add_transfer(TransferRecord {
+            runtime.model.add_transfer(TransferRecord {
                 id: transfer_id,
                 name,
                 direction: "上传".to_owned(),
@@ -85,8 +69,7 @@ impl SftpApplication {
         if ids.is_empty() {
             return Err("没有可加入队列的本地文件或目录".to_owned());
         }
-        self.inner.updates.notify_one();
-        Ok(self.transfer_records(&ids))
+        Ok(runtime.model.transfer_records(&ids))
     }
 
     pub async fn download(
@@ -110,8 +93,8 @@ impl SftpApplication {
                 return Err(format!("当前远程目录不存在路径: {remote_path}"));
             };
             let local_path = local_directory.join(&entry.name);
-            let transfer_id = self.next_transfer_id();
-            self.add_transfer(TransferRecord {
+            let transfer_id = runtime.model.next_transfer_id();
+            runtime.model.add_transfer(TransferRecord {
                 id: transfer_id,
                 name: entry.name.clone(),
                 direction: "下载".to_owned(),
@@ -156,7 +139,7 @@ impl SftpApplication {
             tokio::spawn(async move {
                 if completion.await.unwrap_or(false) {
                     let _ = app
-                        .change_local_directory(&workspace_id, local_directory)
+                        .refresh_local_directory_if_current(&workspace_id, local_directory)
                         .await;
                 }
             });
@@ -165,33 +148,26 @@ impl SftpApplication {
         if ids.is_empty() {
             return Err("没有可加入队列的远程文件或目录".to_owned());
         }
-        self.inner.updates.notify_one();
-        Ok(self.transfer_records(&ids))
+        Ok(runtime.model.transfer_records(&ids))
     }
 
     pub fn cancel_transfer(&self, workspace_id: &str, transfer_id: u64) -> Result<(), String> {
         let runtime = self.runtime(workspace_id)?;
-        runtime.model.request_cancel(transfer_id);
-        Ok(())
+        if runtime.model.request_cancel(transfer_id) {
+            Ok(())
+        } else {
+            Err(format!("不存在可取消的 SFTP 传输: {transfer_id}"))
+        }
     }
 
     pub async fn retry_transfer(&self, workspace_id: &str, transfer_id: u64) -> Result<(), String> {
-        let transfer = self
-            .inner
-            .transfers
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .find(|transfer| {
-                transfer.id == transfer_id
-                    && transfer.request.workspace_id() == workspace_id
-                    && matches!(transfer.status.as_str(), "失败" | "已取消")
-            })
-            .cloned()
-            .ok_or_else(|| format!("不存在可重试的 SFTP 传输: {transfer_id}"))?;
         let runtime = self.runtime(workspace_id)?;
+        let transfer = runtime
+            .model
+            .find_retryable_transfer(transfer_id)
+            .ok_or_else(|| format!("不存在可重试的 SFTP 传输: {transfer_id}"))?;
         let refresh_path = runtime.model.snapshot().path;
-        let new_transfer_id = self.next_transfer_id();
+        let new_transfer_id = runtime.model.next_transfer_id();
 
         match transfer.request {
             TransferRequest::Upload {
@@ -199,7 +175,7 @@ impl SftpApplication {
                 is_directory,
                 ..
             } => {
-                self.add_transfer(TransferRecord {
+                runtime.model.add_transfer(TransferRecord {
                     id: new_transfer_id,
                     name: transfer.name,
                     direction: "上传".to_owned(),
@@ -244,7 +220,7 @@ impl SftpApplication {
             } => {
                 let local_directory = self.local_directory_snapshot(workspace_id)?.path;
                 let local_path = local_directory.join(&file_name);
-                self.add_transfer(TransferRecord {
+                runtime.model.add_transfer(TransferRecord {
                     id: new_transfer_id,
                     name: transfer.name,
                     direction: "下载".to_owned(),
@@ -288,14 +264,13 @@ impl SftpApplication {
                 tokio::spawn(async move {
                     if completion.await.unwrap_or(false) {
                         let _ = app
-                            .change_local_directory(&workspace_id, local_directory)
+                            .refresh_local_directory_if_current(&workspace_id, local_directory)
                             .await;
                     }
                 });
             }
         }
 
-        self.inner.updates.notify_one();
         Ok(())
     }
 
@@ -309,8 +284,8 @@ impl SftpApplication {
         let name = local_path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())?;
-        let transfer_id = self.next_transfer_id();
-        self.add_transfer(TransferRecord {
+        let transfer_id = runtime.model.next_transfer_id();
+        runtime.model.add_transfer(TransferRecord {
             id: transfer_id,
             name,
             direction: "上传".to_owned(),
@@ -347,7 +322,6 @@ impl SftpApplication {
                 .set_transfer_error(transfer_id, "SFTP 连接已关闭".to_owned());
             return None;
         }
-        self.inner.updates.notify_one();
         Some(completion)
     }
 }

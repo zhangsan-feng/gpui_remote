@@ -3,11 +3,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use tokio::sync::{Notify, oneshot};
-
+use crate::data_context::DATA_CONTEXT;
 use crate::domain::{
     session::{Protocol, SessionProfile},
-    terminal::{McpTerminalHistoryPage, TerminalData, TerminalSessionCommand, TerminalStatus},
+    terminal::{TerminalData, TerminalSessionCommand, TerminalStatus},
 };
 
 use super::key::{encode_control_key, encode_special_key};
@@ -16,28 +15,20 @@ use super::{TerminalRuntime, disconnect, new_runtime};
 #[derive(Clone)]
 pub struct SshApplication {
     inner: Arc<SshApplicationInner>,
+    pub(crate) sessions: crate::application::session::SessionApplication,
 }
 
 struct SshApplicationInner {
     runtimes: RwLock<HashMap<String, TerminalRuntime>>,
-    updates: Arc<Notify>,
-    status_updates: Arc<Notify>,
-}
-
-impl Default for SshApplication {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl SshApplication {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(sessions: crate::application::session::SessionApplication) -> Self {
         Self {
             inner: Arc::new(SshApplicationInner {
                 runtimes: RwLock::new(HashMap::new()),
-                updates: Arc::new(Notify::new()),
-                status_updates: Arc::new(Notify::new()),
             }),
+            sessions,
         }
     }
 
@@ -46,12 +37,7 @@ impl SshApplication {
             return Err(format!("SSH 模块不支持 {} 协议", profile.protocol));
         }
         self.close_if_present(&workspace_id);
-        let runtime = new_runtime(
-            workspace_id.clone(),
-            profile,
-            self.inner.updates.clone(),
-            self.inner.status_updates.clone(),
-        );
+        let runtime = new_runtime(workspace_id.clone(), profile);
         self.inner
             .runtimes
             .write()
@@ -139,64 +125,11 @@ impl SshApplication {
         self.send_input(workspace_id, input).await
     }
 
-    pub async fn mcp_read_terminal(
-        &self,
-        workspace_id: &str,
-        offset: usize,
-        limit: usize,
-        since_mcp_snapshot_version: Option<u64>,
-    ) -> Result<McpTerminalHistoryPage, String> {
-        let commands = self.commands(workspace_id)?;
-        let (reply, response) = oneshot::channel();
-        commands
-            .send(TerminalSessionCommand::Read {
-                offset,
-                limit,
-                since_mcp_snapshot_version,
-                reply,
-            })
-            .map_err(|_| Self::command_unavailable(workspace_id, "read"))?;
-        response
-            .await
-            .map_err(|_| format!("SSH 历史读取已取消: {workspace_id}"))
-    }
-
     pub fn terminal_snapshot(&self, workspace_id: &str) -> Result<TerminalData, String> {
-        self.inner
-            .runtimes
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(workspace_id)
-            .map(|runtime| runtime.model.read().clone())
+        DATA_CONTEXT
+            .terminal_snapshot(workspace_id)
+            .map(|snapshot| snapshot.data.as_ref().clone())
             .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
-    }
-
-    pub fn terminal_mcp_snapshot_version(&self, workspace_id: &str) -> Result<u64, String> {
-        self.inner
-            .runtimes
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(workspace_id)
-            .map(|runtime| runtime.model.mcp_snapshot_version())
-            .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
-    }
-
-    pub fn terminal_gui_snapshot_version(&self, workspace_id: &str) -> Result<u64, String> {
-        self.inner
-            .runtimes
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(workspace_id)
-            .map(|runtime| runtime.model.gui_snapshot_version())
-            .ok_or_else(|| format!("SSH 会话不存在: {workspace_id}"))
-    }
-
-    pub fn updates(&self) -> Arc<Notify> {
-        self.inner.updates.clone()
-    }
-
-    pub fn status_updates(&self) -> Arc<Notify> {
-        self.inner.status_updates.clone()
     }
 
     pub(crate) fn runtime_available(&self, workspace_id: &str) -> bool {
@@ -206,7 +139,10 @@ impl SshApplication {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
             .is_some_and(|runtime| {
-                let status = runtime.model.read().status.clone();
+                let Some(snapshot) = runtime.model.read() else {
+                    return false;
+                };
+                let status = snapshot.data.status.clone();
                 matches!(
                     status,
                     TerminalStatus::Connecting | TerminalStatus::Connected
@@ -226,7 +162,12 @@ impl SshApplication {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(workspace_id)
-            .map(|runtime| runtime.model.read().status.clone());
+            .and_then(|runtime| {
+                runtime
+                    .model
+                    .read()
+                    .map(|snapshot| snapshot.data.status.clone())
+            });
         if matches!(
             status,
             Some(TerminalStatus::Disconnected | TerminalStatus::Failed)

@@ -5,11 +5,9 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use crate::{
     application::{
         ApplicationResult,
-        model::{
-            McpTerminalReadPage, ProfileSummary, SftpDirectorySummary, SftpTransferInfo,
-            SftpTransferSummary, SftpWatchSummary, TerminalSummary,
-        },
+        session::model::{ProfileSummary, SshTunnelWorkspaceSummary},
     },
+    data_context::{SftpTransferSummary, SftpWatchSummary},
     domain::session::Protocol,
 };
 
@@ -30,11 +28,10 @@ pub(crate) enum ApplicationCommand {
         ip: String,
         title: String,
     },
-    CloseSession {
-        workspace_id: String,
+    OpenSshTunnel {
+        profile_id: String,
     },
-    ListSftpSessions,
-    ListSftpLocal {
+    CloseSession {
         workspace_id: String,
     },
     ChangeSftpLocalDirectory {
@@ -42,9 +39,6 @@ pub(crate) enum ApplicationCommand {
         ip: String,
         title: String,
         path: String,
-    },
-    ListSftpRemote {
-        workspace_id: String,
     },
     ChangeSftpRemoteDirectory {
         workspace_id: String,
@@ -60,9 +54,6 @@ pub(crate) enum ApplicationCommand {
         workspace_id: String,
         remote_paths: Vec<String>,
     },
-    ListSftpTransfers {
-        workspace_id: String,
-    },
     WatchSftpLocal {
         workspace_id: String,
         ip: String,
@@ -74,18 +65,6 @@ pub(crate) enum ApplicationCommand {
         ip: String,
         title: String,
         local_path: String,
-    },
-    ListSftpLocalWatches {
-        workspace_id: String,
-        ip: String,
-        title: String,
-    },
-    ListTerminals,
-    McpReadTerminal {
-        workspace_id: String,
-        offset: usize,
-        limit: usize,
-        since_mcp_snapshot_version: Option<u64>,
     },
     SendText {
         workspace_id: String,
@@ -105,20 +84,14 @@ impl ApplicationCommand {
         match self {
             Self::ListProfiles => "list_profiles",
             Self::OpenSession { .. } => "open_session",
+            Self::OpenSshTunnel { .. } => "open_ssh_tunnel",
             Self::CloseSession { .. } => "close_session",
-            Self::ListSftpSessions => "list_sftp_sessions",
-            Self::ListSftpLocal { .. } => "list_sftp_local",
             Self::ChangeSftpLocalDirectory { .. } => "change_sftp_local_directory",
-            Self::ListSftpRemote { .. } => "list_sftp_remote",
             Self::ChangeSftpRemoteDirectory { .. } => "change_sftp_remote_directory",
             Self::UploadSftp { .. } => "upload_sftp",
             Self::DownloadSftp { .. } => "download_sftp",
-            Self::ListSftpTransfers { .. } => "list_sftp_transfers",
             Self::WatchSftpLocal { .. } => "watch_sftp_local",
             Self::StopSftpLocalWatch { .. } => "stop_sftp_local_watch",
-            Self::ListSftpLocalWatches { .. } => "list_sftp_local_watches",
-            Self::ListTerminals => "list_terminals",
-            Self::McpReadTerminal { .. } => "mcp_read_terminal",
             Self::SendText { .. } => "send_text",
             Self::SendKey { .. } => "send_key",
         }
@@ -127,23 +100,15 @@ impl ApplicationCommand {
     pub(crate) fn workspace_id(&self) -> Option<&str> {
         match self {
             Self::CloseSession { workspace_id }
-            | Self::ListSftpLocal { workspace_id }
             | Self::ChangeSftpLocalDirectory { workspace_id, .. }
-            | Self::ListSftpRemote { workspace_id }
             | Self::ChangeSftpRemoteDirectory { workspace_id, .. }
             | Self::UploadSftp { workspace_id, .. }
             | Self::DownloadSftp { workspace_id, .. }
-            | Self::ListSftpTransfers { workspace_id }
             | Self::WatchSftpLocal { workspace_id, .. }
             | Self::StopSftpLocalWatch { workspace_id, .. }
-            | Self::ListSftpLocalWatches { workspace_id, .. }
-            | Self::McpReadTerminal { workspace_id, .. }
             | Self::SendText { workspace_id, .. }
             | Self::SendKey { workspace_id, .. } => Some(workspace_id),
-            Self::ListProfiles
-            | Self::OpenSession { .. }
-            | Self::ListSftpSessions
-            | Self::ListTerminals => None,
+            Self::ListProfiles | Self::OpenSession { .. } | Self::OpenSshTunnel { .. } => None,
         }
     }
 
@@ -162,17 +127,14 @@ pub(crate) enum ApplicationResponse {
     Empty,
     Profiles(Vec<ProfileSummary>),
     WorkspaceId(String),
-    TerminalSummaries(Vec<TerminalSummary>),
-    McpTerminalRead(McpTerminalReadPage),
-    SftpDirectory(SftpDirectorySummary),
+    SshTunnelWorkspace(SshTunnelWorkspaceSummary),
     SftpTransferSummary(SftpTransferSummary),
-    SftpTransferInfos(Vec<SftpTransferInfo>),
     SftpWatch(SftpWatchSummary),
-    SftpWatches(Vec<SftpWatchSummary>),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum ApplicationNotification {
+    ResyncRequired,
     SessionOpened {
         workspace_id: String,
         profile: ProfileSummary,
@@ -206,9 +168,12 @@ pub(crate) struct ResponseEnvelope {
 pub(crate) struct McpBridgeEndpoint {
     pub(crate) command_tx: mpsc::Sender<CommandEnvelope>,
     pub(crate) notification_tx: broadcast::Sender<NotificationEnvelope>,
+    pub(crate) data_context: &'static crate::data_context::DataContext,
 }
 
 pub(crate) struct McpBridgeReceiver {
     pub(crate) command_rx: mpsc::Receiver<CommandEnvelope>,
     pub(crate) notification_tx: broadcast::Sender<NotificationEnvelope>,
+    pub(crate) data_context: &'static crate::data_context::DataContext,
+    pub(crate) notice: crate::data_context::DataContextNotice,
 }

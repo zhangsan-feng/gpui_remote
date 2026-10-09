@@ -39,6 +39,9 @@ impl SqliteDrive {
                     proxy_port INTEGER,
                     proxy_username TEXT,
                     proxy_password TEXT,
+                    ssh_tunnel_remote_port INTEGER,
+                    ssh_tunnel_forward_address TEXT,
+                    ssh_tunnel_forward_port INTEGER,
                     sftp_local_path TEXT,
                     sftp_remote_path TEXT,
                     created_at TEXT NOT NULL
@@ -55,6 +58,18 @@ impl SqliteDrive {
         let _ = self
             .connection
             .execute("ALTER TABLE sessions ADD COLUMN private_key_path TEXT", []);
+        let _ = self.connection.execute(
+            "ALTER TABLE sessions ADD COLUMN ssh_tunnel_remote_port INTEGER",
+            [],
+        );
+        let _ = self.connection.execute(
+            "ALTER TABLE sessions ADD COLUMN ssh_tunnel_forward_address TEXT",
+            [],
+        );
+        let _ = self.connection.execute(
+            "ALTER TABLE sessions ADD COLUMN ssh_tunnel_forward_port INTEGER",
+            [],
+        );
         let _ = self
             .connection
             .execute("ALTER TABLE sessions ADD COLUMN sftp_local_path TEXT", []);

@@ -5,7 +5,6 @@ mod ui;
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::application::ApplicationContext;
 use gpui_kit::*;
 use serde::Deserialize;
 
@@ -33,8 +32,6 @@ struct PasteTerminal;
 pub(super) struct TerminalView {
     models: HashMap<String, Arc<TerminalModel>>,
     selected_workspace_id: Option<String>,
-    updates: Arc<tokio::sync::Notify>,
-    status_updates: Arc<tokio::sync::Notify>,
     focus: FocusHandle,
     focus_pending: bool,
     list_state: ListState,
@@ -56,10 +53,6 @@ pub(in crate::gui::workspace) fn init(cx: &mut App) {
 
 impl TerminalView {
     pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
-        let updates = application.terminal_updates();
-        let status_updates = application.terminal_status_updates();
         let list_state = ListState::new(0, ListAlignment::Top, px(256.))
             .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
         list_state.set_follow_mode(FollowMode::Tail);
@@ -67,8 +60,6 @@ impl TerminalView {
         let this = Self {
             models: HashMap::new(),
             selected_workspace_id: None,
-            updates,
-            status_updates,
             focus: cx.focus_handle(),
             focus_pending: false,
             list_state,
@@ -80,8 +71,6 @@ impl TerminalView {
             selecting_text: false,
             scroll_handle: TerminalScrollHandle::default(),
         };
-        this.start_model_watcher(cx);
-        this.start_subscribe(cx);
         this
     }
 }

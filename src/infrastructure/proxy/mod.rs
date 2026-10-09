@@ -4,8 +4,9 @@ mod external;
 use std::{future::Future, net::SocketAddr, pin::Pin};
 
 use anyhow::Result;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{sync::oneshot, task::JoinHandle};
+
+pub use super::connection::ConnectionStream as ProxyStream;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxySettings {
@@ -14,10 +15,6 @@ pub struct ProxySettings {
     pub username: String,
     pub password: String,
 }
-
-pub trait ProxyStream: AsyncRead + AsyncWrite + Unpin + Send {}
-
-impl<T> ProxyStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
 pub type ConnectionFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Box<dyn ProxyStream>>> + Send + 'a>>;

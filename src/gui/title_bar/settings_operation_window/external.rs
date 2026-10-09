@@ -5,7 +5,7 @@ use gpui_kit::*;
 pub(crate) fn open_settings_window(window: &mut Window, cx: &mut App) {
     let mut options = window_center_options(window, size(px(900.), px(640.)));
     options.titlebar = Some(TitlebarOptions {
-        title: Some("系统配置".into()),
+        title: Some("系统设置".into()),
         appears_transparent: false,
         traffic_light_position: None,
     });

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gpui-kit = "0.6"
+gpui-kit = {version = "0.7.1", features = ["default"]}
 reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.1" }
 alacritty_terminal = "0.26.0"
 
@@ -16,18 +16,23 @@ tracing-appender = "0.2"
 serde = { version = "1.0.228", features = ["derive"] }
 anyhow = "1.0.100"
 axum = "0.8.8"
+hyper = { version = "1.11.1", features = ["client", "server", "http1"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
+http-body-util = "0.1.5"
+base64 = "0.23.1"
 tokio = {version = "1.49.0", features = ["full"]}
 serde_json = "1.0.149"
 rust-embed = "8.11.0"
 uuid = { version = "1.22.0", features = ["v4"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
-russh = "0.63.3"
+russh = {version = "0.64.1", features = ["default"]}
 russh-sftp = "3.0.0"
 rmcp = { version = "3.0.0", features = ["transport-streamable-http-server"] }
 tokio-socks = "0.5.2"
 unicode-width = "0.2.2"
 notify = "8.2.0"
 filetime = "0.2.25"
+rand = "0.10.2"
 
 [build-dependencies]
 chrono = { version = "0.4.43", features = ["default"] }

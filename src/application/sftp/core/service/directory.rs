@@ -1,3 +1,4 @@
+use crate::{data_context::DATA_CONTEXT, infrastructure::INFRASTRUCTURE};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -14,9 +15,58 @@ impl SftpApplication {
         workspace_id: &str,
         path: PathBuf,
     ) -> Result<LocalSnapshot, String> {
-        let snapshot = self.scan_local_directory(workspace_id, path).await?;
-        self.save_local_snapshot(workspace_id, snapshot.clone());
+        let runtime = self.runtime(workspace_id)?;
+        let _navigation = runtime.local_navigation.lock().await;
+        let snapshot = self
+            .update_local_directory(workspace_id, path, false)
+            .await?
+            .ok_or_else(|| format!("SFTP 本地目录请求已过期: {workspace_id}"))?;
+        let workspace = DATA_CONTEXT
+            .workspace_summary(workspace_id)
+            .ok_or_else(|| format!("SFTP 工作区已关闭: {workspace_id}"))?;
+        INFRASTRUCTURE
+            .update_sftp_local_path(workspace.profile_id, snapshot.path.clone())
+            .await
+            .map_err(|error| format!("保存 SFTP 本地目录失败: {error:#}"))?;
+        log::debug!(
+            "SFTP 本地目录已确认并保存: workspace_id={workspace_id}, path={}",
+            snapshot.path.display()
+        );
         Ok(snapshot)
+    }
+
+    pub(super) async fn refresh_local_directory_if_current(
+        &self,
+        workspace_id: &str,
+        path: PathBuf,
+    ) -> Result<(), String> {
+        self.update_local_directory(workspace_id, path, true)
+            .await
+            .map(|_| ())
+    }
+
+    pub(super) async fn update_local_directory(
+        &self,
+        workspace_id: &str,
+        path: PathBuf,
+        only_if_current: bool,
+    ) -> Result<Option<LocalSnapshot>, String> {
+        let model = self.runtime(workspace_id)?.model;
+        let Some(generation) = model.begin_local_scan(&path, only_if_current) else {
+            return Ok(None);
+        };
+        let snapshot = match self.scan_local_directory(workspace_id, path).await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                model.fail_local_scan(generation, error.clone());
+                return Err(error);
+            }
+        };
+        if self.save_local_snapshot(workspace_id, generation, snapshot.clone())? {
+            Ok(Some(snapshot))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn scan_local_directory(
@@ -27,10 +77,10 @@ impl SftpApplication {
         self.ensure_workspace(workspace_id)?;
         let requested_path = path.display().to_string();
         log::debug!("SFTP 本地目录扫描开始: workspace_id={workspace_id}, path={requested_path}");
-        let result = tokio::task::spawn_blocking(move || super::super::scan_local_directory(&path))
+        let result = INFRASTRUCTURE
+            .scan_directory(path)
             .await
-            .map_err(|error| format!("读取本地目录任务失败: {error}"))
-            .and_then(|result| result.map_err(|error| format!("{error:#}")));
+            .map_err(|error| format!("{error:#}"));
         let result = match result {
             Ok(result) => result,
             Err(error) => {
@@ -54,13 +104,29 @@ impl SftpApplication {
         Ok(snapshot)
     }
 
-    fn save_local_snapshot(&self, workspace_id: &str, snapshot: LocalSnapshot) {
-        self.inner
-            .local_snapshots
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(workspace_id.to_owned(), snapshot);
-        self.inner.updates.notify_one();
+    fn save_local_snapshot(
+        &self,
+        workspace_id: &str,
+        generation: u64,
+        snapshot: LocalSnapshot,
+    ) -> Result<bool, String> {
+        let runtimes = self
+            .inner
+            .runtimes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(runtime) = runtimes.get(workspace_id) else {
+            log::debug!("SFTP stale local scan ignored: workspace_id={workspace_id}");
+            return Err(format!("SFTP 会话已关闭: {workspace_id}"));
+        };
+        let committed = runtime.model.finish_local_scan(generation, snapshot);
+        if !committed {
+            log::debug!(
+                "SFTP stale local scan result ignored: workspace_id={workspace_id}, generation={generation}"
+            );
+        }
+        drop(runtimes);
+        Ok(committed)
     }
 
     pub async fn delete_local_paths(
@@ -69,28 +135,36 @@ impl SftpApplication {
         paths: Vec<PathBuf>,
     ) -> Result<LocalSnapshot, String> {
         let current_path = self.local_directory_snapshot(workspace_id)?.path;
+        let model = self.runtime(workspace_id)?.model;
+        let generation = model
+            .begin_local_scan(&current_path, true)
+            .ok_or_else(|| format!("SFTP 本地目录已变化: {workspace_id}"))?;
         let refresh_path = current_path.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            let mut errors = Vec::new();
-            for path in paths {
-                if let Err(error) = super::super::delete_local_path(&path) {
-                    log::warn!("SFTP 删除本地路径失败: {}: {error:#}", path.display());
-                    errors.push(format!("{}: {error:#}", path.display()));
-                }
+        let mut errors = Vec::new();
+        for path in paths {
+            if let Err(error) = INFRASTRUCTURE.delete_path(path.clone()).await {
+                log::warn!("SFTP 删除本地路径失败: {}: {error:#}", path.display());
+                errors.push(format!("{}: {error:#}", path.display()));
             }
-            let directory = super::super::scan_local_directory(&refresh_path)
-                .map_err(|error| format!("{error:#}"))?;
-            Ok::<_, String>((directory, errors))
-        })
-        .await
-        .map_err(|error| format!("删除本地路径任务失败: {error}"))??;
-        let snapshot = LocalSnapshot {
-            path: result.0.0,
-            entries: Arc::new(result.0.1),
-            loading: false,
-            error: (!result.1.is_empty()).then(|| result.1.join("\n")),
+        }
+        let directory = INFRASTRUCTURE
+            .scan_directory(refresh_path)
+            .await
+            .map_err(|error| format!("{error:#}"));
+        let directory = match directory {
+            Ok(directory) => directory,
+            Err(error) => {
+                model.fail_local_scan(generation, error.clone());
+                return Err(error);
+            }
         };
-        self.save_local_snapshot(workspace_id, snapshot.clone());
+        let snapshot = LocalSnapshot {
+            path: directory.0,
+            entries: Arc::new(directory.1),
+            loading: false,
+            error: (!errors.is_empty()).then(|| errors.join("\n")),
+        };
+        self.save_local_snapshot(workspace_id, generation, snapshot.clone())?;
         Ok(snapshot)
     }
 
@@ -100,6 +174,10 @@ impl SftpApplication {
         local_path: PathBuf,
     ) -> Result<LocalWatchSummary, String> {
         let runtime = self.runtime(workspace_id)?;
+        let workspace = DATA_CONTEXT
+            .workspace_summary(workspace_id)
+            .filter(|workspace| workspace.protocol == crate::domain::session::Protocol::Sftp)
+            .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
         let remote_directory = runtime.model.snapshot().path;
         if remote_directory.is_empty() {
             return Err("SFTP 尚未进入远程目录".to_owned());
@@ -109,16 +187,30 @@ impl SftpApplication {
             .ok_or_else(|| format!("无法为本地路径生成远程目标: {}", local_path.display()))?
             .to_string_lossy();
         let remote_path = remote::join_remote_path(&remote_directory, &name);
-        let watch = super::super::watcher::listen_local_directory(
+        let (watch, summary) = super::super::watcher::listen_local_directory(
             self.clone(),
             workspace_id.to_owned(),
-            runtime.profile_ip,
-            runtime.profile_title,
+            workspace.host,
+            workspace.title,
             local_path.clone(),
             remote_path,
         )
         .await?;
-        let summary = watch.summary.clone();
+        // Keep the runtime read lock through registration. Closing removes the
+        // runtime first, then drains watchers, so a late setup cannot reinsert one.
+        let runtimes = self
+            .inner
+            .runtimes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !runtimes.contains_key(workspace_id) {
+            watch.stop();
+            return Err(format!("SFTP 会话已关闭: {workspace_id}"));
+        }
+        if !runtime.model.add_watch(summary.clone()) {
+            watch.stop();
+            return Err(format!("SFTP 工作区数据已关闭: {workspace_id}"));
+        }
         if let Some(previous) = self
             .inner
             .local_watchers
@@ -130,7 +222,7 @@ impl SftpApplication {
         {
             previous.stop();
         }
-        self.inner.updates.notify_one();
+        drop(runtimes);
         Ok(summary)
     }
 
@@ -140,36 +232,25 @@ impl SftpApplication {
         local_path: &Path,
     ) -> Result<(), String> {
         self.ensure_workspace(workspace_id)?;
-        let removed = self
-            .inner
-            .local_watchers
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get_mut(workspace_id)
-            .and_then(|watches| watches.remove(local_path));
+        let runtime = self.runtime(workspace_id)?;
+        let removed = {
+            let mut watchers = self
+                .inner
+                .local_watchers
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            watchers
+                .get_mut(workspace_id)
+                .and_then(|watches| watches.remove(local_path))
+        };
         let Some(removed) = removed else {
             return Err(format!("本地监听不存在: {}", local_path.display()));
         };
         removed.stop();
-        self.inner.updates.notify_one();
+        runtime
+            .model
+            .remove_watch(&local_path.display().to_string());
         Ok(())
-    }
-
-    pub fn sftp_local_watch_summaries(
-        &self,
-        workspace_id: &str,
-    ) -> Result<Vec<LocalWatchSummary>, String> {
-        self.ensure_workspace(workspace_id)?;
-        Ok(self
-            .inner
-            .local_watchers
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(workspace_id)
-            .into_iter()
-            .flat_map(|watches| watches.values())
-            .map(|watch| watch.summary.clone())
-            .collect())
     }
 
     pub async fn delete_remote_paths(

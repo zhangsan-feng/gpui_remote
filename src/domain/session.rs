@@ -8,10 +8,20 @@ pub struct ProxyConfig {
     pub password: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SshReverseTunnelConfig {
+    pub remote_port: u16,
+    pub forward_address: String,
+    pub forward_port: u16,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Protocol {
     Ssh,
     Sftp,
+    Mysql,
+    Pgsql,
+    Redis,
 }
 
 impl Protocol {
@@ -19,6 +29,9 @@ impl Protocol {
         match self {
             Self::Ssh => "SSH",
             Self::Sftp => "SFTP",
+            Self::Mysql => "mysql",
+            Self::Pgsql => "pgsql",
+            Self::Redis => "redis",
         }
     }
 }
@@ -36,6 +49,9 @@ impl FromStr for Protocol {
         match value.trim().to_ascii_uppercase().as_str() {
             "SSH" => Ok(Self::Ssh),
             "SFTP" => Ok(Self::Sftp),
+            "MYSQL" => Ok(Self::Mysql),
+            "PGSQL" | "POSTGRES" | "POSTGRESQL" => Ok(Self::Pgsql),
+            "REDIS" => Ok(Self::Redis),
             protocol => Err(format!("不支持的连接协议: {protocol}")),
         }
     }
@@ -74,7 +90,9 @@ impl ConnectionProtocol {
     pub const fn supports(self, protocol: Protocol) -> bool {
         match self {
             Self::SshAndSftp => matches!(protocol, Protocol::Ssh | Protocol::Sftp),
-            Self::Mysql | Self::Pgsql | Self::Redis => false,
+            Self::Mysql => matches!(protocol, Protocol::Mysql),
+            Self::Pgsql => matches!(protocol, Protocol::Pgsql),
+            Self::Redis => matches!(protocol, Protocol::Redis),
         }
     }
 }
@@ -114,6 +132,7 @@ pub struct SessionProfile {
     pub password: String,
     pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
+    pub ssh_reverse_tunnel: Option<SshReverseTunnelConfig>,
     pub created_at: String,
 }
 
@@ -133,6 +152,7 @@ pub struct NewSession {
     pub password: String,
     pub private_key_path: Option<String>,
     pub proxy: Option<ProxyConfig>,
+    pub ssh_reverse_tunnel: Option<SshReverseTunnelConfig>,
 }
 
 impl NewSession {
@@ -148,6 +168,20 @@ impl NewSession {
         }
         if self.proxy.as_ref().is_some_and(|proxy| proxy.port == 0) {
             return Err("代理端口必须大于 0");
+        }
+        if let Some(tunnel) = &self.ssh_reverse_tunnel {
+            if self.connection_protocol != ConnectionProtocol::SshAndSftp {
+                return Err("SSH 隧道仅支持 SSH/SFTP 连接");
+            }
+            if tunnel.remote_port == 0 {
+                return Err("SSH 隧道远端端口必须大于 0");
+            }
+            if tunnel.forward_address.trim().is_empty() {
+                return Err("请输入 SSH 隧道转发地址");
+            }
+            if tunnel.forward_port == 0 {
+                return Err("SSH 隧道转发端口必须大于 0");
+            }
         }
         Ok(())
     }

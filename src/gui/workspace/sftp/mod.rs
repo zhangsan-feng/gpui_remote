@@ -8,27 +8,23 @@ use self::ui::MultiSelection;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::Arc,
 };
 
 use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui_kit::*;
 use serde::Deserialize;
-use tokio::sync::Notify;
 
 use crate::{
-    application::{
-        ApplicationContext,
-        model::{SftpDirectorySummary, SftpTransferInfo, SftpWorkspaceSnapshot},
-    },
     component::theme,
+    data_context::{SftpDirectorySummary, SftpTransferInfo, SftpWorkspaceSnapshot},
 };
 
 struct SftpProjection {
-    profile_id: String,
     profile_ip: String,
     profile_title: String,
     snapshot: SftpWorkspaceSnapshot,
+    local_navigation_tail: Option<tokio::sync::oneshot::Receiver<()>>,
+    remote_navigation_tail: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 pub(in crate::gui::workspace) struct SftpView {
@@ -36,7 +32,6 @@ pub(in crate::gui::workspace) struct SftpView {
     local_restore_requests: HashSet<String>,
     local_back_history: HashMap<String, Vec<PathBuf>>,
     remote_back_history: HashMap<String, Vec<String>>,
-    persisted_remote_paths: HashMap<String, String>,
     selected_workspace_id: Option<String>,
     local: SftpDirectorySummary,
     local_context_path: Option<PathBuf>,
@@ -49,8 +44,7 @@ pub(in crate::gui::workspace) struct SftpView {
     local_list_state: ListState,
     remote_list_state: ListState,
     transfer_list_state: ListState,
-    updates: Arc<Notify>,
-    status_updates: Arc<Notify>,
+    observed_sftp_revisions: HashMap<String, u64>,
 }
 
 #[derive(Clone)]
@@ -199,38 +193,18 @@ impl Render for DragPreviewRemoteToLocalItem {
 }
 
 impl SftpView {
-    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
-        let updates = application.sftp_updates();
-        let status_updates = application.sftp_status_updates();
+    pub(in crate::gui::workspace) fn new(_cx: &mut Context<Self>) -> Self {
         let local_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let remote_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let transfer_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
-        let model_updates = updates.clone();
-        cx.spawn(async move |this, cx| {
-            loop {
-                model_updates.notified().await;
-                let result = this.update(cx, |this, cx| {
-                    this.refresh_from_application(cx);
-                    cx.notify();
-                });
-                if result.is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
-
         let this = Self {
             projections: HashMap::new(),
             local_restore_requests: HashSet::new(),
             local_back_history: HashMap::new(),
             remote_back_history: HashMap::new(),
-            persisted_remote_paths: HashMap::new(),
             selected_workspace_id: None,
             local: SftpDirectorySummary::default(),
             local_context_path: None,
@@ -243,10 +217,8 @@ impl SftpView {
             local_list_state,
             remote_list_state,
             transfer_list_state,
-            updates,
-            status_updates,
+            observed_sftp_revisions: HashMap::new(),
         };
-        this.start_subscribe(cx);
         this
     }
 }

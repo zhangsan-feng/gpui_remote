@@ -1,7 +1,8 @@
 use crate::component::{draggable_list::DraggableList, theme};
 use crate::domain::session::ConnectionProtocol;
 use crate::gui::sidebar_session::{
-    ConnectSession, ConnectSftpSession, DeleteSession, EditSession, SessionComponent,
+    CloseSshTunnel, ConnectSession, ConnectSftpSession, DeleteSession, EditSession, OpenSshTunnel,
+    SessionComponent,
 };
 use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::PopupMenu;
@@ -16,6 +17,8 @@ impl SessionComponent {
         v_flex()
             .on_action(cx.listener(Self::create_active_session))
             .on_action(cx.listener(Self::create_active_sftp_session))
+            .on_action(cx.listener(Self::open_ssh_tunnel))
+            .on_action(cx.listener(Self::close_ssh_tunnel))
             .on_action(cx.listener(Self::edit_session))
             .on_action(cx.listener(Self::delete_session))
             .h_full()
@@ -74,7 +77,16 @@ impl SessionComponent {
         let session_protocols = self
             .sessions
             .iter()
-            .map(|profile| (profile.id.clone(), profile.connection_protocol))
+            .map(|profile| {
+                (
+                    profile.id.clone(),
+                    (
+                        profile.connection_protocol,
+                        profile.ssh_tunnel_configured,
+                        profile.ssh_tunnel_active,
+                    ),
+                )
+            })
             .collect::<std::collections::HashMap<_, _>>();
 
         list.set_item_height(px(58.))
@@ -89,22 +101,41 @@ impl SessionComponent {
                 move |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
                     let session_id = id.to_string();
                     let menu = match session_protocols.get(&session_id).copied() {
-                        Some(ConnectionProtocol::SshAndSftp) => menu
-                            .menu_with_icon(
-                                "打开 SSH",
-                                IconName::SquareTerminal,
-                                Box::new(ConnectSession(session_id.clone())),
-                            )
-                            .menu_with_icon(
-                                "打开 SFTP",
-                                IconName::FolderOpen,
-                                Box::new(ConnectSftpSession(session_id.clone())),
-                            ),
-                        Some(
+                        Some((ConnectionProtocol::SshAndSftp, configured, active)) => {
+                            let menu = menu
+                                .menu_with_icon(
+                                    "打开 SSH",
+                                    IconName::SquareTerminal,
+                                    Box::new(ConnectSession(session_id.clone())),
+                                )
+                                .menu_with_icon(
+                                    "打开 SFTP",
+                                    IconName::FolderOpen,
+                                    Box::new(ConnectSftpSession(session_id.clone())),
+                                );
+                            if configured && active {
+                                menu.menu_with_icon(
+                                    "关闭 SSH 隧道",
+                                    IconName::Settings2,
+                                    Box::new(CloseSshTunnel(session_id.clone())),
+                                )
+                            } else if configured {
+                                menu.menu_with_icon(
+                                    "打开 SSH 隧道",
+                                    IconName::Settings2,
+                                    Box::new(OpenSshTunnel(session_id.clone())),
+                                )
+                            } else {
+                                menu
+                            }
+                        }
+                        Some((
                             ConnectionProtocol::Mysql
                             | ConnectionProtocol::Pgsql
                             | ConnectionProtocol::Redis,
-                        )
+                            _,
+                            _,
+                        ))
                         | None => menu,
                     };
                     menu.menu_with_icon(

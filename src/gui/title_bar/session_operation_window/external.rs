@@ -4,7 +4,7 @@ use gpui_kit::*;
 use super::{SessionFormMode, SessionOperationWindow};
 use crate::component::window::window_center_options;
 use crate::{
-    application::ApplicationContext,
+    application::Application,
     domain::session::{NewSession, SessionProfile},
     global_state::GlobalEvent,
 };
@@ -13,18 +13,22 @@ impl SessionOperationWindow {
     pub(super) async fn save_session(
         mode: SessionFormMode,
         draft: NewSession,
-        application: ApplicationContext,
+        application: Application,
     ) -> Result<GlobalEvent> {
-        let result = match &mode {
-            SessionFormMode::Create => application.create_session(draft).await,
-            SessionFormMode::Edit { id } => application.update_session(id.clone(), draft).await,
+        let event = match &mode {
+            SessionFormMode::Create => GlobalEvent::CreateSession,
+            SessionFormMode::Edit { .. } => GlobalEvent::UpdateSession,
         };
-        result
-            .map(|_| match mode {
-                SessionFormMode::Create => GlobalEvent::CreateSession,
-                SessionFormMode::Edit { .. } => GlobalEvent::UpdateSession,
-            })
-            .map_err(anyhow::Error::msg)
+        let result = crate::global_state::run_application(async move {
+            match mode {
+                SessionFormMode::Create => application.sessions.create_profile(draft).await,
+                SessionFormMode::Edit { id } => {
+                    application.sessions.update_profile(id, draft).await
+                }
+            }
+        })
+        .await;
+        result.map(|_| event).map_err(anyhow::Error::msg)
     }
 }
 

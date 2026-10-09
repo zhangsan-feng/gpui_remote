@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tokio::sync::oneshot;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TerminalRgb {
@@ -83,21 +82,8 @@ pub struct McpTerminalHistoryPage {
 
 pub enum TerminalSessionCommand {
     Input(Vec<u8>),
-    Resize {
-        columns: u32,
-        rows: u32,
-    },
-    Scroll {
-        lines: i32,
-    },
-    ScrollTo {
-        offset: usize,
-    },
-    Read {
-        offset: usize,
-        limit: usize,
-        since_mcp_snapshot_version: Option<u64>,
-        reply: oneshot::Sender<McpTerminalHistoryPage>,
-    },
+    Resize { columns: u32, rows: u32 },
+    Scroll { lines: i32 },
+    ScrollTo { offset: usize },
     Disconnect,
 }

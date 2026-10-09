@@ -28,10 +28,10 @@ Application
 ├── port_forward
 ├── port_test
 ├── theme
-└── mcp_settings
+└── mcp
 ```
 
-每个模块的 `mod.rs` 定义并组合服务类型，`core.rs` 放核心流程，`external.rs` 放供 GUI/MCP/其他模块调用的用例入口；较大的模块按功能拆分目录。顶层 `Application` 只保留跨模块会话打开/关闭编排、操作关闭屏障和生命周期协调。各子服务继续共享其内部 `Arc` 状态，克隆 `Application` 不会复制运行时业务数据。
+`src/application` 根目录只保留 `mod.rs`，用于声明模块并组合 `Application`。每个功能模块的 `mod.rs` 定义并组合服务类型，`core.rs` 放核心流程，`external.rs` 放供其他模块调用的用例入口；模型、映射和校验代码也归入对应模块。会话打开/关闭编排位于 `session`，应用关闭屏障位于 `lifecycle`。各子服务继续共享其内部 `Arc` 状态，克隆 `Application` 不会复制运行时业务数据。
 
 将现有 `ApplicationContext` 重命名为 `Application`，并迁移 `global_state`、MCP、GUI 和 `main.rs` 的类型引用。GUI、MCP 和 `main.rs` 按功能通过 `Application` 的模块字段调用；不保留旧名称的类型别名。
 
@@ -45,7 +45,7 @@ Application
 - `ssh_server` 管理服务配置的验证、启动/更新/关闭用例以及状态向 DataContext 的同步。
 - `sftp_server` 管理 SFTP 会话范围、句柄及根目录授权规则；这些规则决定客户端可访问的资源，继续由应用层执行。
 - `http_proxy`、`socks5_proxy`、`port_forward`、`port_test` 各自承载对应的配置、验证、状态和操作用例。
-- `theme`、`mcp_settings` 管理对应配置的验证、读取和保存用例。
+- `theme`、`mcp` 管理对应配置的验证、读取和保存用例。
 - GUI IO 仍通过 `cx.spawn` 和 Tokio 执行；DataContext 热数据继续按项目架构直接读写/订阅。
 
 ### Infrastructure

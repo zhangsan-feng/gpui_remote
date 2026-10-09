@@ -1,8 +1,7 @@
 mod core {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
 
-    use anyhow::{Context as _, Result, bail};
-    use russh::{Disconnect, client};
+    use anyhow::Result;
     use tokio::sync::mpsc;
 
     use crate::{
@@ -10,19 +9,17 @@ mod core {
             session::SessionProfile,
             terminal::{TerminalSessionCommand, TerminalStatus},
         },
-        infrastructure::proxy::{ProxySettings, connect},
+        infrastructure::INFRASTRUCTURE,
     };
 
     use super::{
         super::pty::TerminalModel,
-        ClientHandler, DEFAULT_COLUMNS, DEFAULT_ROWS,
         runtime::{run_closed_terminal_session, run_connected_terminal_session},
     };
 
     pub(crate) async fn run_ssh_session(
         workspace_id: String,
         profile: SessionProfile,
-        command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         model: Arc<TerminalModel>,
     ) {
@@ -31,8 +28,7 @@ mod core {
             profile.host,
             profile.port
         );
-        if let Err(error) = run(&workspace_id, &profile, command_tx, commands, model.clone()).await
-        {
+        if let Err(error) = run(&workspace_id, &profile, commands, model.clone()).await {
             log::warn!(
                 "SSH runtime failed: workspace_id={workspace_id}, host={}, port={}, error={error:#}",
                 profile.host,
@@ -45,112 +41,16 @@ mod core {
     async fn run(
         workspace_id: &str,
         profile: &SessionProfile,
-        command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
         commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         model: Arc<TerminalModel>,
     ) -> Result<()> {
-        let proxy = profile.proxy.as_ref().map(|proxy| ProxySettings {
-            host: proxy.host.clone(),
-            port: proxy.port,
-            username: proxy.username.clone(),
-            password: proxy.password.clone(),
-        });
         log::debug!(
-            "SSH transport connecting: workspace_id={workspace_id}, host={}, port={}, proxy_enabled={}",
+            "SSH protocol adapter opening shell: workspace_id={workspace_id}, host={}, port={}, proxy_enabled={}",
             profile.host,
             profile.port,
-            proxy.is_some()
+            profile.proxy.is_some()
         );
-        let stream = connect((profile.host.as_str(), profile.port), proxy.as_ref()).await?;
-        log::debug!(
-            "SSH transport connected: workspace_id={workspace_id}, host={}, port={}",
-            profile.host,
-            profile.port
-        );
-        let config = Arc::new(client::Config {
-            inactivity_timeout: Some(Duration::from_secs(30)),
-            keepalive_interval: Some(Duration::from_secs(15)),
-            keepalive_max: 3,
-            ..Default::default()
-        });
-        let mut session = client::connect_stream(
-            config,
-            stream,
-            ClientHandler {
-                endpoint: format!("[{}]:{}", profile.host, profile.port),
-            },
-        )
-        .await
-        .context("SSH 握手或主机密钥校验失败")?;
-        log::debug!(
-            "SSH protocol handshake completed: workspace_id={workspace_id}, host={}, port={}",
-            profile.host,
-            profile.port
-        );
-        let (authentication, authentication_method) =
-            if let Some(path) = profile.private_key_path.as_deref() {
-                let key_path = path.to_owned();
-                let key = tokio::task::spawn_blocking({
-                    let key_path = key_path.clone();
-                    move || russh::keys::load_secret_key(&key_path, None)
-                })
-                .await
-                .context("加载 SSH 私钥任务失败")?
-                .with_context(|| format!("加载 SSH 私钥失败: {key_path}"))?;
-                (
-                    session
-                        .authenticate_publickey(
-                            profile.username.clone(),
-                            russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
-                        )
-                        .await
-                        .context("SSH 私钥认证失败")?,
-                    "public_key",
-                )
-            } else {
-                (
-                    session
-                        .authenticate_password(profile.username.clone(), profile.password.clone())
-                        .await
-                        .context("SSH 密码认证失败")?,
-                    "password",
-                )
-            };
-        if !authentication.success() {
-            if profile.private_key_path.is_some() {
-                bail!("SSH 用户名或私钥错误");
-            }
-            bail!("SSH 用户名或密码错误");
-        }
-        log::debug!(
-            "SSH authentication succeeded: workspace_id={workspace_id}, method={authentication_method}"
-        );
-
-        let channel = session
-            .channel_open_session()
-            .await
-            .context("创建 SSH 会话通道失败")?;
-        log::debug!("SSH session channel opened: workspace_id={workspace_id}");
-        channel
-            .request_pty(
-                true,
-                "xterm-256color",
-                DEFAULT_COLUMNS,
-                DEFAULT_ROWS,
-                0,
-                0,
-                &[],
-            )
-            .await
-            .context("申请远程 PTY 失败")?;
-        log::debug!(
-            "SSH PTY request completed: workspace_id={workspace_id}, columns={DEFAULT_COLUMNS}, rows={DEFAULT_ROWS}"
-        );
-        channel
-            .request_shell(true)
-            .await
-            .context("启动远程 Shell 失败")?;
-        log::debug!("SSH shell request completed: workspace_id={workspace_id}");
+        let shell = INFRASTRUCTURE.open_ssh_shell(workspace_id, profile).await?;
         log::debug!(
             "SSH shell connected: workspace_id={workspace_id}, host={}, port={}",
             profile.host,
@@ -158,25 +58,15 @@ mod core {
         );
         model.set_status(TerminalStatus::Connected, None);
 
-        let (reader, writer) = channel.split();
-        let terminal_exit = run_connected_terminal_session(
-            workspace_id,
-            reader,
-            writer,
-            command_tx,
-            commands,
-            model.clone(),
-        )
-        .await?;
+        let terminal_exit =
+            run_connected_terminal_session(workspace_id, shell.as_ref(), commands, model.clone())
+                .await?;
 
         log::debug!(
             "SSH session cleanup starting: workspace_id={workspace_id}, reason={}",
             terminal_exit.stop_reason
         );
-        if let Err(error) = session
-            .disconnect(Disconnect::ByApplication, "", "zh-CN")
-            .await
-        {
+        if let Err(error) = shell.disconnect().await {
             log::debug!(
                 "SSH session disconnect cleanup failed: workspace_id={workspace_id}, error={error:#}"
             );
@@ -190,13 +80,8 @@ mod core {
             log::debug!(
                 "SSH terminal history runtime started: workspace_id={workspace_id}, reason=remote_channel_closed"
             );
-            run_closed_terminal_session(
-                workspace_id,
-                terminal_exit.buffer,
-                terminal_exit.commands,
-                model.clone(),
-            )
-            .await?;
+            run_closed_terminal_session(workspace_id, terminal_exit.commands, model.clone())
+                .await?;
         }
         log::debug!(
             "SSH runtime stopped: workspace_id={workspace_id}, host={}, port={}, mcp_snapshot_version={}, gui_snapshot_version={}",
@@ -212,21 +97,20 @@ mod core {
 mod runtime {
     use std::{sync::Arc, time::Duration};
 
-    use anyhow::{Context as _, Result};
-    use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, client};
+    use anyhow::Result;
     use tokio::sync::mpsc;
 
-    use crate::domain::terminal::{
-        TerminalData, TerminalFrame, TerminalSessionCommand, TerminalStatus,
+    use crate::{
+        application::ports::{SshChannelEvent, SshShell},
+        domain::terminal::{TerminalData, TerminalFrame, TerminalSessionCommand},
     };
 
-    use super::super::{buffer::TerminalBuffer, pty::TerminalModel};
+    use super::super::pty::TerminalModel;
 
     const REFRESH_INTERVAL: Duration = Duration::from_millis(33);
     const CHANNEL_CLOSE_GRACE_PERIOD: Duration = Duration::from_secs(5);
 
     pub(crate) struct TerminalSessionExit {
-        pub(crate) buffer: TerminalBuffer,
         pub(crate) commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         pub(crate) exit_message: Option<String>,
         pub(crate) remote_closed: bool,
@@ -235,25 +119,20 @@ mod runtime {
 
     pub(crate) async fn run_connected_terminal_session(
         workspace_id: &str,
-        mut reader: ChannelReadHalf,
-        writer: ChannelWriteHalf<client::Msg>,
-        command_tx: mpsc::UnboundedSender<TerminalSessionCommand>,
+        shell: &dyn SshShell,
         mut commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         model: Arc<TerminalModel>,
     ) -> Result<TerminalSessionExit> {
-        let mut buffer = TerminalBuffer::new(command_tx);
         let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
         refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         refresh.tick().await;
 
-        let (mut last_frame, status, message) = {
-            let data = model.read();
-            (
-                data.frame.clone(),
-                data.status.clone(),
-                data.message.clone(),
-            )
-        };
+        let mut last_frame = model
+            .read()
+            .ok_or_else(|| anyhow::anyhow!("SSH workspace data unavailable"))?
+            .data
+            .frame
+            .clone();
         let mut frame_dirty = false;
         let mut content_dirty = false;
         let mut exit_message = None;
@@ -265,11 +144,8 @@ mod runtime {
                 command = commands.recv() => {
                     if frame_dirty {
                         publish_model(
-                            &mut buffer,
                             &model,
                             &mut last_frame,
-                            &status,
-                            &message,
                             content_dirty,
                         );
                         frame_dirty = false;
@@ -277,8 +153,7 @@ mod runtime {
                     }
                     if !apply_command(
                         command,
-                        &mut buffer,
-                        &writer,
+                        shell,
                         &model,
                         &mut frame_dirty,
                         workspace_id,
@@ -304,25 +179,23 @@ mod runtime {
                 _ = refresh.tick() => {
                     if frame_dirty {
                         publish_model(
-                            &mut buffer,
                             &model,
                             &mut last_frame,
-                            &status,
-                            &message,
                             content_dirty,
                         );
                         frame_dirty = false;
                         content_dirty = false;
                     }
                 }
-                message = reader.wait() => match message {
-                    Some(ChannelMsg::Data { data })
-                    | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        buffer.process(&data);
+                message = shell.wait_event() => match message {
+                    Some(SshChannelEvent::Data(data)) => {
+                        for response in model.process(&data) {
+                            shell.send_data(response).await?;
+                        }
                         frame_dirty = true;
                         content_dirty = true;
                     }
-                    Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    Some(SshChannelEvent::ExitStatus(exit_status)) => {
                         log::debug!(
                             "SSH remote shell exit status received: workspace_id={workspace_id}, exit_status={exit_status}"
                         );
@@ -330,20 +203,15 @@ mod runtime {
                             "远程 Shell 已退出（状态码 {exit_status}）"
                         ));
                     }
-                    Some(ChannelMsg::ExitSignal {
-                        signal_name,
-                        core_dumped,
-                        error_message,
-                        ..
-                    }) => {
+                    Some(SshChannelEvent::ExitSignal { signal_name, core_dumped, error_message }) => {
                         log::warn!(
-                            "SSH remote shell exit signal received: workspace_id={workspace_id}, signal={signal_name:?}, core_dumped={core_dumped}, error_message={error_message:?}"
+                            "SSH remote shell exit signal received: workspace_id={workspace_id}, signal={signal_name}, core_dumped={core_dumped}, error_message={error_message}"
                         );
                         exit_message = Some(format!(
-                            "远程 Shell 被信号终止（信号 {signal_name:?}）"
+                            "远程 Shell 被信号终止（信号 {signal_name}）"
                         ));
                     }
-                    Some(ChannelMsg::Eof) => {
+                    Some(SshChannelEvent::Eof) => {
                         if remote_eof_deadline.is_none() {
                             remote_eof_deadline = Some(
                                 tokio::time::Instant::now() + CHANNEL_CLOSE_GRACE_PERIOD,
@@ -358,7 +226,7 @@ mod runtime {
                             );
                         }
                     }
-                    Some(ChannelMsg::Close) => {
+                    Some(SshChannelEvent::Close) => {
                         log::warn!(
                             "SSH terminal channel closed by peer: workspace_id={workspace_id}, reason={}, eof_received={}",
                             if remote_eof_deadline.is_some() { "remote_close_after_eof" } else { "remote_close" },
@@ -388,20 +256,13 @@ mod runtime {
                             true,
                         );
                     }
-                    _ => {}
+                    Some(SshChannelEvent::Other) => {}
                 }
             }
         };
 
         if frame_dirty {
-            publish_model(
-                &mut buffer,
-                &model,
-                &mut last_frame,
-                &status,
-                &message,
-                content_dirty,
-            );
+            publish_model(&model, &mut last_frame, content_dirty);
         }
         log::debug!(
             "SSH terminal runtime ended: workspace_id={workspace_id}, reason={}, mcp_snapshot_version={}, gui_snapshot_version={}",
@@ -410,7 +271,6 @@ mod runtime {
             model.gui_snapshot_version()
         );
         Ok(TerminalSessionExit {
-            buffer,
             commands,
             exit_message,
             remote_closed: stop_reason.1,
@@ -420,18 +280,15 @@ mod runtime {
 
     pub(crate) async fn run_closed_terminal_session(
         workspace_id: &str,
-        mut buffer: TerminalBuffer,
         mut commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
         model: Arc<TerminalModel>,
     ) -> Result<()> {
-        let (mut last_frame, status, message) = {
-            let data = model.read();
-            (
-                data.frame.clone(),
-                data.status.clone(),
-                data.message.clone(),
-            )
-        };
+        let mut last_frame = model
+            .read()
+            .ok_or_else(|| anyhow::anyhow!("SSH workspace data unavailable"))?
+            .data
+            .frame
+            .clone();
         let stop_reason = loop {
             let Some(command) = commands.recv().await else {
                 break "command_channel_closed";
@@ -445,31 +302,16 @@ mod runtime {
                     );
                 }
                 TerminalSessionCommand::Resize { columns, rows } => {
-                    buffer.resize(columns, rows);
+                    model.resize(columns, rows);
                     frame_dirty = true;
                 }
                 TerminalSessionCommand::Scroll { lines } => {
-                    buffer.scroll(lines);
+                    model.scroll(lines);
                     frame_dirty = true;
                 }
                 TerminalSessionCommand::ScrollTo { offset } => {
-                    buffer.scroll_to(offset);
+                    model.scroll_to(offset);
                     frame_dirty = true;
-                }
-                TerminalSessionCommand::Read {
-                    offset,
-                    limit,
-                    since_mcp_snapshot_version,
-                    reply,
-                } => {
-                    reply_history_page(
-                        &buffer,
-                        &model,
-                        offset,
-                        limit,
-                        since_mcp_snapshot_version,
-                        reply,
-                    );
                 }
                 TerminalSessionCommand::Disconnect => {
                     log::info!(
@@ -479,14 +321,7 @@ mod runtime {
                 }
             }
             if frame_dirty {
-                publish_model(
-                    &mut buffer,
-                    &model,
-                    &mut last_frame,
-                    &status,
-                    &message,
-                    false,
-                );
+                publish_model(&model, &mut last_frame, false);
             }
         };
         log::debug!(
@@ -499,8 +334,7 @@ mod runtime {
 
     async fn apply_command(
         command: Option<TerminalSessionCommand>,
-        buffer: &mut TerminalBuffer,
-        writer: &ChannelWriteHalf<client::Msg>,
+        shell: &dyn SshShell,
         model: &TerminalModel,
         frame_dirty: &mut bool,
         workspace_id: &str,
@@ -509,7 +343,7 @@ mod runtime {
             Some(TerminalSessionCommand::Input(data)) => {
                 if !data.is_empty() {
                     let input_bytes = data.len();
-                    writer.data_bytes(data).await.context("发送终端输入失败")?;
+                    shell.send_data(data).await?;
                     log::debug!(
                         "SSH terminal input written: workspace_id={workspace_id}, bytes={}",
                         input_bytes
@@ -517,98 +351,56 @@ mod runtime {
                 }
             }
             Some(TerminalSessionCommand::Resize { columns, rows }) => {
-                buffer.resize(columns, rows);
-                writer
-                    .window_change(columns.max(1), rows.max(1), 0, 0)
-                    .await
-                    .context("调整 PTY 大小失败")?;
+                model.resize(columns, rows);
+                shell.resize(columns, rows).await?;
                 *frame_dirty = true;
             }
             Some(TerminalSessionCommand::Scroll { lines }) => {
-                buffer.scroll(lines);
+                model.scroll(lines);
                 *frame_dirty = true;
             }
             Some(TerminalSessionCommand::ScrollTo { offset }) => {
-                buffer.scroll_to(offset);
+                model.scroll_to(offset);
                 *frame_dirty = true;
-            }
-            Some(TerminalSessionCommand::Read {
-                offset,
-                limit,
-                since_mcp_snapshot_version,
-                reply,
-            }) => {
-                let mut page = buffer.read_text(offset, limit);
-                page.mcp_snapshot_version = model.mcp_snapshot_version();
-                page.changed = since_mcp_snapshot_version
-                    .map_or(true, |version| version != page.mcp_snapshot_version);
-                if !page.changed {
-                    page.text.clear();
-                    page.limit = 0;
-                    page.has_more = false;
-                }
-                let _ = reply.send(page);
             }
             Some(TerminalSessionCommand::Disconnect) => {
                 log::info!(
                     "SSH terminal close requested: workspace_id={workspace_id}, reason=application_close, action=channel_eof_and_close"
                 );
-                close_channel(workspace_id, writer).await;
+                close_channel(workspace_id, shell).await;
                 return Ok(false);
             }
             None => {
                 log::debug!(
                     "SSH terminal command channel closed: workspace_id={workspace_id}, action=channel_eof_and_close"
                 );
-                close_channel(workspace_id, writer).await;
+                close_channel(workspace_id, shell).await;
                 return Ok(false);
             }
         }
         Ok(true)
     }
 
-    fn reply_history_page(
-        buffer: &TerminalBuffer,
-        model: &TerminalModel,
-        offset: usize,
-        limit: usize,
-        since_mcp_snapshot_version: Option<u64>,
-        reply: tokio::sync::oneshot::Sender<crate::domain::terminal::McpTerminalHistoryPage>,
-    ) {
-        let mut page = buffer.read_text(offset, limit);
-        page.mcp_snapshot_version = model.mcp_snapshot_version();
-        page.changed =
-            since_mcp_snapshot_version.map_or(true, |version| version != page.mcp_snapshot_version);
-        if !page.changed {
-            page.text.clear();
-            page.limit = 0;
-            page.has_more = false;
-        }
-        let _ = reply.send(page);
-    }
-
-    async fn close_channel(workspace_id: &str, writer: &ChannelWriteHalf<client::Msg>) {
-        if let Err(error) = writer.eof().await {
+    async fn close_channel(workspace_id: &str, shell: &dyn SshShell) {
+        if let Err(error) = shell.close_channel().await {
             log::debug!(
-                "SSH terminal channel EOF send failed: workspace_id={workspace_id}, error={error:#}"
-            );
-        }
-        if let Err(error) = writer.close().await {
-            log::debug!(
-                "SSH terminal channel close send failed: workspace_id={workspace_id}, error={error:#}"
+                "SSH terminal channel close failed: workspace_id={workspace_id}, error={error:#}"
             );
         }
     }
 
     fn publish_model(
-        buffer: &mut TerminalBuffer,
         model: &TerminalModel,
         last_frame: &mut Arc<TerminalFrame>,
-        status: &TerminalStatus,
-        message: &Option<String>,
         content_changed: bool,
     ) {
-        let next_frame = Arc::new(buffer.frame_reusing(Some(last_frame.as_ref())));
+        let Some(snapshot) = model.read() else {
+            return;
+        };
+        let Some(frame) = model.frame_reusing(Some(last_frame.as_ref())) else {
+            return;
+        };
+        let next_frame = Arc::new(frame);
         if same_frame(last_frame, &next_frame) {
             return;
         }
@@ -622,8 +414,8 @@ mod runtime {
         *last_frame = next_frame;
         let data = TerminalData {
             frame: last_frame.clone(),
-            status: status.clone(),
-            message: message.clone(),
+            status: snapshot.data.status.clone(),
+            message: snapshot.data.message.clone(),
         };
         if content_changed {
             model.replace(data);
@@ -646,36 +438,4 @@ mod runtime {
     }
 }
 
-use crate::infrastructure::storage::verify_host_key;
-
 pub(crate) use core::run_ssh_session;
-
-const DEFAULT_COLUMNS: u32 = 120;
-const DEFAULT_ROWS: u32 = 36;
-
-struct ClientHandler {
-    endpoint: String,
-}
-
-impl russh::client::Handler for ClientHandler {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        server_public_key: &russh::keys::PublicKeyOrCertificate,
-    ) -> Result<bool, Self::Error> {
-        let endpoint = self.endpoint.clone();
-        let public_key = server_public_key.public_key();
-        match tokio::task::spawn_blocking(move || verify_host_key(&endpoint, &public_key)).await {
-            Ok(Ok(accepted)) => Ok(accepted),
-            Ok(Err(error)) => {
-                log::info!("SSH host key verification failed: {error:#}");
-                Ok(false)
-            }
-            Err(error) => {
-                log::info!("SSH host key verification task failed: {error}");
-                Ok(false)
-            }
-        }
-    }
-}

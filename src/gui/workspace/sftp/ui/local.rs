@@ -16,8 +16,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::application::model::{SftpDirectorySummary, SftpEntrySummary};
 use crate::component::theme;
+use crate::data_context::{SftpDirectorySummary, SftpEntrySummary};
 
 impl SftpView {
     pub(super) fn local_panel(

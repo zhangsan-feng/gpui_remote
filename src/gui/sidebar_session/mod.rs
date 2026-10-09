@@ -8,7 +8,9 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use serde::Deserialize;
 
-use crate::{component::draggable_list::DraggableList, domain::session::SessionProfile};
+use crate::{
+    application::session::model::SessionSummary, component::draggable_list::DraggableList,
+};
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = left_session, no_json)]
@@ -20,6 +22,14 @@ struct ConnectSftpSession(String);
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = left_session, no_json)]
+struct OpenSshTunnel(String);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = left_session, no_json)]
+struct CloseSshTunnel(String);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = left_session, no_json)]
 struct EditSession(String);
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -28,7 +38,7 @@ struct DeleteSession(String);
 
 pub struct SessionComponent {
     draggable_list: Entity<DraggableList>,
-    sessions: Vec<SessionProfile>,
+    sessions: Vec<SessionSummary>,
     core_err: Option<Error>,
     search_input: Entity<InputState>,
     refresh_generation: u64,

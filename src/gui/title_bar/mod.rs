@@ -1,5 +1,6 @@
-mod about_dialog;
+mod about_window;
 mod core;
+mod services_operation_window;
 pub mod session_operation_window;
 mod settings_operation_window;
 mod ui;
@@ -67,6 +68,13 @@ impl Render for AppTitleBar {
                                     Box::new(OpenSettings),
                                 )
                             }),
+                    )
+                    .child(
+                        Button::new("services-menu")
+                            .ghost()
+                            .small()
+                            .label("服务")
+                            .on_click(cx.listener(Self::open_services)),
                     )
                     .child(
                         Button::new("about-menu")

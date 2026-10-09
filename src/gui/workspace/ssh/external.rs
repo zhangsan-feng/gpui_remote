@@ -1,8 +1,6 @@
 mod api {
     use std::sync::Arc;
 
-    use tokio::sync::Notify;
-
     use super::super::{TerminalView, core::TerminalModel};
 
     impl TerminalView {
@@ -12,63 +10,55 @@ mod api {
         ) -> Option<Arc<TerminalModel>> {
             Some(self.models.get(workspace_id)?.clone())
         }
-
-        pub(in crate::gui::workspace) fn status_updates(&self) -> Arc<Notify> {
-            self.status_updates.clone()
-        }
     }
 }
 
 mod lifecycle {
     use gpui_kit::Context;
 
-    use crate::global_state::{GlobalEvent, read_global_state};
-
     use std::sync::Arc;
 
+    use crate::data_context::{DataSnapshot, WorkspaceSummary};
     use crate::domain::{
-        session::SessionProfile,
+        session::Protocol,
         terminal::{TerminalData, TerminalFrame, TerminalStatus},
     };
 
     use super::super::TerminalView;
 
     impl TerminalView {
-        pub(in crate::gui::workspace::ssh) fn start_subscribe(&self, cx: &mut Context<Self>) {
-            let global_state = read_global_state(cx);
-            cx.subscribe(&global_state, |this, _, event, cx| {
-                match event {
-                    GlobalEvent::WorkspaceSessionOpened(workspace_id, profile) => {
-                        if profile.protocol == crate::domain::session::Protocol::Ssh {
-                            log::debug!(
-                                "SSH GUI projection event received: workspace_id={workspace_id}, profile_id={}, host={}",
-                                profile.id,
-                                profile.host
-                            );
-                            this.initialize_projection(workspace_id.clone(), profile.clone());
-                            this.notify_if_model_changed(cx);
-                        }
-                    }
-                    GlobalEvent::WorkspaceSessionClosed { workspace_id } => {
-                        this.close_projection(workspace_id);
-                        this.reset_active_view();
-                    }
-                    GlobalEvent::WorkspaceSessionSelected(workspace_id) => {
-                        this.set_selected_workspace(workspace_id.clone(), cx);
-                        this.notify_if_model_changed(cx);
-                    }
-                    _ => return,
+        pub(in crate::gui::workspace) fn apply_snapshot(
+            &mut self,
+            snapshot: &DataSnapshot,
+            cx: &mut Context<Self>,
+        ) {
+            let existing = self.models.keys().cloned().collect::<Vec<_>>();
+            for workspace_id in existing {
+                if !snapshot.workspaces.iter().any(|workspace| {
+                    workspace.workspace_id == workspace_id && workspace.protocol == Protocol::Ssh
+                }) {
+                    self.close_projection(&workspace_id);
                 }
-                this.reset_active_view();
-                cx.notify();
-            })
-            .detach();
+            }
+            for workspace in snapshot
+                .workspaces
+                .iter()
+                .filter(|workspace| workspace.protocol == Protocol::Ssh)
+            {
+                self.initialize_projection(workspace.workspace_id.clone(), workspace.clone());
+            }
+            let selected = snapshot
+                .selected_workspace_id
+                .as_ref()
+                .filter(|workspace_id| self.models.contains_key(workspace_id.as_str()));
+            self.set_selected_workspace(selected.cloned(), cx);
+            self.notify_if_model_changed(cx);
         }
 
         pub(in crate::gui::workspace::ssh) fn initialize_projection(
             &mut self,
             workspace_id: String,
-            profile: SessionProfile,
+            profile: WorkspaceSummary,
         ) {
             if self.models.contains_key(&workspace_id) {
                 return;

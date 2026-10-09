@@ -3,7 +3,8 @@ use gpui_kit::*;
 
 use crate::{
     component::{color::rgb_to_u32, draggable_list::DraggableList, theme},
-    domain::{session::SessionProfile, terminal::TerminalStatus},
+    data_context::WorkspaceSummary,
+    domain::terminal::TerminalStatus,
 };
 
 use super::WorkspaceSession;
@@ -27,7 +28,7 @@ pub(super) fn new_workspace_tabs(_: &App) -> DraggableList {
 
 pub(in crate::gui::workspace) fn workspace_tab(
     workspace_id: String,
-    profile: SessionProfile,
+    profile: WorkspaceSummary,
     status: TerminalStatus,
     workspace: Entity<WorkspaceSession>,
     cx: &App,

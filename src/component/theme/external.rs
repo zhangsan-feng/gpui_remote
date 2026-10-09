@@ -1,15 +1,9 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::PathBuf;
 
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::{App, Hsla, WindowBackgroundAppearance};
 
-use super::{
-    AppTheme, ChangeComponentThemeColor, CustomerUiThemeState, ThemePreview, WALLPAPER_DIRECTORY,
-    core, ui,
-};
+use super::{AppTheme, ChangeComponentThemeColor, CustomerUiThemeState, ThemePreview, core, ui};
 
 pub struct CustomerTheme;
 
@@ -118,23 +112,9 @@ impl CustomerUiColor {
         core::refresh(cx, false);
     }
 
-    pub fn set_wallpaper(source: &Path, cx: &mut App) -> Result<(), String> {
-        let extension = source
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(str::to_ascii_lowercase)
-            .ok_or_else(|| "无法识别图片格式".to_owned())?;
-        if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "webp") {
-            return Err("仅支持 PNG、JPG、JPEG 和 WebP 图片".to_owned());
-        }
-
-        let directory = Path::new(WALLPAPER_DIRECTORY);
-        fs::create_dir_all(directory).map_err(|error| error.to_string())?;
-        let target = directory.join(format!("wallpaper.{extension}"));
-        fs::copy(source, &target).map_err(|error| error.to_string())?;
-        cx.global_mut::<CustomerUiThemeState>().visual.wallpaper = Some(target);
+    pub fn set_wallpaper_path(path: PathBuf, cx: &mut App) {
+        cx.global_mut::<CustomerUiThemeState>().visual.wallpaper = Some(path);
         core::refresh(cx, false);
-        Ok(())
     }
 
     pub fn clear_wallpaper(cx: &mut App) {

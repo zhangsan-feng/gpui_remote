@@ -1,5 +1,6 @@
 use super::{
-    AppTitleBar, CreateSession, OpenSettings, about_dialog::open_about_dialog,
+    AppTitleBar, CreateSession, OpenSettings, about_window::open_about_window,
+    services_operation_window::open_services_window,
     session_operation_window::open_new_session_window,
     settings_operation_window::open_settings_window,
 };
@@ -24,12 +25,21 @@ impl AppTitleBar {
         open_settings_window(window, cx);
     }
 
+    pub(super) fn open_services(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        open_services_window(window, cx);
+    }
+
     pub(super) fn open_about(
         &mut self,
         _: &ClickEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        open_about_dialog(window, cx);
+        open_about_window(window, cx);
     }
 }

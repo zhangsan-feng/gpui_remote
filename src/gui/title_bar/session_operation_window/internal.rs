@@ -1,7 +1,6 @@
 use gpui_kit::*;
 
 use super::{ConnectionProtocol, FormSection, SessionOperationWindow};
-use crate::application::ApplicationContext;
 use crate::global_state::read_global_state;
 
 impl SessionOperationWindow {
@@ -16,8 +15,7 @@ impl SessionOperationWindow {
             }
         };
 
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         let mode = self.mode.clone();
         let window_handle = window.window_handle();
         let global_state = read_global_state(cx);
@@ -46,6 +44,9 @@ impl SessionOperationWindow {
 
     pub(super) fn select_protocol(&mut self, protocol: ConnectionProtocol, cx: &mut Context<Self>) {
         self.protocol = protocol;
+        if protocol != ConnectionProtocol::SshAndSftp && self.section == FormSection::SshTunnel {
+            self.section = FormSection::Connection;
+        }
         self.error = None;
         cx.notify();
     }

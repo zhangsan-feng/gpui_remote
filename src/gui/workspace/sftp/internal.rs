@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use gpui_kit::*;
 use std::path::PathBuf;
 
-use crate::application::model::SftpWorkspaceSnapshot;
+use crate::data_context::SftpWorkspaceSnapshot;
 
 use super::SftpView;
 

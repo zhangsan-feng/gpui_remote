@@ -7,23 +7,38 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::model::{
-        McpTerminalReadPage, ProfileSummary, SftpDirectorySummary, SftpEntrySummary,
-        SftpTransferInfo, SftpTransferSummary, SftpWatchSummary, TerminalSummary,
+    application::{
+        mcp::{McpTerminalReadPage, TerminalSummary},
+        session::model::{ProfileSummary, SshTunnelWorkspaceSummary},
+    },
+    data_context::{
+        SftpDirectorySummary, SftpEntrySummary, SftpTransferInfo, SftpTransferSummary,
+        SftpWatchSummary,
     },
     domain::session::Protocol,
 };
 
-use super::bridge::McpBridgeEndpoint;
+use super::bridge::{ApplicationNotification, McpBridgeEndpoint};
 
 #[derive(Clone)]
 pub(super) struct AgentTerminalMcp {
     bridge: McpBridgeEndpoint,
+    lifecycle_notifications: bool,
 }
 
 impl AgentTerminalMcp {
     pub(super) fn new(bridge: McpBridgeEndpoint) -> Self {
-        Self { bridge }
+        Self {
+            bridge,
+            lifecycle_notifications: false,
+        }
+    }
+
+    pub(super) fn with_notifications(bridge: McpBridgeEndpoint) -> Self {
+        Self {
+            bridge,
+            lifecycle_notifications: true,
+        }
     }
 }
 
@@ -33,6 +48,11 @@ struct OpenSessionInput {
     ip: String,
     title: String,
     protocol: OpenSessionProtocol,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct OpenSshTunnelInput {
+    profile_id: String,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -125,6 +145,15 @@ struct OpenSessionOutput {
     workspace_id: String,
     ip: String,
     title: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct OpenSshTunnelOutput {
+    workspace_id: String,
+    profile_id: String,
+    ip: String,
+    title: String,
+    remote_port: u16,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -252,6 +281,20 @@ impl AgentTerminalMcp {
                     title,
                 })
             })
+            .map_err(mcp_error)
+    }
+
+    #[tool(
+        description = "Open or reuse the SSH reverse tunnel configured on a saved connection profile, then open an interactive SSH terminal and set http_proxy/https_proxy to the remote loopback listener. Use list_profiles to get profile_id. Returns workspace_id for later terminal operations."
+    )]
+    async fn open_ssh_tunnel(
+        &self,
+        Parameters(input): Parameters<OpenSshTunnelInput>,
+    ) -> Result<Json<OpenSshTunnelOutput>, ErrorData> {
+        self.bridge
+            .open_ssh_tunnel(input.profile_id)
+            .await
+            .map(|summary| Json(summary.into()))
             .map_err(mcp_error)
     }
 
@@ -475,7 +518,87 @@ impl AgentTerminalMcp {
 #[tool_handler(
     instructions = "This MCP server uses single-request/single-final-result tool semantics. The HTTP transport may be Streamable HTTP, but each tool invocation returns one final result and does not stream incremental output. Long-running SFTP transfers are queued by upload_sftp or download_sftp; use list_sftp_transfers to query their later status and progress."
 )]
-impl rmcp::ServerHandler for AgentTerminalMcp {}
+impl rmcp::ServerHandler for AgentTerminalMcp {
+    fn supported_protocol_versions(
+        &self,
+    ) -> std::borrow::Cow<'static, [rmcp::model::ProtocolVersion]> {
+        use rmcp::model::ProtocolVersion;
+
+        if self.lifecycle_notifications {
+            // 2026-07-28 uses stateless requests in rmcp, so it cannot carry
+            // unsolicited lifecycle notifications on the GET session stream.
+            std::borrow::Cow::Borrowed(ProtocolVersion::known_up_to(&ProtocolVersion::V_2025_11_25))
+        } else {
+            std::borrow::Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+        }
+    }
+
+    async fn on_initialized(&self, context: rmcp::service::NotificationContext<rmcp::RoleServer>) {
+        if !self.lifecycle_notifications {
+            return;
+        }
+        let mut notifications = self.bridge.subscribe_notifications();
+        let peer = context.peer;
+        tokio::spawn(async move {
+            let mut connection_check = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                let notification = tokio::select! {
+                    event = notifications.recv() => match event {
+                        Ok(envelope) => lifecycle_notification(envelope.event),
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            log::warn!("MCP client lifecycle notification lagged: skipped={skipped}");
+                            rmcp::model::ServerNotification::CustomNotification(
+                                rmcp::model::CustomNotification::new(
+                                    "notifications/gpui_remote/session",
+                                    Some(serde_json::json!({"event": "resync_required"})),
+                                ),
+                            )
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    },
+                    _ = connection_check.tick() => {
+                        if peer.is_transport_closed() {
+                            break;
+                        }
+                        continue;
+                    }
+                };
+                if let Err(error) = peer.send_notification(notification).await {
+                    log::debug!("MCP client lifecycle notification stopped: {error}");
+                    break;
+                }
+            }
+        });
+    }
+}
+
+fn lifecycle_notification(event: ApplicationNotification) -> rmcp::model::ServerNotification {
+    let params = match event {
+        ApplicationNotification::ResyncRequired => serde_json::json!({
+            "event": "resync_required",
+        }),
+        ApplicationNotification::SessionOpened {
+            workspace_id,
+            profile,
+        } => serde_json::json!({
+            "event": "session_opened",
+            "workspace_id": workspace_id,
+            "profile": profile,
+        }),
+        ApplicationNotification::SessionClosed { workspace_id } => serde_json::json!({
+            "event": "session_closed",
+            "workspace_id": workspace_id,
+        }),
+        ApplicationNotification::SessionSelected { workspace_id } => serde_json::json!({
+            "event": "session_selected",
+            "workspace_id": workspace_id,
+        }),
+    };
+    rmcp::model::ServerNotification::CustomNotification(rmcp::model::CustomNotification::new(
+        "notifications/gpui_remote/session",
+        Some(params),
+    ))
+}
 
 impl From<OpenSessionProtocol> for Protocol {
     fn from(protocol: OpenSessionProtocol) -> Self {
@@ -494,6 +617,18 @@ impl From<ProfileSummary> for ProfileOutput {
             ip: profile.host.clone(),
             host: profile.host,
             protocol: profile.protocol,
+        }
+    }
+}
+
+impl From<SshTunnelWorkspaceSummary> for OpenSshTunnelOutput {
+    fn from(summary: SshTunnelWorkspaceSummary) -> Self {
+        Self {
+            workspace_id: summary.workspace_id,
+            profile_id: summary.profile_id,
+            ip: summary.ip,
+            title: summary.title,
+            remote_port: summary.remote_port,
         }
     }
 }

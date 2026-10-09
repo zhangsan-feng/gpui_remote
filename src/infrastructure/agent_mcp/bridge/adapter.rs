@@ -1,25 +1,35 @@
-use gpui_kit::{App, AppContext};
+use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::application::{ApplicationContext, ApplicationEvent};
+use crate::{application::Application, data_context::DataChange};
 
-use super::{dispatch, router::McpCommandRouter, types::McpBridgeReceiver};
+use super::{
+    dispatch,
+    router::McpCommandRouter,
+    types::{ApplicationNotification, McpBridgeReceiver, NotificationEnvelope},
+};
 
-pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
-    let application = cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+pub(crate) fn start_mcp_bridge(
+    application: Application,
+    bridge: McpBridgeReceiver,
+) -> Result<(), String> {
     let McpBridgeReceiver {
         mut command_rx,
         notification_tx,
+        data_context,
+        notice,
     } = bridge;
 
-    let command_application = application.clone();
+    let lifecycle_data_context = data_context;
+    let notification_data_context = data_context;
+    // Subscribe synchronously before serving commands so early events are observed.
+    let mut lifecycle_events = notice.subscribe_session_lifecycle();
+    let mut notification_events = notice.subscribe_session_lifecycle();
     // This bridge owns Tokio channels and timers. Keep it on the Tokio runtime
     // instead of GPUI's foreground executor, whose wake-up model can strand a
     // pending Tokio channel operation under load.
     tokio::spawn(async move {
-        let lifecycle_application = command_application.clone();
-        let mut router = McpCommandRouter::new(command_application);
-        let mut application_events = lifecycle_application.subscribe();
+        let mut router = McpCommandRouter::new(application);
         let mut idle_cleanup = tokio::time::interval(Duration::from_secs(60));
         log::info!("MCP application bridge adapter started");
         loop {
@@ -48,20 +58,27 @@ pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
                         route_started.elapsed().as_millis()
                     );
                 }
-                event = application_events.recv() => {
+                event = lifecycle_events.recv() => {
                     match event {
                         Ok(event) => {
                             log::debug!(
-                                "MCP bridge application event observed: event={}, workspace_id={}",
-                                application_event_name(&event),
-                                application_event_workspace_id(&event).unwrap_or("none")
+                                "MCP bridge data context event observed: event={}, workspace_id={}",
+                                context_event_name(&event),
+                                context_event_workspace_id(&event).unwrap_or("none")
                             );
-                            if let ApplicationEvent::SessionClosed { workspace_id } = event {
-                            router.remove(&workspace_id);
+                            if let DataChange::SessionClosed { workspace_id } = event {
+                                router.remove(&workspace_id);
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                             log::warn!("MCP bridge lifecycle receiver lagged: skipped={count}");
+                            let open_workspaces = lifecycle_data_context
+                                .workspace_snapshot()
+                                .workspaces
+                                .into_iter()
+                                .map(|workspace| workspace.workspace_id)
+                                .collect::<HashSet<_>>();
+                            router.retain_open_workspaces(&open_workspaces);
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                             log::warn!(
@@ -77,51 +94,60 @@ pub(crate) fn start_mcp_bridge(cx: &App, bridge: McpBridgeReceiver) {
             }
         }
         log::info!(
-            "MCP application bridge command router stopped: reason=ingress_closed, lanes={} ",
+            "MCP application bridge command router stopped: reason=ingress_closed, lanes={}",
             router.lane_count()
         );
     });
 
-    let notification_application = application;
     tokio::spawn(async move {
-        let mut application_events = notification_application.subscribe();
-        log::info!("MCP application notification forwarder started");
+        log::info!("MCP data context notification forwarder started");
         loop {
-            match application_events.recv().await {
+            match notification_events.recv().await {
                 Ok(event) => {
                     log::debug!(
-                        "MCP application notification forwarded: event={}, workspace_id={}",
-                        application_event_name(&event),
-                        application_event_workspace_id(&event).unwrap_or("none")
+                        "MCP data context notification forwarded: event={}, workspace_id={}",
+                        context_event_name(&event),
+                        context_event_workspace_id(&event).unwrap_or("none")
                     );
                     let _ = notification_tx.send(dispatch::map_event(event));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                     log::warn!("MCP bridge notification receiver lagged: skipped={count}");
+                    let snapshot = notification_data_context.workspace_snapshot();
+                    log::info!(
+                        "MCP bridge notification snapshot refreshed: revision={}, open_workspaces={}",
+                        snapshot.revision,
+                        snapshot.workspaces.len()
+                    );
+                    let _ = notification_tx.send(NotificationEnvelope {
+                        event: ApplicationNotification::ResyncRequired,
+                    });
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     log::info!(
-                        "MCP application notification forwarder stopped: reason=application_events_closed"
+                        "MCP data context notification forwarder stopped: reason=context_events_closed"
                     );
                     break;
                 }
             }
         }
     });
+
+    Ok(())
 }
 
-fn application_event_name(event: &ApplicationEvent) -> &'static str {
+fn context_event_name(event: &DataChange) -> &'static str {
     match event {
-        ApplicationEvent::SessionOpened { .. } => "session_opened",
-        ApplicationEvent::SessionClosed { .. } => "session_closed",
-        ApplicationEvent::SessionSelected { .. } => "session_selected",
+        DataChange::SessionOpened { .. } => "session_opened",
+        DataChange::SessionClosed { .. } => "session_closed",
+        DataChange::SessionSelected { .. } => "session_selected",
     }
 }
 
-fn application_event_workspace_id(event: &ApplicationEvent) -> Option<&str> {
+fn context_event_workspace_id(event: &DataChange) -> Option<&str> {
     match event {
-        ApplicationEvent::SessionOpened { workspace_id, .. }
-        | ApplicationEvent::SessionClosed { workspace_id } => Some(workspace_id),
-        ApplicationEvent::SessionSelected { workspace_id } => workspace_id.as_deref(),
+        DataChange::SessionOpened { workspace_id, .. }
+        | DataChange::SessionClosed { workspace_id } => Some(workspace_id),
+        DataChange::SessionSelected { workspace_id } => workspace_id.as_deref(),
     }
 }

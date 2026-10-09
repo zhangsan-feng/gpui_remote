@@ -14,8 +14,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::application::model::{SftpEntrySummary, SftpWorkspaceSnapshot};
 use crate::component::theme;
+use crate::data_context::{SftpEntrySummary, SftpWorkspaceSnapshot};
 
 impl SftpView {
     pub(super) fn remote_panel(

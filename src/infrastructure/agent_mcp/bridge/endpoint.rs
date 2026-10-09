@@ -8,25 +8,31 @@ use super::types::{
 use crate::{
     application::{
         ApplicationResult,
-        model::{
-            McpTerminalReadPage, ProfileSummary, SftpDirectorySummary, SftpTransferInfo,
-            SftpTransferSummary, SftpWatchSummary, TerminalSummary,
-        },
+        mcp::{McpTerminalReadPage, TerminalSummary},
+        session::model::{ProfileSummary, SshTunnelWorkspaceSummary},
     },
-    domain::session::Protocol,
+    data_context::{
+        DATA_CONTEXT, SftpDirectorySummary, SftpTransferInfo, SftpTransferSummary,
+        SftpWatchSummary, SftpWorkspaceSnapshot, WorkspaceSummary,
+    },
+    domain::{session::Protocol, terminal::TerminalStatus},
 };
 
 pub(crate) fn new() -> (McpBridgeEndpoint, McpBridgeReceiver) {
     let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
     let (notification_tx, _) = broadcast::channel(NOTIFICATION_CAPACITY);
+    let data_context = &*DATA_CONTEXT;
     (
         McpBridgeEndpoint {
             command_tx,
             notification_tx: notification_tx.clone(),
+            data_context,
         },
         McpBridgeReceiver {
             command_rx,
             notification_tx,
+            data_context,
+            notice: DATA_CONTEXT.notice.clone(),
         },
     )
 }
@@ -122,13 +128,30 @@ impl McpBridgeEndpoint {
         }
     }
 
+    pub(crate) async fn open_ssh_tunnel(
+        &self,
+        profile_id: String,
+    ) -> ApplicationResult<SshTunnelWorkspaceSummary> {
+        match self
+            .request(ApplicationCommand::OpenSshTunnel { profile_id })
+            .await?
+        {
+            ApplicationResponse::SshTunnelWorkspace(summary) => Ok(summary),
+            _ => Err("MCP application bridge 返回了错误的 open_ssh_tunnel 响应".to_owned()),
+        }
+    }
+
     pub(crate) async fn read_sftp_workspace_summaries(
         &self,
     ) -> ApplicationResult<Vec<TerminalSummary>> {
-        match self.request(ApplicationCommand::ListSftpSessions).await? {
-            ApplicationResponse::TerminalSummaries(sessions) => Ok(sessions),
-            _ => Err("MCP application bridge 返回了错误的 SFTP 会话响应".to_owned()),
-        }
+        let snapshot = self.data_context.workspace_snapshot();
+        let selected_id = snapshot.selected_workspace_id;
+        Ok(snapshot
+            .workspaces
+            .into_iter()
+            .filter(|workspace| workspace.protocol == Protocol::Sftp)
+            .map(|workspace| terminal_summary(workspace, selected_id.as_deref()))
+            .collect())
     }
 
     pub(crate) async fn close_session(&self, workspace_id: String) -> ApplicationResult<()> {
@@ -140,13 +163,8 @@ impl McpBridgeEndpoint {
         &self,
         workspace_id: String,
     ) -> ApplicationResult<SftpDirectorySummary> {
-        match self
-            .request(ApplicationCommand::ListSftpLocal { workspace_id })
-            .await?
-        {
-            ApplicationResponse::SftpDirectory(directory) => Ok(directory),
-            _ => Err("MCP application bridge 返回了错误的本地目录响应".to_owned()),
-        }
+        self.sftp_snapshot(&workspace_id)
+            .map(|snapshot| snapshot.local)
     }
 
     pub(crate) async fn change_sftp_local_directory(
@@ -169,13 +187,8 @@ impl McpBridgeEndpoint {
         &self,
         workspace_id: String,
     ) -> ApplicationResult<SftpDirectorySummary> {
-        match self
-            .request(ApplicationCommand::ListSftpRemote { workspace_id })
-            .await?
-        {
-            ApplicationResponse::SftpDirectory(directory) => Ok(directory),
-            _ => Err("MCP application bridge 返回了错误的远程目录响应".to_owned()),
-        }
+        self.sftp_snapshot(&workspace_id)
+            .map(|snapshot| snapshot.remote)
     }
 
     pub(crate) async fn change_sftp_remote_directory(
@@ -232,13 +245,8 @@ impl McpBridgeEndpoint {
         &self,
         workspace_id: String,
     ) -> ApplicationResult<Vec<SftpTransferInfo>> {
-        match self
-            .request(ApplicationCommand::ListSftpTransfers { workspace_id })
-            .await?
-        {
-            ApplicationResponse::SftpTransferInfos(transfers) => Ok(transfers),
-            _ => Err("MCP application bridge 返回了错误的传输响应".to_owned()),
-        }
+        self.sftp_snapshot(&workspace_id)
+            .map(|snapshot| snapshot.transfers)
     }
 
     pub(crate) async fn start_sftp_local_watch(
@@ -284,24 +292,33 @@ impl McpBridgeEndpoint {
         ip: String,
         title: String,
     ) -> ApplicationResult<Vec<SftpWatchSummary>> {
-        match self
-            .request(ApplicationCommand::ListSftpLocalWatches {
-                workspace_id,
-                ip,
-                title,
-            })
-            .await?
-        {
-            ApplicationResponse::SftpWatches(watches) => Ok(watches),
-            _ => Err("MCP application bridge 返回了错误的 watches 响应".to_owned()),
+        let workspace = self
+            .data_context
+            .workspace_summary(&workspace_id)
+            .ok_or_else(|| format!("会话不存在: {workspace_id}"))?;
+        if workspace.protocol != Protocol::Sftp {
+            return Err(format!("会话协议不是 SFTP: {workspace_id}"));
         }
+        if workspace.host != ip || workspace.title != title {
+            return Err(format!(
+                "会话信息不匹配: {workspace_id}，请确认 ip 和 title"
+            ));
+        }
+        self.data_context
+            .sftp_workspace_snapshot(&workspace_id)
+            .map(|snapshot| snapshot.watches)
+            .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))
     }
 
     pub(crate) async fn list_terminals(&self) -> ApplicationResult<Vec<TerminalSummary>> {
-        match self.request(ApplicationCommand::ListTerminals).await? {
-            ApplicationResponse::TerminalSummaries(terminals) => Ok(terminals),
-            _ => Err("MCP application bridge 返回了错误的终端响应".to_owned()),
-        }
+        let snapshot = self.data_context.workspace_snapshot();
+        let selected_id = snapshot.selected_workspace_id;
+        Ok(snapshot
+            .workspaces
+            .into_iter()
+            .filter(|workspace| workspace.protocol == Protocol::Ssh)
+            .map(|workspace| terminal_summary(workspace, selected_id.as_deref()))
+            .collect())
     }
 
     pub(crate) async fn mcp_read_terminal(
@@ -311,18 +328,25 @@ impl McpBridgeEndpoint {
         limit: usize,
         since_mcp_snapshot_version: Option<u64>,
     ) -> ApplicationResult<McpTerminalReadPage> {
-        match self
-            .request(ApplicationCommand::McpReadTerminal {
-                workspace_id,
+        let page = self
+            .data_context
+            .terminal_history(
+                &workspace_id,
                 offset,
-                limit,
+                normalize_read_limit(limit),
                 since_mcp_snapshot_version,
-            })
-            .await?
-        {
-            ApplicationResponse::McpTerminalRead(page) => Ok(page),
-            _ => Err("MCP application bridge 返回了错误的终端读取响应".to_owned()),
-        }
+            )
+            .ok_or_else(|| format!("SSH 终端历史不存在: {workspace_id}"))?;
+        Ok(McpTerminalReadPage {
+            workspace_id,
+            text: page.text,
+            total_lines: page.total_lines,
+            offset: page.offset,
+            limit: page.limit,
+            has_more: page.has_more,
+            mcp_snapshot_version: page.mcp_snapshot_version,
+            changed: page.changed,
+        })
     }
 
     pub(crate) async fn send_text(
@@ -357,5 +381,35 @@ impl McpBridgeEndpoint {
             ApplicationResponse::Empty => Ok(()),
             _ => Err("MCP application bridge 返回了错误的操作响应".to_owned()),
         }
+    }
+
+    fn sftp_snapshot(&self, workspace_id: &str) -> ApplicationResult<SftpWorkspaceSnapshot> {
+        self.data_context
+            .sftp_workspace_snapshot(workspace_id)
+            .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))
+    }
+}
+
+fn normalize_read_limit(limit: usize) -> usize {
+    if limit == 0 { 200 } else { limit.min(2_000) }
+}
+
+fn terminal_summary(workspace: WorkspaceSummary, selected_id: Option<&str>) -> TerminalSummary {
+    let selected = selected_id == Some(workspace.workspace_id.as_str());
+    TerminalSummary {
+        workspace_id: workspace.workspace_id,
+        profile_id: workspace.profile_id,
+        ip: workspace.host.clone(),
+        title: workspace.title,
+        host: workspace.host,
+        protocol: workspace.protocol.as_str().to_owned(),
+        status: match workspace.status {
+            TerminalStatus::Connecting => "connecting",
+            TerminalStatus::Connected => "connected",
+            TerminalStatus::Disconnected => "disconnected",
+            TerminalStatus::Failed => "failed",
+        }
+        .to_owned(),
+        selected,
     }
 }

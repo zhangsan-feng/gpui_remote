@@ -1,4 +1,5 @@
 mod derive;
+mod external;
 mod known_hosts;
 mod repository;
 
@@ -13,11 +14,11 @@ pub(crate) struct Storage {
 }
 
 impl Storage {
-    pub(crate) fn new() -> Self {
-        Self {
-            session: SessionStorageRepository::new().expect("sqlite init failed"),
+    pub(crate) fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            session: SessionStorageRepository::new()?,
             host_pub_key: HostPubKey {},
-        }
+        })
     }
 }
 

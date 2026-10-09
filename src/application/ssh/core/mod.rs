@@ -1,4 +1,3 @@
-mod buffer;
 mod key;
 mod pty;
 mod service;

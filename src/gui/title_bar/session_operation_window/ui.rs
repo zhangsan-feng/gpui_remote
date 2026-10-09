@@ -98,12 +98,13 @@ impl SearchableListItem for ConnectionProtocol {
 }
 
 impl FormSection {
-    const ALL: [Self; 2] = [Self::Connection, Self::Proxy];
+    const ALL: [Self; 3] = [Self::Connection, Self::Proxy, Self::SshTunnel];
 
     fn label(self) -> &'static str {
         match self {
             Self::Connection => "连接",
             Self::Proxy => "代理",
+            Self::SshTunnel => "SSH 隧道",
         }
     }
 
@@ -111,6 +112,7 @@ impl FormSection {
         match self {
             Self::Connection => "主机与登录信息",
             Self::Proxy => "代理服务器设置",
+            Self::SshTunnel => "反向端口转发设置",
         }
     }
 
@@ -118,6 +120,7 @@ impl FormSection {
         match self {
             Self::Connection => IconName::SquareTerminal,
             Self::Proxy => IconName::Settings2,
+            Self::SshTunnel => IconName::Settings2,
         }
     }
 }
@@ -258,6 +261,67 @@ impl SessionOperationWindow {
             .child(Self::field("代理密码", &self.proxy_password, colors))
     }
 
+    fn ssh_tunnel_panel(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        let remote_host = self.host.read(cx).value().to_string();
+        v_flex()
+            .flex_1()
+            .h_full()
+            .p_3()
+            .gap_2()
+            .rounded_xl()
+            .border_1()
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
+            .child(Self::panel_heading(
+                IconName::Settings2,
+                "SSH 隧道",
+                "将远端监听端口反向转发到本机服务",
+                colors,
+            ))
+            .child(Self::read_only_field("远端主机", remote_host, colors))
+            .child(Self::field(
+                "远端端口",
+                &self.ssh_tunnel_remote_port,
+                colors,
+            ))
+            .child(Self::field(
+                "转发地址",
+                &self.ssh_tunnel_forward_address,
+                colors,
+            ))
+            .child(Self::field(
+                "转发端口",
+                &self.ssh_tunnel_forward_port,
+                colors,
+            ))
+    }
+
+    fn read_only_field(label: &'static str, value: String, colors: ThemeColor) -> Div {
+        h_flex()
+            .w_full()
+            .h(px(34.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(80.))
+                    .flex_shrink_0()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_sm()
+                    .text_color(colors.foreground)
+                    .child(value),
+            )
+    }
+
     fn panel_heading(
         icon: IconName,
         title: &'static str,
@@ -367,55 +431,55 @@ impl SessionOperationWindow {
             .p_2()
             .size_full()
             .bg(ui_colors.background)
-            .child(
-                h_flex()
-                    .h(px(52.))
-                    .flex_shrink_0()
-                    .px_3()
-                    .gap_3()
-                    .items_center()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(theme::CustomerUiTheme::border_color(cx))
-                    .bg(theme::CustomerUiTheme::panel_background(cx))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                                div()
-                                    .size(px(28.))
-                                    .rounded_md()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .bg(ui_colors.select_background)
-                                    .child(
-                                        Icon::new(IconName::Settings2)
-                                            .small()
-                                            .text_color(colors.accent),
-                                    ),
-                            )
-                            .child(
-                                v_flex()
-                                    .gap_0p5()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(colors.foreground)
-                                            .child("连接协议"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(colors.muted_foreground)
-                                            .child("选择远程连接类型"),
-                                    ),
-                            ),
-                    )
-                    .child(self.protocol_selector(cx)),
-            )
+            // .child(
+            //     h_flex()
+            //         .h(px(52.))
+            //         .flex_shrink_0()
+            //         .px_3()
+            //         .gap_3()
+            //         .items_center()
+            //         .rounded_lg()
+            //         .border_1()
+            //         .border_color(theme::CustomerUiTheme::border_color(cx))
+            //         .bg(theme::CustomerUiTheme::panel_background(cx))
+            //         .child(
+            //             h_flex()
+            //                 .gap_2()
+            //                 .items_center()
+            //                 .child(
+            //                     div()
+            //                         .size(px(28.))
+            //                         .rounded_md()
+            //                         .flex()
+            //                         .items_center()
+            //                         .justify_center()
+            //                         .bg(ui_colors.select_background)
+            //                         .child(
+            //                             Icon::new(IconName::Settings2)
+            //                                 .small()
+            //                                 .text_color(colors.accent),
+            //                         ),
+            //                 )
+            //                 .child(
+            //                     v_flex()
+            //                         .gap_0p5()
+            //                         .child(
+            //                             div()
+            //                                 .text_sm()
+            //                                 .font_weight(FontWeight::SEMIBOLD)
+            //                                 .text_color(colors.foreground)
+            //                                 .child("连接协议"),
+            //                         )
+            //                         .child(
+            //                             div()
+            //                                 .text_xs()
+            //                                 .text_color(colors.muted_foreground)
+            //                                 .child("选择远程连接类型"),
+            //                         ),
+            //                 ),
+            //         )
+            //         .child(self.protocol_selector(cx)),
+            // )
             .child(
                 h_flex()
                     .flex_1()
@@ -443,12 +507,19 @@ impl SessionOperationWindow {
                                     .child("配置"),
                             )
                             .children(
-                                FormSection::ALL.map(|section| self.section_option(section, cx)),
+                                FormSection::ALL
+                                    .into_iter()
+                                    .filter(|section| {
+                                        *section != FormSection::SshTunnel
+                                            || self.protocol == ConnectionProtocol::SshAndSftp
+                                    })
+                                    .map(|section| self.section_option(section, cx)),
                             ),
                     )
                     .child(match self.section {
                         FormSection::Connection => self.connection_panel(cx),
                         FormSection::Proxy => self.proxy_panel(cx),
+                        FormSection::SshTunnel => self.ssh_tunnel_panel(cx),
                     }),
             )
             .when_some(self.error.clone(), |this, error| {

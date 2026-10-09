@@ -1,5 +1,6 @@
 use crate::{
-    domain::session::SessionProfile,
+    application::session::model::SessionSummary,
+    domain::session::Protocol,
     global_state::{GlobalEvent, read_global_state},
 };
 use gpui_kit::Context;
@@ -24,16 +25,37 @@ impl SessionComponent {
         .detach();
     }
 
-    pub(super) fn open_workspace(&self, profile: SessionProfile, cx: &mut Context<Self>) {
+    pub(super) fn open_workspace(
+        &self,
+        session: SessionSummary,
+        protocol: Protocol,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_workspace_with_tunnel_proxy(session, protocol, false, cx);
+    }
+
+    pub(super) fn open_workspace_with_tunnel_proxy(
+        &self,
+        session: SessionSummary,
+        protocol: Protocol,
+        send_tunnel_proxy_exports: bool,
+        cx: &mut Context<Self>,
+    ) {
         log::debug!(
             "GUI 发送打开会话事件: profile_id={}, protocol={}, host={}, title={}",
-            profile.id,
-            profile.protocol,
-            profile.host,
-            profile.name
+            session.id,
+            protocol,
+            session.host,
+            session.name
         );
         read_global_state(cx).update(cx, |_, cx| {
-            cx.emit(GlobalEvent::OpenWorkspaceSession(profile));
+            cx.emit(GlobalEvent::OpenWorkspaceSession {
+                profile_id: session.id,
+                protocol,
+                ip: session.host,
+                title: session.name,
+                send_tunnel_proxy_exports,
+            });
         });
     }
 }

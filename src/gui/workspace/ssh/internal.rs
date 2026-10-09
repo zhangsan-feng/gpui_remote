@@ -1,8 +1,6 @@
 mod keyboard {
     use gpui_kit::*;
 
-    use crate::application::ApplicationContext;
-
     use super::super::{
         PasteTerminal, SendTab, TerminalView,
         core::{encode_control_key, encode_special_key},
@@ -63,11 +61,10 @@ mod keyboard {
             input: Vec<u8>,
             cx: &mut Context<Self>,
         ) {
-            let application =
-                cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+            let application = crate::application::APPLICATION.clone();
             let workspace_id = workspace_id.to_owned();
             cx.spawn(async move |_this, _cx| {
-                if let Err(error) = application.send_terminal_input(workspace_id, input).await {
+                if let Err(error) = application.ssh.send_input(&workspace_id, input).await {
                     log::debug!("发送 SSH 输入失败: {error}");
                 }
             })
@@ -100,7 +97,6 @@ mod scroll {
     };
 
     use crate::{
-        application::ApplicationContext,
         component::{color::rgb_to_u32, theme},
         domain::terminal::TerminalFrame,
     };
@@ -253,10 +249,9 @@ mod scroll {
             let Some(workspace_id) = self.selected_workspace_id.clone() else {
                 return;
             };
-            let application =
-                cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+            let application = crate::application::APPLICATION.clone();
             cx.spawn(async move |_this, _cx| {
-                if let Err(error) = application.scroll_terminal_to(workspace_id, offset).await {
+                if let Err(error) = application.ssh.scroll_to(&workspace_id, offset).await {
                     log::debug!("滚动 SSH 终端失败: {error}");
                 }
             })
@@ -520,30 +515,6 @@ mod selection {
 
     fn terminal_character_width(character: char) -> usize {
         UnicodeWidthChar::width(character).unwrap_or(0)
-    }
-}
-
-mod watcher {
-    use gpui_kit::Context;
-
-    use super::super::TerminalView;
-
-    impl TerminalView {
-        pub(in crate::gui::workspace::ssh) fn start_model_watcher(&self, cx: &mut Context<Self>) {
-            let terminal_updates = self.updates.clone();
-            cx.spawn(async move |this, cx| {
-                loop {
-                    terminal_updates.notified().await;
-                    if this
-                        .update(cx, |this, cx| this.notify_if_model_changed(cx))
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            })
-            .detach();
-        }
     }
 }
 

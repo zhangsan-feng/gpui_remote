@@ -1,7 +1,5 @@
 use gpui_kit::*;
 
-use crate::application::ApplicationContext;
-
 use super::super::*;
 
 impl TerminalView {
@@ -32,33 +30,30 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) {
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let context = &*crate::data_context::DATA_CONTEXT;
         let workspace_ids = self.models.keys().cloned().collect::<Vec<_>>();
         for workspace_id in workspace_ids {
-            let Ok(gui_snapshot_version) = application.terminal_gui_snapshot_version(&workspace_id)
-            else {
+            let Some(snapshot) = context.terminal_snapshot(&workspace_id) else {
                 continue;
             };
+            let gui_snapshot_version = snapshot.gui_snapshot_version;
             let Some(model) = self.models.get(&workspace_id) else {
                 continue;
             };
             let previous_gui_snapshot_version = model.gui_snapshot_version();
             if previous_gui_snapshot_version != gui_snapshot_version {
-                let Ok(mcp_snapshot_version) =
-                    application.terminal_mcp_snapshot_version(&workspace_id)
-                else {
-                    continue;
-                };
-                if let Ok(data) = application.terminal_snapshot(&workspace_id) {
-                    let previous_mcp_snapshot_version = model.mcp_snapshot_version();
-                    if previous_mcp_snapshot_version != mcp_snapshot_version {
-                        log::debug!(
-                            "SSH GUI terminal projection refreshed: workspace_id={workspace_id}, from_mcp_snapshot_version={previous_mcp_snapshot_version}, to_mcp_snapshot_version={mcp_snapshot_version}"
-                        );
-                    }
-                    model.replace(data, mcp_snapshot_version, gui_snapshot_version);
+                let mcp_snapshot_version = snapshot.mcp_snapshot_version;
+                let previous_mcp_snapshot_version = model.mcp_snapshot_version();
+                if previous_mcp_snapshot_version != mcp_snapshot_version {
+                    log::debug!(
+                        "SSH GUI terminal projection refreshed: workspace_id={workspace_id}, from_mcp_snapshot_version={previous_mcp_snapshot_version}, to_mcp_snapshot_version={mcp_snapshot_version}"
+                    );
                 }
+                model.replace(
+                    snapshot.data.as_ref().clone(),
+                    mcp_snapshot_version,
+                    gui_snapshot_version,
+                );
             }
         }
         let current_gui_snapshot_version =

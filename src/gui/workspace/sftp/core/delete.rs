@@ -1,7 +1,5 @@
 use gpui_kit::*;
 
-use crate::application::ApplicationContext;
-
 use super::super::{DeleteLocalEntry, DeleteRemoteEntry, SftpView};
 
 impl SftpView {
@@ -29,12 +27,15 @@ impl SftpView {
         );
         cx.notify();
 
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let result = application
-                .delete_sftp_local_paths(workspace_id, paths)
-                .await;
+            let result = crate::global_state::run_application(async move {
+                application
+                    .sftp
+                    .delete_local_paths_checked(workspace_id, paths)
+                    .await
+            })
+            .await;
             let _ = this.update(cx, |this, cx| {
                 if this.local.path != current_directory.display().to_string() {
                     return;
@@ -43,7 +44,7 @@ impl SftpView {
                 if let Err(error) = result {
                     this.local.error = Some(error);
                 }
-                this.refresh_from_application(cx);
+                this.refresh_from_context(cx);
                 cx.notify();
             });
         })
@@ -68,8 +69,7 @@ impl SftpView {
         let items = action.items.clone();
         let count = items.len();
         let refresh_path = snapshot.remote.path;
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         self.remote_selection.clear();
         log::debug!(
             "SFTP 批量删除远程路径加入队列: workspace_id={}, count={}, directory={refresh_path}",
@@ -80,14 +80,18 @@ impl SftpView {
         cx.spawn(async move |_this, _cx| {
             let items = items
                 .into_iter()
-                .map(|item| crate::application::RemoteDeleteItem {
+                .map(|item| crate::application::sftp::RemoteDeleteItem {
                     path: item.path,
                     is_directory: item.is_directory,
                 })
                 .collect();
-            if let Err(error) = application
-                .delete_sftp_remote_paths(task_workspace_id, items)
-                .await
+            if let Err(error) = crate::global_state::run_application(async move {
+                application
+                    .sftp
+                    .delete_remote_paths_checked(task_workspace_id, items)
+                    .await
+            })
+            .await
             {
                 log::warn!("SFTP 批量删除请求失败: {error}");
             }

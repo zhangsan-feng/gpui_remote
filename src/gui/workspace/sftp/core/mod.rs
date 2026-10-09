@@ -4,10 +4,7 @@ mod watcher;
 
 use std::path::PathBuf;
 
-use crate::{
-    application::{ApplicationContext, model::SftpWorkspaceSnapshot},
-    domain::session::SessionProfile,
-};
+use crate::data_context::{SftpWorkspaceSnapshot, WorkspaceSummary};
 use gpui_kit::*;
 
 use super::{
@@ -15,49 +12,15 @@ use super::{
 };
 
 impl SftpView {
-    fn save_remote_path_after_navigation(&mut self, path: &str, cx: &mut Context<Self>) {
-        let Some(workspace_id) = self.selected_workspace_id.clone() else {
-            return;
-        };
-        let Some(profile_id) = self
-            .projections
-            .get(&workspace_id)
-            .map(|projection| projection.profile_id.clone())
-        else {
-            return;
-        };
-        if path.is_empty()
-            || self
-                .persisted_remote_paths
-                .get(&workspace_id)
-                .is_some_and(|saved_path| saved_path == path)
-        {
-            return;
-        }
-        self.persisted_remote_paths
-            .insert(workspace_id.clone(), path.to_owned());
-        let path = path.to_owned();
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
-        log::debug!(
-            "SFTP 远程目录路径变化，准备保存: session={}, path={}",
-            profile_id,
-            path
-        );
-        cx.spawn(async move |_this, _cx| {
-            match application.save_sftp_remote_path(workspace_id, path).await {
-                Ok(()) => log::debug!("SFTP 远程目录保存完成: 会话 {profile_id}"),
-                Err(error) => log::warn!("保存 SFTP 远程目录失败，会话 {profile_id}: {error}"),
-            }
-        })
-        .detach();
-    }
-
-    pub(super) fn initialize_projection(&mut self, workspace_id: String, profile: SessionProfile) {
+    pub(super) fn initialize_projection(
+        &mut self,
+        workspace_id: String,
+        profile: WorkspaceSummary,
+    ) {
         let existing = self.projections.contains_key(&workspace_id);
         log::debug!(
             "SFTP GUI projection connecting: workspace_id={workspace_id}, profile_id={}, existing={}",
-            profile.id,
+            profile.profile_id,
             existing
         );
         if existing {
@@ -70,27 +33,26 @@ impl SftpView {
         self.remote_selection.clear();
         self.remote_list_state.reset_with_uniform_height(0, px(38.));
 
-        let profile_id = profile.id.clone();
         let profile_ip = profile.host.clone();
-        let profile_title = profile.name.clone();
+        let profile_title = profile.title.clone();
         self.projections.insert(
             workspace_id.clone(),
             SftpProjection {
-                profile_id,
                 profile_ip,
                 profile_title,
                 snapshot: SftpWorkspaceSnapshot::default(),
+                local_navigation_tail: None,
+                remote_navigation_tail: None,
             },
         );
-        self.updates.notify_one();
     }
 
     pub(super) fn close(&mut self, workspace_id: &str) {
         self.clear_local_watch_projection_for_workspace(workspace_id);
         self.local_restore_requests.remove(workspace_id);
+        self.observed_sftp_revisions.remove(workspace_id);
         self.local_back_history.remove(workspace_id);
         self.remote_back_history.remove(workspace_id);
-        self.persisted_remote_paths.remove(workspace_id);
         self.projections.remove(workspace_id);
     }
 
@@ -126,7 +88,6 @@ impl SftpView {
                 self.push_remote_back_path(&workspace_id, current_path);
             }
         }
-        self.save_remote_path_after_navigation(&path, cx);
         let _ = self.change_remote_directory_for_workspace(&workspace_id, path, cx);
     }
 
@@ -167,18 +128,29 @@ impl SftpView {
         }
         let projection = self
             .projections
-            .get(workspace_id)
+            .get_mut(workspace_id)
             .ok_or_else(|| format!("SFTP 会话不存在: {workspace_id}"))?;
         let profile_ip = projection.profile_ip.clone();
         let profile_title = projection.profile_title.clone();
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        // Reserve order on the GUI thread before work enters Tokio's scheduler.
+        let previous = projection.remote_navigation_tail.take();
+        let (complete, next) = tokio::sync::oneshot::channel();
+        projection.remote_navigation_tail = Some(next);
+        let application = crate::application::APPLICATION.clone();
         let workspace_id = workspace_id.to_owned();
         cx.spawn(async move |_this, _cx| {
-            if let Err(error) = application
-                .change_sftp_remote_directory(workspace_id, profile_ip, profile_title, path)
-                .await
-            {
+            if let Some(previous) = previous {
+                let _ = previous.await;
+            }
+            let result = crate::global_state::run_application(async move {
+                application
+                    .sftp
+                    .change_remote_directory_checked(workspace_id, profile_ip, profile_title, path)
+                    .await
+            })
+            .await;
+            let _ = complete.send(());
+            if let Err(error) = result {
                 log::warn!("SFTP 远程目录请求失败: {error}");
             }
         })
@@ -202,18 +174,21 @@ impl SftpView {
         if !self.projections.contains_key(workspace_id) {
             return;
         }
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         let task_workspace_id = workspace_id.to_owned();
         let path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match application
-                .upload_sftp(task_workspace_id, vec![path_text])
-                .await
+            match crate::global_state::run_application(async move {
+                application
+                    .sftp
+                    .upload_checked(task_workspace_id, vec![path_text])
+                    .await
+            })
+            .await
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.refresh_from_application(cx);
+                        this.refresh_from_context(cx);
                         cx.notify();
                     });
                 }
@@ -258,17 +233,16 @@ impl SftpView {
         if !self.projections.contains_key(workspace_id) {
             return;
         }
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         let task_workspace_id = workspace_id.to_owned();
         cx.spawn(async move |this, cx| {
-            match application
-                .download_sftp(task_workspace_id, vec![remote_path])
-                .await
+            match crate::global_state::run_application(async move { application
+                .sftp.download_checked(task_workspace_id, vec![remote_path])
+                .await }).await
             {
                 Ok(_) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.refresh_from_application(cx);
+                        this.refresh_from_context(cx);
                         cx.notify();
                     });
                 }
@@ -296,18 +270,21 @@ impl SftpView {
         else {
             return;
         };
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         let workspace_id = record.workspace_id.clone();
         cx.spawn(async move |this, cx| {
-            if let Err(error) = application
-                .cancel_sftp_transfer(workspace_id, record.id)
-                .await
+            if let Err(error) = crate::global_state::run_application(async move {
+                application
+                    .sftp
+                    .cancel_transfer_checked(workspace_id, record.id)
+                    .await
+            })
+            .await
             {
                 log::warn!("取消 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.refresh_from_application(cx);
+                this.refresh_from_context(cx);
                 cx.notify();
             });
         })
@@ -332,17 +309,20 @@ impl SftpView {
             return;
         }
         let workspace_id = record.workspace_id.clone();
-        let application =
-            cx.read_global::<ApplicationContext, _>(|application, _| application.clone());
+        let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            if let Err(error) = application
-                .retry_sftp_transfer(workspace_id, record.id)
-                .await
+            if let Err(error) = crate::global_state::run_application(async move {
+                application
+                    .sftp
+                    .retry_transfer_checked(workspace_id, record.id)
+                    .await
+            })
+            .await
             {
                 log::warn!("重试 SFTP 传输失败: {error}");
             }
             let _ = this.update(cx, |this, cx| {
-                this.refresh_from_application(cx);
+                this.refresh_from_context(cx);
                 cx.notify();
             });
         })

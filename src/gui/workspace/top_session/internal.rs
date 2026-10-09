@@ -33,11 +33,4 @@ impl WorkspaceSession {
             }
         });
     }
-
-    pub(super) fn select_tab(&self, id: &str, cx: &mut Context<Self>) {
-        let id = ElementId::from(id.to_owned());
-        self.tabs.update(cx, |tabs, tabs_cx| {
-            tabs.set_selected_id(&id, tabs_cx);
-        });
-    }
 }

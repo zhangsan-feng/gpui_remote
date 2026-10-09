@@ -12,7 +12,7 @@ pub(super) use external::open_rule_window;
 
 struct PortForwardRuleWindow {
     id: Option<String>,
-    listen_host: Entity<InputState>,
+    listen_host: String,
     listen_port: Entity<InputState>,
     target_host: Entity<InputState>,
     target_port: Entity<InputState>,
@@ -46,7 +46,7 @@ impl PortForwardRuleWindow {
         };
         Self {
             id: rule.map(|rule| rule.id),
-            listen_host: input(draft.listen_host, "本机 IPv4 / IPv6 地址"),
+            listen_host: draft.listen_host,
             listen_port: input(draft.listen_port, "1-65535"),
             target_host: input(draft.target_host, "目标 IP 或域名"),
             target_port: input(draft.target_port, "1-65535"),

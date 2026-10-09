@@ -5,13 +5,14 @@ use gpui_kit::*;
 pub(crate) fn open_services_window(window: &mut Window, cx: &mut App) {
     let mut options = window_center_options(window, size(px(900.), px(640.)));
     options.titlebar = Some(TitlebarOptions {
-        title: Some("服务".into()),
-        appears_transparent: false,
+        title: None,
+        appears_transparent: true,
         traffic_light_position: None,
     });
-    options.kind = WindowKind::Dialog;
+    options.window_decorations = Some(WindowDecorations::Client);
+    options.kind = WindowKind::Normal;
     options.is_resizable = false;
-    options.is_minimizable = false;
+    options.is_minimizable = true;
 
     let _ = cx.open_window(options, |window, cx| {
         window.on_window_should_close(cx, |window, _| {

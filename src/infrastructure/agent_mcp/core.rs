@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use super::{McpSettings, SETTINGS_PATH, bridge::McpBridgeEndpoint, server};
 
-const HOST_ENV: &str = "GPUI_REMOTE_MCP_HOST";
 const PORT_ENV: &str = "GPUI_REMOTE_MCP_PORT";
 
 #[derive(Clone)]
@@ -153,11 +152,6 @@ pub(super) fn load_settings() -> McpSettings {
         .unwrap_or_default();
 
     if !file_exists {
-        if let Ok(host) = std::env::var(HOST_ENV) {
-            if !host.trim().is_empty() {
-                settings.host = host;
-            }
-        }
         if let Some(port) = std::env::var(PORT_ENV)
             .ok()
             .and_then(|value| value.parse::<u16>().ok())
@@ -168,9 +162,7 @@ pub(super) fn load_settings() -> McpSettings {
         }
     }
 
-    if settings.host.trim().is_empty() {
-        settings.host = super::DEFAULT_HOST.to_owned();
-    }
+    settings.host = super::DEFAULT_HOST.to_owned();
     if settings.port == 0 {
         settings.port = super::DEFAULT_PORT;
     }

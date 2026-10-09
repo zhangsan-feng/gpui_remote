@@ -35,11 +35,13 @@ impl Render for PortForwardRuleWindow {
                 div()
                     .text_xs()
                     .text_color(colors.muted_foreground)
-                    .child("新规则默认停用，保存后可在列表中启用。"),
+                    .child(format!(
+                        "本机监听地址：{}。新规则默认停用，保存后可在列表中启用。",
+                        self.listen_host
+                    )),
             )
             .children(
                 [
-                    ("本机监听地址", &self.listen_host),
                     ("本机监听端口", &self.listen_port),
                     ("目标主机", &self.target_host),
                     ("目标端口", &self.target_port),

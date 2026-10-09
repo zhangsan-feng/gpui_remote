@@ -15,7 +15,7 @@ impl Default for Socks5ProxySettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            host: "127.0.0.1".to_owned(),
+            host: "0.0.0.0".to_owned(),
             port: 1080,
             username: String::new(),
             password: String::new(),

@@ -1,6 +1,6 @@
 use crate::component::theme;
 use gpui_kit::component::{
-    ActiveTheme, Icon, IconName, Sizable, ThemeColor,
+    ActiveTheme, Disableable, Icon, IconName, Sizable, ThemeColor,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState},
@@ -27,24 +27,102 @@ impl ServicesOperationWindow {
             ServicesSection::SshServer => self.ssh_server_section(cx).into_any_element(),
             ServicesSection::Socks5Proxy => self.socks5_proxy_section(cx).into_any_element(),
         };
-        h_flex()
+        v_flex()
             .size_full()
-            .items_stretch()
             .bg(colors.background)
             .text_color(colors.text_color)
-            .child(self.sidebar(cx))
             .child(
                 v_flex()
                     .flex_1()
-                    .min_w_0()
-                    .bg(Hsla::transparent_black())
+                    .min_h_0()
+                    .child(self.window_title_bar(cx))
                     .child(
-                        v_flex()
+                        h_flex()
                             .flex_1()
-                            .overflow_y_scrollbar()
-                            .p_6()
-                            .gap_5()
-                            .child(content),
+                            .min_h_0()
+                            .items_stretch()
+                            .child(self.sidebar(cx))
+                            .child(
+                                v_flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .bg(Hsla::transparent_black())
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .overflow_y_scrollbar()
+                                            .p_6()
+                                            .gap_5()
+                                            .child(content),
+                                    ),
+                            ),
+                    ),
+            )
+    }
+
+    fn window_title_bar(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = theme::CustomerUiTheme::colors(cx);
+        let accent = cx.theme().accent;
+        let danger = cx.theme().danger;
+        h_flex()
+            .id("services-window-titlebar")
+            .w_full()
+            .h(px(42.))
+            .flex_shrink_0()
+            .items_center()
+            .border_b_1()
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::title_background(cx))
+            .child(
+                div()
+                    .id("services-window-titlebar-drag")
+                    .h_full()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .px_4()
+                    .window_control_area(WindowControlArea::Drag)
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.text_color)
+                            .child("服务"),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .h_full()
+                    .border_l_1()
+                    .border_color(theme::CustomerUiTheme::border_color(cx))
+                    .child(
+                        div()
+                            .id("services-window-minimize")
+                            .size(px(34.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(colors.text_color)
+                            .hover(|style| style.bg(accent))
+                            .window_control_area(WindowControlArea::Min)
+                            .when(cfg!(target_os = "linux"), |this| {
+                                this.on_click(
+                                    cx.listener(|_, _, window, _| window.minimize_window()),
+                                )
+                            })
+                            .child("−"),
+                    )
+                    .child(
+                        div()
+                            .id("services-window-close")
+                            .size(px(34.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(colors.text_color)
+                            .hover(|style| style.bg(danger))
+                            .on_click(cx.listener(|_, _, window, _| window.remove_window()))
+                            .child("×"),
                     ),
             )
     }
@@ -117,7 +195,7 @@ impl ServicesOperationWindow {
             .gap_5()
             .child(self.section_heading(
                 "MCP 服务",
-                "配置 MCP 服务监听地址、访问令牌和验证方式。",
+                "MCP 服务监听本机所有网络接口；局域网客户端需使用本机 IP，建议启用 Token 验证。",
                 cx,
             ))
             .child(self.mcp_panel(cx))
@@ -149,9 +227,9 @@ impl ServicesOperationWindow {
                             )
                             .child(div().text_xs().text_color(colors.muted_foreground).child(
                                 if self.mcp_enabled {
-                                    "应用启动时自动运行，保存配置后会重启服务"
+                                    "应用启动时自动运行，开关会立即启停服务"
                                 } else {
-                                    "服务已关闭，保存配置后会停止 MCP 服务"
+                                    "服务已关闭，开关会立即启停服务"
                                 },
                             )),
                     )
@@ -159,11 +237,14 @@ impl ServicesOperationWindow {
                         Button::new("toggle-mcp-enabled")
                             .when(self.mcp_enabled, |this| this.primary())
                             .when(!self.mcp_enabled, |this| this.outline())
-                            .label(if self.mcp_enabled {
+                            .label(if self.mcp_busy {
+                                "应用中…"
+                            } else if self.mcp_enabled {
                                 "已启动"
                             } else {
                                 "已停止"
                             })
+                            .disabled(self.mcp_busy)
                             .on_click(cx.listener(Self::toggle_mcp_enabled)),
                     ),
             )
@@ -198,12 +279,21 @@ impl ServicesOperationWindow {
                             } else {
                                 "未启用"
                             })
+                            .disabled(self.mcp_busy)
                             .on_click(cx.listener(Self::toggle_mcp_token_enabled)),
                     ),
             )
-            .child(Self::mcp_field("Host", &self.mcp_host, colors))
+            .child(Self::fixed_listener_field("监听范围", colors))
             .child(Self::mcp_field("Port", &self.mcp_port, colors))
             .child(self.mcp_token_field(cx))
+            .when(!self.mcp_token_enabled, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(colors.danger_foreground)
+                        .child("Token 验证未启用，局域网内可访问本机的设备能够调用 MCP 服务。"),
+                )
+            })
             .child(
                 h_flex().justify_end().pt_2().child(
                     h_flex()
@@ -212,12 +302,14 @@ impl ServicesOperationWindow {
                             Button::new("copy-mcp-config")
                                 .outline()
                                 .label("复制 MCP 配置")
+                                .disabled(self.mcp_busy)
                                 .on_click(cx.listener(Self::copy_mcp_config)),
                         )
                         .child(
                             Button::new("apply-mcp-settings")
                                 .primary()
                                 .label("保存并重启服务")
+                                .disabled(self.mcp_busy)
                                 .on_click(cx.listener(Self::apply_mcp_settings)),
                         ),
                 ),
@@ -252,6 +344,31 @@ impl ServicesOperationWindow {
                     .child(label),
             )
             .child(div().flex_1().child(Input::new(input).small()))
+    }
+
+    pub(super) fn fixed_listener_field(label: &'static str, colors: ThemeColor) -> Div {
+        h_flex()
+            .w_full()
+            .h(px(34.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(80.))
+                    .flex_shrink_0()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_xs()
+                    .text_color(colors.muted_foreground)
+                    .child("所有网络接口（0.0.0.0）"),
+            )
     }
 
     fn mcp_token_field(&self, cx: &Context<Self>) -> Div {

@@ -24,7 +24,7 @@ impl McpRuntime {
 
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_PORT: u16 = 37_666;
 const SETTINGS_PATH: &str = "data/mcp.json";
 

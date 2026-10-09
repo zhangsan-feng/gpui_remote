@@ -33,7 +33,7 @@ impl ServicesOperationWindow {
             .gap_5()
             .child(self.section_heading(
                 "HTTP 代理",
-                "提供本机 HTTP 和 HTTPS CONNECT 代理，供本机应用配置使用。",
+                "提供 HTTP 和 HTTPS CONNECT 代理供局域网客户端使用；非回环监听需要设置账号和密码。",
                 cx,
             ))
             .child(
@@ -78,21 +78,7 @@ impl ServicesOperationWindow {
                                     .on_click(cx.listener(Self::toggle_http_proxy)),
                             ),
                     )
-                    // .child(div().text_xs().text_color(colors.muted_foreground).child(
-                    //     "启停按钮会立即应用；修改监听地址、端口或认证信息后，请点击保存并应用。",
-                    // ))
-                    // .child(
-                    //     div()
-                    //         .text_xs()
-                    //         .text_color(colors.muted_foreground)
-                    //         .child("HTTP Basic 不会加密凭据；非回环监听仅应在可信网络中启用。"),
-                    // )
-                    .child(Self::http_proxy_field(
-                        "监听地址",
-                        &self.http_proxy_host,
-                        self.http_proxy_loading,
-                        colors,
-                    ))
+                    .child(Self::fixed_listener_field("监听范围", colors))
                     .child(Self::http_proxy_field(
                         "端口",
                         &self.http_proxy_port,
@@ -133,19 +119,19 @@ impl ServicesOperationWindow {
                         h_flex().justify_end().pt_2().child(
                             Button::new("apply-http-proxy")
                                 .primary()
-                                .label("保存并应用")
+                                .label("保存并重启")
                                 .disabled(self.http_proxy_loading || self.http_proxy_busy)
                                 .on_click(cx.listener(Self::apply_http_proxy)),
                         ),
                     )
-                    .when_some(status.address, |this, address| {
-                        this.child(
-                            div()
-                                .text_xs()
-                                .text_color(colors.muted_foreground)
-                                .child(format!("实际监听：{address}")),
-                        )
-                    })
+                    // .when_some(status.address, |this, address| {
+                    //     this.child(
+                    //         div()
+                    //             .text_xs()
+                    //             .text_color(colors.muted_foreground)
+                    //             .child(format!("实际监听：{address}")),
+                    //     )
+                    // })
                     // .child(
                     //     div()
                     //         .text_xs()

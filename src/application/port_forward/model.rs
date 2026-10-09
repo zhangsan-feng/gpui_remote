@@ -9,7 +9,7 @@ pub(crate) struct PortForwardRuleDraft {
 impl Default for PortForwardRuleDraft {
     fn default() -> Self {
         Self {
-            listen_host: "127.0.0.1".to_owned(),
+            listen_host: "0.0.0.0".to_owned(),
             listen_port: "8080".to_owned(),
             target_host: String::new(),
             target_port: String::new(),

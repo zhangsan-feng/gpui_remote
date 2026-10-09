@@ -37,7 +37,7 @@ impl ServicesOperationWindow {
         };
         let settings = HttpProxySettings {
             enabled,
-            host: self.http_proxy_host.read(cx).value().to_string(),
+            host: "0.0.0.0".to_owned(),
             port,
             username: self.http_proxy_username.read(cx).value().to_string(),
             password: self.http_proxy_password.read(cx).value().to_string(),

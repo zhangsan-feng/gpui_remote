@@ -11,7 +11,7 @@ impl PortForwardRuleWindow {
         self.busy = true;
         self.error = None;
         let draft = PortForwardRuleDraft {
-            listen_host: self.listen_host.read(cx).value().to_string(),
+            listen_host: self.listen_host.clone(),
             listen_port: self.listen_port.read(cx).value().to_string(),
             target_host: self.target_host.read(cx).value().to_string(),
             target_port: self.target_port.read(cx).value().to_string(),

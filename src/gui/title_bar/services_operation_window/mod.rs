@@ -31,24 +31,25 @@ enum ServicesSection {
 pub struct ServicesOperationWindow {
     mcp_enabled: bool,
     mcp_token_enabled: bool,
-    mcp_host: Entity<InputState>,
     mcp_port: Entity<InputState>,
     mcp_token: String,
     mcp_error: Option<String>,
+    mcp_busy: bool,
     ssh_enabled: bool,
-    ssh_host: Entity<InputState>,
+    ssh_loading: bool,
+    ssh_busy: bool,
     ssh_port: Entity<InputState>,
     ssh_username: Entity<InputState>,
     ssh_password: Entity<InputState>,
     ssh_error: Option<String>,
     socks5_enabled: bool,
-    socks5_host: Entity<InputState>,
     socks5_port: Entity<InputState>,
     socks5_username: Entity<InputState>,
     socks5_password: Entity<InputState>,
     socks5_error: Option<String>,
+    socks5_loading: bool,
+    socks5_busy: bool,
     http_proxy_enabled: bool,
-    http_proxy_host: Entity<InputState>,
     http_proxy_port: Entity<InputState>,
     http_proxy_username: Entity<InputState>,
     http_proxy_password: Entity<InputState>,
@@ -74,7 +75,6 @@ impl ServicesOperationWindow {
             .mcp
             .current_settings();
         let ssh_defaults = crate::domain::ssh_server::SshServerSettings::default();
-        let ssh_host = Self::input_with_value(ssh_defaults.host.clone(), "监听地址", window, cx);
         let ssh_port =
             Self::input_with_value(ssh_defaults.port.to_string(), "监听端口", window, cx);
         let ssh_username =
@@ -83,7 +83,6 @@ impl ServicesOperationWindow {
             Self::input_with_value(ssh_defaults.password.clone(), "登录密码", window, cx);
         let ssh_window_handle = window.window_handle();
         let ssh_application = crate::application::APPLICATION.clone();
-        let ssh_host_for_load = ssh_host.clone();
         let ssh_port_for_load = ssh_port.clone();
         let ssh_username_for_load = ssh_username.clone();
         let ssh_password_for_load = ssh_password.clone();
@@ -95,12 +94,10 @@ impl ServicesOperationWindow {
             {
                 Ok(settings) => {
                     let enabled = settings.enabled;
-                    let host = settings.host.clone();
                     let port = settings.port.to_string();
                     let username = settings.username.clone();
                     let password = settings.password.clone();
                     let _ = cx.update_window(ssh_window_handle, |_, window, cx| {
-                        ssh_host_for_load.update(cx, |input, cx| input.set_value(host, window, cx));
                         ssh_port_for_load.update(cx, |input, cx| input.set_value(port, window, cx));
                         ssh_username_for_load
                             .update(cx, |input, cx| input.set_value(username, window, cx));
@@ -110,12 +107,14 @@ impl ServicesOperationWindow {
                     let _ = this.update(cx, |this, cx| {
                         this.ssh_enabled = enabled;
                         this.ssh_error = None;
+                        this.ssh_loading = false;
                         cx.notify();
                     });
                 }
                 Err(error) => {
                     let _ = this.update(cx, |this, cx| {
                         this.ssh_error = Some(error);
+                        this.ssh_loading = false;
                         cx.notify();
                     });
                 }
@@ -124,8 +123,6 @@ impl ServicesOperationWindow {
         .detach();
 
         let socks5_defaults = crate::domain::socks5_proxy::Socks5ProxySettings::default();
-        let socks5_host =
-            Self::input_with_value(socks5_defaults.host.clone(), "监听地址", window, cx);
         let socks5_port =
             Self::input_with_value(socks5_defaults.port.to_string(), "监听端口", window, cx);
         let socks5_username = Self::input_with_value(
@@ -138,7 +135,6 @@ impl ServicesOperationWindow {
             Self::input_with_value(socks5_defaults.password.clone(), "密码（可选）", window, cx);
         let socks5_window_handle = window.window_handle();
         let socks5_application = crate::application::APPLICATION.clone();
-        let socks5_host_for_load = socks5_host.clone();
         let socks5_port_for_load = socks5_port.clone();
         let socks5_username_for_load = socks5_username.clone();
         let socks5_password_for_load = socks5_password.clone();
@@ -149,13 +145,10 @@ impl ServicesOperationWindow {
             .await
             {
                 Ok(settings) => {
-                    let host = settings.host.clone();
                     let port = settings.port.to_string();
                     let username = settings.username.clone();
                     let password = settings.password.clone();
                     let _ = cx.update_window(socks5_window_handle, |_, window, cx| {
-                        socks5_host_for_load
-                            .update(cx, |input, cx| input.set_value(host, window, cx));
                         socks5_port_for_load
                             .update(cx, |input, cx| input.set_value(port, window, cx));
                         socks5_username_for_load
@@ -166,12 +159,14 @@ impl ServicesOperationWindow {
                     let _ = this.update(cx, |this, cx| {
                         this.socks5_enabled = settings.enabled;
                         this.socks5_error = None;
+                        this.socks5_loading = false;
                         cx.notify();
                     });
                 }
                 Err(error) => {
                     let _ = this.update(cx, |this, cx| {
                         this.socks5_error = Some(error);
+                        this.socks5_loading = false;
                         cx.notify();
                     });
                 }
@@ -180,8 +175,6 @@ impl ServicesOperationWindow {
         .detach();
 
         let http_proxy_defaults = crate::domain::http_proxy::HttpProxySettings::default();
-        let http_proxy_host =
-            Self::input_with_value(http_proxy_defaults.host.clone(), "监听地址", window, cx);
         let http_proxy_port =
             Self::input_with_value(http_proxy_defaults.port.to_string(), "监听端口", window, cx);
         let http_proxy_username = Self::input_with_value(
@@ -198,7 +191,6 @@ impl ServicesOperationWindow {
         );
         let http_proxy_window_handle = window.window_handle();
         let http_proxy_application = crate::application::APPLICATION.clone();
-        let http_proxy_host_for_load = http_proxy_host.clone();
         let http_proxy_port_for_load = http_proxy_port.clone();
         let http_proxy_username_for_load = http_proxy_username.clone();
         let http_proxy_password_for_load = http_proxy_password.clone();
@@ -210,13 +202,10 @@ impl ServicesOperationWindow {
             {
                 Ok(settings) => {
                     let enabled = settings.enabled;
-                    let host = settings.host;
                     let port = settings.port.to_string();
                     let username = settings.username;
                     let password = settings.password;
                     let _ = cx.update_window(http_proxy_window_handle, |_, window, cx| {
-                        http_proxy_host_for_load
-                            .update(cx, |input, cx| input.set_value(host, window, cx));
                         http_proxy_port_for_load
                             .update(cx, |input, cx| input.set_value(port, window, cx));
                         http_proxy_username_for_load
@@ -259,24 +248,25 @@ impl ServicesOperationWindow {
         Self {
             mcp_enabled: mcp_settings.enabled,
             mcp_token_enabled: mcp_settings.token_enabled,
-            mcp_host: Self::input_with_value(mcp_settings.host, "监听地址", window, cx),
             mcp_port: Self::input_with_value(mcp_settings.port.to_string(), "监听端口", window, cx),
             mcp_token: mcp_settings.token,
             mcp_error: None,
+            mcp_busy: false,
             ssh_enabled: ssh_defaults.enabled,
-            ssh_host,
+            ssh_loading: true,
+            ssh_busy: false,
             ssh_port,
             ssh_username,
             ssh_password,
             ssh_error: None,
             socks5_enabled: socks5_defaults.enabled,
-            socks5_host,
             socks5_port,
             socks5_username,
             socks5_password,
             socks5_error: None,
+            socks5_loading: true,
+            socks5_busy: false,
             http_proxy_enabled: http_proxy_defaults.enabled,
-            http_proxy_host,
             http_proxy_port,
             http_proxy_username,
             http_proxy_password,

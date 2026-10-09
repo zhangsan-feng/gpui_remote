@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputContentType},
@@ -25,7 +25,7 @@ impl ServicesOperationWindow {
             .gap_5()
             .child(self.section_heading(
                 "SSH 服务",
-                "允许密码验证的客户端连接本机交互式 Shell 和 SFTP 文件服务。",
+                "允许局域网客户端连接本机交互式 Shell 和 SFTP 文件服务。",
                 cx,
             ))
             .child(
@@ -61,20 +61,20 @@ impl ServicesOperationWindow {
                                 Button::new("toggle-ssh-server")
                                     .when(self.ssh_enabled, |button| button.primary())
                                     .when(!self.ssh_enabled, |button| button.outline())
-                                    .label(if self.ssh_enabled {
+                                    .label(if self.ssh_loading {
+                                        "读取中…"
+                                    } else if self.ssh_busy {
+                                        "应用中…"
+                                    } else if self.ssh_enabled {
                                         "已启用"
                                     } else {
                                         "已关闭"
                                     })
+                                    .disabled(self.ssh_loading || self.ssh_busy)
                                     .on_click(cx.listener(Self::toggle_ssh_enabled)),
                             ),
                     )
-                    // .child(
-                    //     div().text_xs().text_color(colors.muted_foreground).child(
-                    //         "默认关闭。启用后监听所填地址；客户端使用下方用户名和密码登录，SFTP 根目录默认是 Desktop（不存在时为用户目录）。",
-                    //     ),
-                    // )
-                    .child(Self::mcp_field("监听地址", &self.ssh_host, colors))
+                    .child(Self::fixed_listener_field("监听范围", colors))
                     .child(Self::mcp_field("端口", &self.ssh_port, colors))
                     .child(Self::mcp_field("用户名", &self.ssh_username, colors))
                     .child(
@@ -116,7 +116,12 @@ impl ServicesOperationWindow {
                         h_flex().justify_end().pt_2().child(
                             Button::new("apply-ssh-settings")
                                 .primary()
-                                .label("保存并应用")
+                                .label(if self.ssh_busy {
+                                    "应用中…"
+                                } else {
+                                    "保存并重启"
+                                })
+                                .disabled(self.ssh_loading || self.ssh_busy)
                                 .on_click(cx.listener(Self::apply_ssh_settings)),
                         ),
                     )

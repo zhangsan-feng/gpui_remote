@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputContentType},
@@ -31,7 +31,7 @@ impl ServicesOperationWindow {
             .gap_5()
             .child(self.section_heading(
                 "SOCKS5 代理",
-                "提供本机 SOCKS5 CONNECT 代理，默认使用无认证模式。",
+                "提供 SOCKS5 CONNECT 代理供局域网客户端使用；无认证模式下，局域网设备可直接连接。",
                 cx,
             ))
             .child(
@@ -67,15 +67,20 @@ impl ServicesOperationWindow {
                                 Button::new("toggle-socks5-proxy")
                                     .when(self.socks5_enabled, |button| button.primary())
                                     .when(!self.socks5_enabled, |button| button.outline())
-                                    .label(if self.socks5_enabled {
+                                    .label(if self.socks5_loading {
+                                        "读取中…"
+                                    } else if self.socks5_busy {
+                                        "应用中…"
+                                    } else if self.socks5_enabled {
                                         "已启用"
                                     } else {
                                         "已关闭"
                                     })
+                                    .disabled(self.socks5_loading || self.socks5_busy)
                                     .on_click(cx.listener(Self::toggle_socks5_proxy)),
                             ),
                     )
-                    .child(Self::mcp_field("监听地址", &self.socks5_host, colors))
+                    .child(Self::fixed_listener_field("监听范围", colors))
                     .child(Self::mcp_field("端口", &self.socks5_port, colors))
                     .child(Self::mcp_field("用户名", &self.socks5_username, colors))
                     .child(
@@ -105,7 +110,8 @@ impl ServicesOperationWindow {
                         h_flex().justify_end().pt_2().child(
                             Button::new("apply-socks5-proxy")
                                 .primary()
-                                .label("保存并应用")
+                                .label("保存并重启")
+                                .disabled(self.socks5_loading || self.socks5_busy)
                                 .on_click(cx.listener(Self::apply_socks5_proxy)),
                         ),
                     )

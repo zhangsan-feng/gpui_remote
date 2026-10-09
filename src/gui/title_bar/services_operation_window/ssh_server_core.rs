@@ -11,8 +11,7 @@ impl ServicesOperationWindow {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ssh_enabled = !self.ssh_enabled;
-        cx.notify();
+        self.apply_ssh_settings_for_enabled(!self.ssh_enabled, cx);
     }
 
     pub(super) fn generate_ssh_password(
@@ -50,6 +49,13 @@ impl ServicesOperationWindow {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.apply_ssh_settings_for_enabled(self.ssh_enabled, cx);
+    }
+
+    fn apply_ssh_settings_for_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.ssh_loading || self.ssh_busy {
+            return;
+        }
         let port = match self.ssh_port.read(cx).value().trim().parse::<u16>() {
             Ok(port) if port > 0 => port,
             _ => {
@@ -59,12 +65,16 @@ impl ServicesOperationWindow {
             }
         };
         let settings = SshServerSettings {
-            enabled: self.ssh_enabled,
-            host: self.ssh_host.read(cx).value().to_string(),
+            enabled,
+            host: "0.0.0.0".to_owned(),
             port,
             username: self.ssh_username.read(cx).value().to_string(),
             password: self.ssh_password.read(cx).value().to_string(),
         };
+        self.ssh_busy = true;
+        self.ssh_error = None;
+        cx.notify();
+
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
             let result = crate::global_state::run_application(async move {
@@ -75,6 +85,7 @@ impl ServicesOperationWindow {
             })
             .await;
             let _ = this.update(cx, |this, cx| {
+                this.ssh_busy = false;
                 match result {
                     Ok(settings) => {
                         this.ssh_enabled = settings.enabled;

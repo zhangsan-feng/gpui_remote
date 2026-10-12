@@ -5,6 +5,7 @@ use gpui_kit::component::{
     h_flex,
     input::{Input, InputState},
     scroll::ScrollableElement,
+    switch::Switch,
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -62,7 +63,6 @@ impl ServicesOperationWindow {
 
     fn window_title_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = theme::CustomerUiTheme::colors(cx);
-        let accent = cx.theme().accent;
         let danger = cx.theme().danger;
         h_flex()
             .id("services-window-titlebar")
@@ -97,31 +97,17 @@ impl ServicesOperationWindow {
                     .border_color(theme::CustomerUiTheme::border_color(cx))
                     .child(
                         div()
-                            .id("services-window-minimize")
-                            .size(px(34.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(colors.text_color)
-                            .hover(|style| style.bg(accent))
-                            .window_control_area(WindowControlArea::Min)
-                            .when(cfg!(target_os = "linux"), |this| {
-                                this.on_click(
-                                    cx.listener(|_, _, window, _| window.minimize_window()),
-                                )
-                            })
-                            .child("−"),
-                    )
-                    .child(
-                        div()
                             .id("services-window-close")
                             .size(px(34.))
                             .flex()
                             .items_center()
                             .justify_center()
                             .text_color(colors.text_color)
-                            .hover(|style| style.bg(danger))
-                            .on_click(cx.listener(|_, _, window, _| window.remove_window()))
+                            .hover(|style| style.bg(danger.opacity(0.12)).text_color(danger))
+                            .on_click(cx.listener(|_, _, window, _| {
+                                log::debug!("services_window_close_clicked");
+                                window.remove_window();
+                            }))
                             .child("×"),
                     ),
             )
@@ -176,14 +162,24 @@ impl ServicesOperationWindow {
             .rounded_lg()
             .when(selected, |this| {
                 this.bg(ui_colors.select_background)
-                    .text_color(ui_colors.text_color)
+                    .text_color(cx.theme().primary)
             })
             .when(!selected, |this| {
                 this.text_color(cx.theme().sidebar_foreground)
                     .hover(|style| style.bg(ui_colors.hover_background))
             })
             .cursor_pointer()
-            .child(Icon::new(IconName::Settings2).small())
+            .child(
+                Icon::new(match section {
+                    ServicesSection::Mcp => IconName::Network,
+                    ServicesSection::PortForward => IconName::ArrowRight,
+                    ServicesSection::HttpProxy => IconName::Globe,
+                    ServicesSection::PortTest => IconName::ChartPie,
+                    ServicesSection::SshServer => IconName::SquareTerminal,
+                    ServicesSection::Socks5Proxy => IconName::Settings2,
+                })
+                .small(),
+            )
             .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(label))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.active_section = section;
@@ -203,9 +199,11 @@ impl ServicesOperationWindow {
 
     fn mcp_panel(&self, cx: &Context<Self>) -> Div {
         let colors = cx.theme().colors;
+        let service = cx.weak_entity();
+        let token_service = cx.weak_entity();
         v_flex()
-            .p_2()
-            .gap_3()
+            .p_4()
+            .gap_4()
             .rounded_xl()
             .border_1()
             .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -226,7 +224,9 @@ impl ServicesOperationWindow {
                                     .child("服务状态"),
                             )
                             .child(div().text_xs().text_color(colors.muted_foreground).child(
-                                if self.mcp_enabled {
+                                if self.mcp_busy {
+                                    "重启中…"
+                                } else if self.mcp_enabled {
                                     "应用启动时自动运行，开关会立即启停服务"
                                 } else {
                                     "服务已关闭，开关会立即启停服务"
@@ -234,18 +234,49 @@ impl ServicesOperationWindow {
                             )),
                     )
                     .child(
-                        Button::new("toggle-mcp-enabled")
-                            .when(self.mcp_enabled, |this| this.primary())
-                            .when(!self.mcp_enabled, |this| this.outline())
-                            .label(if self.mcp_busy {
-                                "应用中…"
-                            } else if self.mcp_enabled {
-                                "已启动"
-                            } else {
-                                "已停止"
-                            })
-                            .disabled(self.mcp_busy)
-                            .on_click(cx.listener(Self::toggle_mcp_enabled)),
+                        h_flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_full()
+                                    .bg(if self.mcp_busy {
+                                        colors.primary.opacity(0.12)
+                                    } else if self.mcp_enabled {
+                                        colors.success.opacity(0.12)
+                                    } else {
+                                        colors.muted.opacity(0.5)
+                                    })
+                                    .text_xs()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(if self.mcp_busy {
+                                        colors.primary
+                                    } else if self.mcp_enabled {
+                                        colors.success
+                                    } else {
+                                        colors.muted_foreground
+                                    })
+                                    .child(if self.mcp_busy {
+                                        "正在重启"
+                                    } else if self.mcp_enabled {
+                                        "运行中"
+                                    } else {
+                                        "已停止"
+                                    }),
+                            )
+                            .child(
+                                Switch::new("toggle-mcp-enabled")
+                                    .checked(self.mcp_enabled)
+                                    .disabled(self.mcp_busy)
+                                    .accessibility_label("启用 MCP 服务")
+                                    .on_click(move |enabled: &bool, _, app: &mut App| {
+                                        let _ = service.update(app, |this, cx| {
+                                            this.set_mcp_enabled(*enabled, cx);
+                                        });
+                                    }),
+                            ),
                     ),
             )
             .child(
@@ -271,16 +302,43 @@ impl ServicesOperationWindow {
                             ),
                     )
                     .child(
-                        Button::new("toggle-mcp-token-enabled")
-                            .when(self.mcp_token_enabled, |this| this.primary())
-                            .when(!self.mcp_token_enabled, |this| this.outline())
-                            .label(if self.mcp_token_enabled {
-                                "已启用"
-                            } else {
-                                "未启用"
-                            })
-                            .disabled(self.mcp_busy)
-                            .on_click(cx.listener(Self::toggle_mcp_token_enabled)),
+                        h_flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_full()
+                                    .bg(if self.mcp_token_enabled {
+                                        colors.success.opacity(0.12)
+                                    } else {
+                                        colors.muted.opacity(0.5)
+                                    })
+                                    .text_xs()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(if self.mcp_token_enabled {
+                                        colors.success
+                                    } else {
+                                        colors.muted_foreground
+                                    })
+                                    .child(if self.mcp_token_enabled {
+                                        "已启用"
+                                    } else {
+                                        "未启用"
+                                    }),
+                            )
+                            .child(
+                                Switch::new("toggle-mcp-token-enabled")
+                                    .checked(self.mcp_token_enabled)
+                                    .disabled(self.mcp_busy)
+                                    .accessibility_label("启用 Token 验证")
+                                    .on_click(move |enabled: &bool, _, app: &mut App| {
+                                        let _ = token_service.update(app, |this, cx| {
+                                            this.set_mcp_token_enabled(*enabled, cx);
+                                        });
+                                    }),
+                            ),
                     ),
             )
             .child(Self::fixed_listener_field("监听范围", colors))
@@ -308,7 +366,11 @@ impl ServicesOperationWindow {
                         .child(
                             Button::new("apply-mcp-settings")
                                 .primary()
-                                .label("保存并重启服务")
+                                .label(if self.mcp_busy {
+                                    "重启中…"
+                                } else {
+                                    "保存并重启服务"
+                                })
                                 .disabled(self.mcp_busy)
                                 .on_click(cx.listener(Self::apply_mcp_settings)),
                         ),
@@ -331,7 +393,7 @@ impl ServicesOperationWindow {
     ) -> Div {
         h_flex()
             .w_full()
-            .h(px(34.))
+            .h(px(38.))
             .gap_2()
             .items_center()
             .child(
@@ -343,7 +405,7 @@ impl ServicesOperationWindow {
                     .text_color(colors.muted_foreground)
                     .child(label),
             )
-            .child(div().flex_1().child(Input::new(input).small()))
+            .child(div().flex_1().child(Input::new(input)))
     }
 
     pub(super) fn fixed_listener_field(label: &'static str, colors: ThemeColor) -> Div {
@@ -375,7 +437,7 @@ impl ServicesOperationWindow {
         let colors = cx.theme().colors;
         h_flex()
             .w_full()
-            .h(px(34.))
+            .h(px(38.))
             .gap_2()
             .items_center()
             .child(
@@ -403,6 +465,19 @@ impl ServicesOperationWindow {
                     .text_color(colors.foreground)
                     .truncate()
                     .child(self.mcp_token.clone()),
+            )
+            .child(
+                Button::new("generate-mcp-token")
+                    .outline()
+                    .label("随机生成")
+                    .disabled(self.mcp_busy)
+                    .on_click(cx.listener(Self::generate_mcp_token)),
+            )
+            .child(
+                Button::new("copy-mcp-token")
+                    .outline()
+                    .label("复制")
+                    .on_click(cx.listener(Self::copy_mcp_token)),
             )
     }
 

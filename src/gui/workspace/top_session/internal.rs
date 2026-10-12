@@ -13,6 +13,7 @@ impl WorkspaceSession {
             tabs.clear(tabs_cx);
             for opened_session in sessions {
                 let workspace = workspace.clone();
+                let selected = selected_id.as_deref() == Some(opened_session.id.as_str());
                 let status = statuses
                     .get(&opened_session.id)
                     .cloned()
@@ -22,6 +23,7 @@ impl WorkspaceSession {
                         opened_session.id.clone(),
                         opened_session.profile.clone(),
                         status.clone(),
+                        selected,
                         workspace.clone(),
                         cx,
                     )

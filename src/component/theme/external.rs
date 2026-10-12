@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
 use gpui_kit::component::ActiveTheme;
-use gpui_kit::{App, Hsla, WindowBackgroundAppearance};
+use gpui_kit::{App, Hsla, WindowBackgroundAppearance, rgb};
 
-use super::{AppTheme, ChangeComponentThemeColor, CustomerUiThemeState, ThemePreview, core, ui};
+use super::{
+    AppTheme, ChangeComponentThemeColor, CustomerUiThemeState, DEFAULT_LIGHT_PALETTE, ThemePreview,
+    core, ui,
+};
 
 pub struct CustomerTheme;
 
@@ -132,6 +135,26 @@ impl CustomerUiTheme {
 
     pub fn colors(cx: &App) -> super::GuiColor {
         ui::build(cx)
+    }
+
+    pub fn uses_soft_default_light_palette(cx: &App) -> bool {
+        let state = cx.global::<CustomerUiThemeState>();
+        let colors = ui::build(cx);
+        state.theme == AppTheme::DefaultTheme
+            && colors.background.l >= 0.5
+            && !ui::has_wallpaper(cx)
+            && state.colors.background.is_none()
+            && state.colors.font.is_none()
+            && state.colors.hover.is_none()
+            && state.colors.selected.is_none()
+    }
+
+    pub fn app_background(cx: &App) -> Hsla {
+        if Self::uses_soft_default_light_palette(cx) {
+            rgb(DEFAULT_LIGHT_PALETTE.canvas).into()
+        } else {
+            ui::build(cx).background
+        }
     }
 
     pub fn panel_background(cx: &App) -> Hsla {

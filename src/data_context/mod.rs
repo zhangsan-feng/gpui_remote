@@ -1,4 +1,4 @@
-mod notice;
+pub(crate) mod notice;
 mod service_status;
 mod sftp;
 mod state;
@@ -9,7 +9,6 @@ use std::{
     collections::HashMap,
     sync::{LazyLock, Mutex, RwLock, atomic::AtomicU64},
 };
-use tokio::sync::{broadcast, watch};
 
 pub(crate) static DATA_CONTEXT: LazyLock<DataContext> = LazyLock::new(DataContext::new);
 
@@ -22,11 +21,7 @@ pub(crate) struct DataContext {
     pub(crate) notice: DataContextNotice,
 }
 
-#[derive(Clone)]
-pub(crate) struct DataContextNotice {
-    session_lifecycle_events: broadcast::Sender<DataChange>,
-    gui_refresh_notification: watch::Sender<()>,
-}
+
 
 impl DataContext {
     fn new() -> Self {
@@ -48,3 +43,4 @@ pub(crate) use state::{
     TerminalReadSnapshot, TransferRecord, TransferRequest, WorkspaceSummary,
     is_transfer_cancellable,
 };
+use crate::data_context::notice::DataContextNotice;

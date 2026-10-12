@@ -37,8 +37,3 @@ rand = "0.10.2"
 [build-dependencies]
 chrono = { version = "0.4.43", features = ["default"] }
 
-[profile.dev]
-opt-level = 1
-
-[profile.dev.package."*"]
-opt-level = 3

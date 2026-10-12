@@ -19,7 +19,9 @@ pub(crate) fn open_main_window(
     let window_options = main_window_options(cx);
     cx.open_window(window_options, move |window, app| {
         window.on_window_should_close(app, |window, _| {
+            log::info!("Main window native close requested: action=remove_window");
             window.remove_window();
+            log::info!("Main window native close handled: action=remove_window");
             false
         });
         gpui_kit::init(app);
@@ -75,6 +77,7 @@ impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         window.set_background_appearance(theme::CustomerUiTheme::window_background_appearance(cx));
         let colors = theme::CustomerUiTheme::colors(cx);
+        let root_background = theme::CustomerUiTheme::app_background(cx);
         let wallpaper = colors
             .background_image
             .clone()
@@ -82,7 +85,7 @@ impl Render for HomeView {
         div()
             .relative()
             .size_full()
-            .bg(colors.background)
+            .bg(root_background)
             .when_some(wallpaper, |this, (path, opacity)| {
                 this.child(
                     img(path)

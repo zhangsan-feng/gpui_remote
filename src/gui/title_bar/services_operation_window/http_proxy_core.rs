@@ -5,6 +5,35 @@ use crate::domain::http_proxy::HttpProxySettings;
 use super::ServicesOperationWindow;
 
 impl ServicesOperationWindow {
+    pub(super) fn generate_http_proxy_password(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let password = uuid::Uuid::new_v4().simple().to_string();
+        self.http_proxy_password
+            .update(cx, |input, cx| input.set_value(password, window, cx));
+        self.http_proxy_error = None;
+        cx.notify();
+    }
+
+    pub(super) fn copy_http_proxy_password(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let password = self.http_proxy_password.read(cx).value().to_string();
+        if password.is_empty() {
+            self.http_proxy_error = Some("请先设置或随机生成密码".to_owned());
+        } else {
+            cx.write_to_clipboard(ClipboardItem::new_string(password));
+            self.http_proxy_error = None;
+        }
+        cx.notify();
+    }
+
     pub(super) fn toggle_http_proxy(
         &mut self,
         _: &ClickEvent,
@@ -42,6 +71,7 @@ impl ServicesOperationWindow {
             username: self.http_proxy_username.read(cx).value().to_string(),
             password: self.http_proxy_password.read(cx).value().to_string(),
         };
+        let restart_started_at = std::time::Instant::now();
         self.http_proxy_busy = true;
         self.http_proxy_error = None;
         cx.notify();
@@ -52,6 +82,7 @@ impl ServicesOperationWindow {
                 application.http_proxy.update_settings(settings).await
             })
             .await;
+            super::core::keep_restart_feedback_visible_since(restart_started_at).await;
             let _ = this.update(cx, |this, cx| {
                 this.http_proxy_busy = false;
                 match result {

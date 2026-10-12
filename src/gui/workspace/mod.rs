@@ -41,6 +41,7 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_view(cx)
+        let content = self.render_view(cx);
+        div().size_full().child(content)
     }
 }

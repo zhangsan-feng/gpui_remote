@@ -59,7 +59,7 @@ mod terminal_render {
                 let select_workspace_id = workspace_id.clone();
                 let extend_workspace_id = workspace_id.clone();
 
-                h_flex()
+                let element = h_flex()
                     .h(px(19.))
                     .w_full()
                     .font_family(TERMINAL_FONT_FAMILY)
@@ -124,7 +124,8 @@ mod terminal_render {
                                 ))
                             }),
                     )
-                    .into_any_element()
+                    .into_any_element();
+                element
             })
             .size_full();
             let can_copy = self
@@ -310,7 +311,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
-            return render_empty_workspace().into_any_element();
+            return render_empty_workspace(cx).into_any_element();
         };
         let Some(terminal_model) = self.model(&workspace_id) else {
             return div().size_full().into_any_element();

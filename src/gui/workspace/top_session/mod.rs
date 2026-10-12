@@ -3,6 +3,8 @@ mod external;
 mod internal;
 mod ui;
 
+pub(super) use ui::workspace_tab_bar_background;
+
 use std::collections::HashMap;
 
 use gpui_kit::*;

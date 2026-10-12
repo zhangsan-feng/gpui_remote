@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable,
+    ActiveTheme, Disableable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputContentType},
@@ -16,7 +16,9 @@ impl ServicesOperationWindow {
     pub(super) fn ssh_server_section(&self, cx: &Context<Self>) -> Div {
         let colors = cx.theme().colors;
         let status = crate::data_context::DATA_CONTEXT.ssh_server();
-        let status_label = if status.running {
+        let status_label = if self.ssh_busy {
+            "重启中…".to_owned()
+        } else if status.running {
             format!("运行中 · {}", status.address.unwrap_or_default())
         } else {
             "未运行".to_owned()
@@ -30,8 +32,8 @@ impl ServicesOperationWindow {
             ))
             .child(
                 v_flex()
-                    .p_2()
-                    .gap_2()
+                    .p_4()
+                    .gap_3()
                     .rounded_xl()
                     .border_1()
                     .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -64,7 +66,7 @@ impl ServicesOperationWindow {
                                     .label(if self.ssh_loading {
                                         "读取中…"
                                     } else if self.ssh_busy {
-                                        "应用中…"
+                                        "重启中…"
                                     } else if self.ssh_enabled {
                                         "已启用"
                                     } else {
@@ -80,7 +82,7 @@ impl ServicesOperationWindow {
                     .child(
                         h_flex()
                             .w_full()
-                            .h(px(34.))
+                            .h(px(38.))
                             .gap_2()
                             .items_center()
                             .child(
@@ -95,7 +97,6 @@ impl ServicesOperationWindow {
                             .child(
                                 div().flex_1().min_w_0().child(
                                     Input::new(&self.ssh_password)
-                                        .small()
                                         .content_type(InputContentType::Password),
                                 ),
                             )
@@ -117,7 +118,7 @@ impl ServicesOperationWindow {
                             Button::new("apply-ssh-settings")
                                 .primary()
                                 .label(if self.ssh_busy {
-                                    "应用中…"
+                                    "重启中…"
                                 } else {
                                     "保存并重启"
                                 })

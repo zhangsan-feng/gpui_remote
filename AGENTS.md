@@ -33,15 +33,15 @@ mod.rs(类型定义、子模块声明、初始化)
 当前的计划
 
 ## 项目架构
-gui/mcp 持久化数据  读写 -> application -> Infrastructure
-gui/mcp 内存热数据  写 -> application -> data_context
-gui/mcp 内存热数据  读 -> data_context
 
-application 层操作数据应该 验证数据是否合法 操作的资源是否存在 业务逻辑 等功能
-data_context  存储运行中的数据
-Infrastructure 只提供底层功能
-
-不需要编写trait 接口 来复杂化架构
-
-
-
+- `main.rs` 启动 GPUI，`application::lifecycle` 统一编排应用服务初始化与关闭。
+- `gui` 负责交互与渲染，`component` 提供通用组件；MCP 入口在 `infrastructure::agent_mcp`，业务命令桥接到 Application。
+- `application`（`APPLICATION`）负责参数校验、资源存在性检查、业务编排和运行任务；`domain` 定义共享业务模型。
+- `infrastructure`（`INFRASTRUCTURE`）提供 SQLite、配置文件、本地文件、SSH/SFTP、代理等底层 IO 能力。
+- `data_context`（`DATA_CONTEXT`）保存工作区、终端、SFTP、服务状态的内存快照与版本，不执行 IO。
+- 持久化读写：`GUI/MCP → Application → Infrastructure → SQLite/配置文件`。
+- 热数据写入：`GUI/MCP → Application → DataContext`；后台 IO 结果经 Application 回写 DataContext。
+- 热数据读取：`GUI/MCP → DataContext`，直接读取快照。
+- 状态通知：DataContext 更新后通过 `gui_refresh_notification` 通知 GUI 重读快照；`session_lifecycle_events` 向 MCP 发布会话打开、关闭、选择事件。
+- GUI 的 IO 操作使用 `cx.spawn → run_application → tokio::spawn`；阻塞 IO 在 Infrastructure 使用 `spawn_blocking`。
+- 直接复用现有具体模块，不新增 trait 接口复杂化架构。

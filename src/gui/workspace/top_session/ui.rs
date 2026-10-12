@@ -9,20 +9,51 @@ use crate::{
 
 use super::WorkspaceSession;
 
+#[derive(Clone, Copy)]
+struct WorkspaceTabPalette {
+    background: Hsla,
+    selected_background: Hsla,
+    hover_background: Hsla,
+    border: Hsla,
+    selected_border: Hsla,
+    accent: Hsla,
+    accent_soft: Hsla,
+    accent_foreground: Hsla,
+    foreground: Hsla,
+    muted_foreground: Hsla,
+    close_hover_background: Hsla,
+}
+
+fn workspace_tab_palette(cx: &App) -> WorkspaceTabPalette {
+    let app_colors = theme::CustomerUiTheme::colors(cx);
+    let component_colors = cx.theme().colors;
+    WorkspaceTabPalette {
+        background: theme::CustomerUiTheme::tab_background(cx),
+        selected_background: app_colors.workspace_select_color,
+        hover_background: app_colors.hover_background,
+        border: app_colors.border_color,
+        selected_border: component_colors.list_active_border,
+        accent: component_colors.primary,
+        accent_soft: component_colors.accent,
+        accent_foreground: component_colors.accent_foreground,
+        foreground: app_colors.workspace_text_color,
+        muted_foreground: component_colors.muted_foreground,
+        close_hover_background: app_colors.hover_background,
+    }
+}
+
+pub fn workspace_tab_bar_background(cx: &App) -> Hsla {
+    workspace_tab_palette(cx).background
+}
+
 pub(super) fn new_workspace_tabs(_: &App) -> DraggableList {
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)
         .set_item_width(px(240.))
-        .set_item_height(px(34.))
-        .set_item_bg_provider(|cx| theme::CustomerUiTheme::tab_background(cx).into())
-        .set_item_selected_bg_provider(|cx| {
-            theme::CustomerUiTheme::colors(cx)
-                .workspace_select_color
-                .into()
-        })
-        .set_item_hover_bg_provider(|cx| {
-            theme::CustomerUiTheme::colors(cx).hover_background.into()
-        });
+        .set_item_height(px(40.))
+        .set_item_bg_provider(|cx| workspace_tab_palette(cx).background.into())
+        .set_item_selected_bg_provider(|cx| workspace_tab_palette(cx).selected_background.into())
+        .set_item_hover_bg_provider(|cx| workspace_tab_palette(cx).hover_background.into());
     tabs
 }
 
@@ -30,10 +61,11 @@ pub(in crate::gui::workspace) fn workspace_tab(
     workspace_id: String,
     profile: WorkspaceSummary,
     status: TerminalStatus,
+    selected: bool,
     workspace: Entity<WorkspaceSession>,
     cx: &App,
 ) -> AnyElement {
-    let colors = cx.theme().colors;
+    let palette = workspace_tab_palette(cx);
     let session_id = workspace_id.clone();
     let close_id = workspace_id;
     let protocol = profile.protocol.as_str();
@@ -43,6 +75,15 @@ pub(in crate::gui::workspace) fn workspace_tab(
         TerminalStatus::Disconnected => (rgb_to_u32(107, 114, 128), "已断开"),
         TerminalStatus::Failed => (rgb_to_u32(220, 38, 38), "失败"),
     };
+    let (badge_background, badge_foreground) =
+        if profile.protocol == crate::domain::session::Protocol::Sftp {
+            (
+                cx.theme().sidebar_accent,
+                cx.theme().sidebar_accent_foreground,
+            )
+        } else {
+            (palette.accent_soft, palette.accent_foreground)
+        };
     h_flex()
         .id(format!("workspace-tab-{session_id}"))
         .size_full()
@@ -51,8 +92,12 @@ pub(in crate::gui::workspace) fn workspace_tab(
         .cursor_pointer()
         .rounded_lg()
         .border_1()
-        .border_color(colors.border)
-        .text_color(colors.foreground)
+        .border_color(if selected {
+            palette.selected_border
+        } else {
+            palette.border
+        })
+        .text_color(palette.foreground)
         .child(
             div()
                 .h(px(20.))
@@ -61,10 +106,10 @@ pub(in crate::gui::workspace) fn workspace_tab(
                 .items_center()
                 .flex_shrink_0()
                 .rounded_md()
-                .bg(colors.accent)
+                .bg(badge_background)
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(colors.accent_foreground)
+                .text_color(badge_foreground)
                 .child(protocol),
         )
         .child(
@@ -92,8 +137,12 @@ pub(in crate::gui::workspace) fn workspace_tab(
                 .justify_center()
                 .text_base()
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(colors.muted_foreground)
-                .hover(|style| style.bg(colors.accent).text_color(colors.accent_foreground))
+                .text_color(palette.muted_foreground)
+                .hover(move |style| {
+                    style
+                        .bg(palette.close_hover_background)
+                        .text_color(palette.accent)
+                })
                 .child("×")
                 .on_click({
                     let workspace = workspace.clone();

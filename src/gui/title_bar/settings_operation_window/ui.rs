@@ -89,7 +89,7 @@ impl SettingsOperationWindow {
             .rounded_lg()
             .when(selected, |this| {
                 this.bg(ui_colors.select_background)
-                    .text_color(ui_colors.text_color)
+                    .text_color(cx.theme().primary)
             })
             .when(!selected, |this| {
                 this.text_color(cx.theme().sidebar_foreground)
@@ -306,16 +306,15 @@ impl SettingsOperationWindow {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let component_colors = cx.theme();
-        let colors = theme::CustomerUiTheme::colors(cx);
+        let ui_colors = theme::CustomerUiTheme::colors(cx);
         let preview = theme::CustomerTheme::preview(selected_theme);
         let selected = theme::CustomerTheme::active(cx) == selected_theme;
 
         v_flex()
             .id(format!("theme-{selected_theme:?}"))
-            .relative()
-            .h(px(138.))
-            .p_4()
-            .gap_3()
+            .h(px(150.))
+            .p_3()
+            .gap_2()
             .rounded_xl()
             .border_1()
             .border_color(if selected {
@@ -323,47 +322,89 @@ impl SettingsOperationWindow {
             } else {
                 theme::CustomerUiTheme::border_color(cx)
             })
-            .bg(if selected {
-                colors.select_background
-            } else {
-                preview.background
-            })
-            .hover(|style| style.bg(preview.hover))
+            .bg(theme::CustomerUiTheme::panel_background(cx))
+            .hover(|style| style.bg(ui_colors.hover_background))
             .cursor_pointer()
-            .when(selected, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .top_3()
-                        .right_3()
-                        .size(px(24.))
-                        .rounded_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .bg(component_colors.primary)
-                        .text_color(component_colors.primary_foreground)
-                        .child(Icon::new(IconName::Check).xsmall()),
-                )
-            })
-            .child(h_flex().gap_2().children(
-                [preview.hover, preview.accent, preview.background].map(|color| {
-                    div()
-                        .size(px(24.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(theme::CustomerUiTheme::border_color(cx))
-                        .bg(color)
-                }),
-            ))
+            .child(
+                h_flex()
+                    .w_full()
+                    .h(px(48.))
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme::CustomerUiTheme::border_color(cx))
+                    .bg(preview.background)
+                    .child(
+                        v_flex()
+                            .w(px(52.))
+                            .h_full()
+                            .p_2()
+                            .gap_1()
+                            .bg(preview.hover)
+                            .child(
+                                div()
+                                    .h(px(4.))
+                                    .rounded_full()
+                                    .bg(component_colors.muted_foreground.opacity(0.3)),
+                            )
+                            .child(
+                                div()
+                                    .h(px(4.))
+                                    .w(px(24.))
+                                    .rounded_full()
+                                    .bg(preview.accent.opacity(0.28)),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .h_full()
+                            .p_2()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .h(px(5.))
+                                    .w(px(48.))
+                                    .rounded_full()
+                                    .bg(component_colors.muted_foreground.opacity(0.25)),
+                            )
+                            .child(
+                                h_flex()
+                                    .flex_1()
+                                    .items_end()
+                                    .child(
+                                        div().h(px(15.)).w(px(58.)).rounded_sm().bg(preview.hover),
+                                    )
+                                    .child(
+                                        div().h(px(12.)).w(px(34.)).rounded_sm().bg(preview.accent),
+                                    ),
+                            ),
+                    ),
+            )
             .child(
                 v_flex()
                     .gap_1()
                     .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(title),
+                        h_flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(title),
+                            )
+                            .when(selected, |this| {
+                                this.child(
+                                    h_flex()
+                                        .gap_1()
+                                        .items_center()
+                                        .text_xs()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(component_colors.primary)
+                                        .child(Icon::new(IconName::Check).xsmall())
+                                        .child("当前主题"),
+                                )
+                            }),
                     )
                     .child(
                         div()

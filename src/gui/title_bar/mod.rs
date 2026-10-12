@@ -5,9 +5,8 @@ pub mod session_operation_window;
 mod settings_operation_window;
 mod ui;
 
-use crate::component::theme;
 use gpui_kit::component::{
-    ActiveTheme, IconName, Sizable,
+    IconName, Sizable,
     button::{Button, ButtonVariants as _},
     h_flex,
     menu::DropdownMenu as _,
@@ -27,22 +26,23 @@ impl AppTitleBar {
 impl Render for AppTitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let maximize_label = if window.is_maximized() { "❐" } else { "□" };
-        let colors = cx.theme();
+        let palette = ui::title_bar_palette(cx);
         h_flex()
             .id("app-title-bar")
             .on_action(cx.listener(Self::open_session_window))
             .on_action(cx.listener(Self::open_settings))
             .w_full()
-            .h(px(42.))
+            .h(px(38.))
             .flex_shrink_0()
             .border_b_1()
-            .border_color(theme::CustomerUiTheme::border_color(cx))
-            .bg(theme::CustomerUiTheme::title_background(cx))
+            .border_color(palette.border)
+            .bg(palette.background)
             .child(
                 h_flex()
                     .h_full()
                     .px_3()
                     .gap_2()
+                    .text_color(palette.foreground)
                     .child(
                         Button::new("top_session-menu")
                             .ghost()
@@ -94,22 +94,24 @@ impl Render for AppTitleBar {
                 h_flex()
                     .h_full()
                     .border_l_1()
-                    .border_color(colors.title_bar_border)
+                    .border_color(palette.border)
                     .child(self.window_button(
                         "window-min",
                         "−",
                         WindowControlArea::Min,
-                        colors.accent,
+                        palette.foreground,
+                        palette.control_hover,
                         cx,
                     ))
                     .child(self.window_button(
                         "window-max",
                         maximize_label,
                         WindowControlArea::Max,
-                        colors.accent,
+                        palette.foreground,
+                        palette.control_hover,
                         cx,
                     ))
-                    .child(self.close_button(colors.danger, cx)),
+                    .child(self.close_button(palette.foreground, palette.close_hover, cx)),
             )
     }
 }

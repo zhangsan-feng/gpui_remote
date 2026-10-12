@@ -35,16 +35,23 @@ async fn main() {
     let shutdown_application = application.clone();
 
     let http_client = ReqwestClient::user_agent("gpui").unwrap();
-    gpui_kit::application()
-        .with_http_client(Arc::new(http_client))
-        .with_assets(component::assets::MergedAssets::new())
-        .run(move |cx| {
-            gui::home::open_main_window(
-                cx,
-                theme_settings.clone(),
-                theme_updates.clone(),
-                theme_changed.clone(),
-            );
-        });
+    // Keep GPUI on the main thread without inheriting this Tokio poll's coop budget.
+    // Otherwise GPUI tasks awaiting Tokio channels stop progressing once it is exhausted.
+    tokio::task::block_in_place(move || {
+        info!("GPUI application event loop starting: execution=block_in_place");
+        gpui_kit::application()
+            .with_http_client(Arc::new(http_client))
+            .with_assets(component::assets::MergedAssets::new())
+            .run(move |cx| {
+                gui::home::open_main_window(
+                    cx,
+                    theme_settings.clone(),
+                    theme_updates.clone(),
+                    theme_changed.clone(),
+                );
+            });
+    });
+    info!("GPUI application event loop returned; shutdown starting");
     shutdown_application.shutdown().await;
+    info!("Application shutdown complete");
 }

@@ -24,6 +24,9 @@ impl DataContext {
             item.workspace_id == workspace_id
                 && item.protocol == crate::domain::session::Protocol::Ssh
         }) {
+            log::debug!(
+                "SSH terminal state publish skipped: workspace_id={workspace_id}, reason=workspace_missing"
+            );
             return false;
         }
         let mut terminals = self
@@ -31,6 +34,9 @@ impl DataContext {
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(terminal) = terminals.get_mut(workspace_id) else {
+            log::debug!(
+                "SSH terminal state publish skipped: workspace_id={workspace_id}, reason=terminal_missing"
+            );
             return false;
         };
         let status = data.status.clone();
@@ -41,6 +47,8 @@ impl DataContext {
         }
         terminal.snapshot.gui_snapshot_version =
             terminal.snapshot.gui_snapshot_version.wrapping_add(1);
+        let gui_snapshot_version = terminal.snapshot.gui_snapshot_version;
+        let mcp_snapshot_version = terminal.snapshot.mcp_snapshot_version;
         drop(terminals);
         snapshot.revision = snapshot.revision.wrapping_add(1);
         let revision = snapshot.revision;
@@ -53,7 +61,11 @@ impl DataContext {
         workspace.terminal_revision = revision;
         drop(snapshot);
         drop(_commit);
-        self.notice.notify_gui_refresh();
+        let refresh_sequence = self.notice.notify_gui_refresh();
+        let process_id = std::process::id();
+        log::debug!(
+            "SSH terminal state published: process_id={process_id}, workspace_id={workspace_id}, content_changed={content_changed}, revision={revision}, gui_snapshot_version={gui_snapshot_version}, mcp_snapshot_version={mcp_snapshot_version}, refresh_sequence={refresh_sequence}"
+        );
         true
     }
 

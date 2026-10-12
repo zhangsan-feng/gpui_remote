@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable,
+    ActiveTheme, Disableable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputContentType},
@@ -10,15 +10,15 @@ use gpui_kit::*;
 
 use crate::component::theme;
 
-use super::ServicesOperationWindow;
-
-const MAX_VISIBLE_CONNECTIONS: usize = 5;
+use super::{ServicesOperationWindow, active_connections::active_connection_log};
 
 impl ServicesOperationWindow {
     pub(super) fn socks5_proxy_section(&self, cx: &Context<Self>) -> Div {
         let colors = cx.theme().colors;
         let status = crate::data_context::DATA_CONTEXT.socks5_proxy();
-        let status_label = if status.running {
+        let status_label = if self.socks5_busy {
+            "重启中…".to_owned()
+        } else if status.running {
             format!(
                 "运行中 · {} · {} 个连接",
                 status.address.as_deref().unwrap_or_default(),
@@ -36,8 +36,8 @@ impl ServicesOperationWindow {
             ))
             .child(
                 v_flex()
-                    .p_2()
-                    .gap_2()
+                    .p_4()
+                    .gap_3()
                     .rounded_xl()
                     .border_1()
                     .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -70,7 +70,7 @@ impl ServicesOperationWindow {
                                     .label(if self.socks5_loading {
                                         "读取中…"
                                     } else if self.socks5_busy {
-                                        "应用中…"
+                                        "重启中…"
                                     } else if self.socks5_enabled {
                                         "已启用"
                                     } else {
@@ -86,7 +86,7 @@ impl ServicesOperationWindow {
                     .child(
                         h_flex()
                             .w_full()
-                            .h(px(34.))
+                            .h(px(38.))
                             .gap_2()
                             .items_center()
                             .child(
@@ -101,23 +101,40 @@ impl ServicesOperationWindow {
                             .child(
                                 div().flex_1().min_w_0().child(
                                     Input::new(&self.socks5_password)
-                                        .small()
                                         .content_type(InputContentType::Password),
                                 ),
+                            )
+                            .child(
+                                Button::new("generate-socks5-password")
+                                    .outline()
+                                    .label("随机生成")
+                                    .disabled(self.socks5_loading || self.socks5_busy)
+                                    .on_click(cx.listener(Self::generate_socks5_password)),
+                            )
+                            .child(
+                                Button::new("copy-socks5-password")
+                                    .outline()
+                                    .label("复制")
+                                    .disabled(self.socks5_loading || self.socks5_busy)
+                                    .on_click(cx.listener(Self::copy_socks5_password)),
                             ),
                     )
                     .child(
                         h_flex().justify_end().pt_2().child(
                             Button::new("apply-socks5-proxy")
                                 .primary()
-                                .label("保存并重启")
+                                .label(if self.socks5_busy {
+                                    "重启中…"
+                                } else {
+                                    "保存并重启"
+                                })
                                 .disabled(self.socks5_loading || self.socks5_busy)
                                 .on_click(cx.listener(Self::apply_socks5_proxy)),
                         ),
                     )
                     .child(
                         v_flex()
-                            .gap_3()
+                            .gap_1()
                             .child(
                                 h_flex()
                                     .items_center()
@@ -129,69 +146,29 @@ impl ServicesOperationWindow {
                                             .child("活跃连接"),
                                     )
                                     .child(
-                                        h_flex()
-                                            .items_center()
-                                            .gap_2()
-                                            .when(
-                                                status.connections.len() > MAX_VISIBLE_CONNECTIONS,
-                                                |this| {
-                                                    this.child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(colors.muted_foreground)
-                                                            .child(format!(
-                                                                "显示最新 {} 条",
-                                                                MAX_VISIBLE_CONNECTIONS
-                                                            )),
-                                                    )
-                                                },
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(colors.muted_foreground)
-                                                    .child(format!(
-                                                        "{} 条",
-                                                        status.connections.len()
-                                                    )),
-                                            ),
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors.muted_foreground)
+                                            .child(format!("{} 条", status.connections.len())),
                                     ),
                             )
-                            .when(status.connections.is_empty(), |this| {
-                                this.child(
-                                    div()
-                                        .w_full()
-                                        .p_3()
-                                        .rounded_lg()
-                                        .border_1()
-                                        .border_color(theme::CustomerUiTheme::border_color(cx))
-                                        .text_xs()
-                                        .text_color(colors.muted_foreground)
-                                        .child("当前没有活跃连接"),
-                                )
-                            })
-                            .children(
+                            .child(active_connection_log(
                                 status
                                     .connections
                                     .iter()
                                     .rev()
-                                    .take(MAX_VISIBLE_CONNECTIONS)
                                     .map(|connection| {
-                                        div()
-                                            .w_full()
-                                            .p_3()
-                                            .rounded_lg()
-                                            .border_1()
-                                            .border_color(theme::CustomerUiTheme::border_color(cx))
-                                            .text_xs()
-                                            .child(format!(
-                                                "客户端 {} → 我的代理 {} → 目的 {}",
-                                                connection.client,
-                                                connection.proxy,
-                                                connection.destination
-                                            ))
-                                    }),
-                            ),
+                                        format!(
+                                            "客户端 {} → 我的代理 {} → 目的 {}",
+                                            connection.client,
+                                            connection.proxy,
+                                            connection.destination
+                                        )
+                                    })
+                                    .collect(),
+                                "当前没有活跃连接",
+                                cx,
+                            )),
                     )
                     .when_some(status.error, |this, error| {
                         this.child(

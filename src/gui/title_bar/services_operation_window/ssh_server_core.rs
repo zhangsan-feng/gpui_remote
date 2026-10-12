@@ -71,6 +71,7 @@ impl ServicesOperationWindow {
             username: self.ssh_username.read(cx).value().to_string(),
             password: self.ssh_password.read(cx).value().to_string(),
         };
+        let restart_started_at = std::time::Instant::now();
         self.ssh_busy = true;
         self.ssh_error = None;
         cx.notify();
@@ -84,6 +85,7 @@ impl ServicesOperationWindow {
                     .await
             })
             .await;
+            super::core::keep_restart_feedback_visible_since(restart_started_at).await;
             let _ = this.update(cx, |this, cx| {
                 this.ssh_busy = false;
                 match result {

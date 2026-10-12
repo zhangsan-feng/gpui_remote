@@ -22,8 +22,8 @@ impl ServicesOperationWindow {
             ))
             .child(
                 v_flex()
-                    .p_2()
-                    .gap_2()
+                    .p_4()
+                    .gap_3()
                     .rounded_xl()
                     .border_1()
                     .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -76,6 +76,32 @@ impl ServicesOperationWindow {
                                                 .text_color(status_foreground)
                                                 .child(label),
                                         )
+                                        .when_some(result.host_reachable, |this, reachable| {
+                                            let (label, background, foreground) = if reachable {
+                                                (
+                                                    "Ping 可达",
+                                                    colors.success,
+                                                    colors.success_foreground,
+                                                )
+                                            } else {
+                                                (
+                                                    "Ping 不可达",
+                                                    colors.danger,
+                                                    colors.danger_foreground,
+                                                )
+                                            };
+                                            this.child(
+                                                div()
+                                                    .px_2()
+                                                    .py_1()
+                                                    .rounded_md()
+                                                    .bg(background)
+                                                    .text_xs()
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(foreground)
+                                                    .child(label),
+                                            )
+                                        })
                                         .child(
                                             div()
                                                 .text_sm()

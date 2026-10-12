@@ -95,7 +95,10 @@ mod core {
 }
 
 mod runtime {
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use anyhow::Result;
     use tokio::sync::mpsc;
@@ -109,6 +112,114 @@ mod runtime {
 
     const REFRESH_INTERVAL: Duration = Duration::from_millis(33);
     const CHANNEL_CLOSE_GRACE_PERIOD: Duration = Duration::from_secs(5);
+    const PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
+
+    #[derive(Default)]
+    struct TerminalPerfWindow {
+        started_at: Option<Instant>,
+        reported_idle: bool,
+        data_chunks: u64,
+        data_bytes: u64,
+        process_time: Duration,
+        max_process_time: Duration,
+        response_count: u64,
+        response_bytes: u64,
+        response_send_time: Duration,
+        max_response_send_time: Duration,
+        command_count: u64,
+        command_time: Duration,
+        max_command_time: Duration,
+        frame_build_count: u64,
+        frame_build_time: Duration,
+        max_frame_build_time: Duration,
+        publish_attempts: u64,
+        publish_time: Duration,
+        max_publish_time: Duration,
+    }
+
+    impl TerminalPerfWindow {
+        fn new() -> Self {
+            Self {
+                started_at: Some(Instant::now()),
+                ..Self::default()
+            }
+        }
+
+        fn record_data(&mut self, byte_count: usize, elapsed: Duration) {
+            self.data_chunks += 1;
+            self.data_bytes += byte_count as u64;
+            self.process_time += elapsed;
+            self.max_process_time = self.max_process_time.max(elapsed);
+        }
+
+        fn record_command(&mut self, elapsed: Duration) {
+            self.command_count += 1;
+            self.command_time += elapsed;
+            self.max_command_time = self.max_command_time.max(elapsed);
+        }
+
+        fn record_responses(&mut self, count: usize, byte_count: usize, elapsed: Duration) {
+            self.response_count += count as u64;
+            self.response_bytes += byte_count as u64;
+            self.response_send_time += elapsed;
+            self.max_response_send_time = self.max_response_send_time.max(elapsed);
+        }
+
+        fn record_frame_build(&mut self, elapsed: Duration) {
+            self.frame_build_count += 1;
+            self.frame_build_time += elapsed;
+            self.max_frame_build_time = self.max_frame_build_time.max(elapsed);
+        }
+
+        fn record_publish(&mut self, elapsed: Duration) {
+            self.publish_attempts += 1;
+            self.publish_time += elapsed;
+            self.max_publish_time = self.max_publish_time.max(elapsed);
+        }
+
+        fn maybe_log(&mut self, workspace_id: &str) {
+            let Some(started_at) = self.started_at else {
+                *self = Self::new();
+                return;
+            };
+            let elapsed = started_at.elapsed();
+            if elapsed < PERF_LOG_INTERVAL {
+                return;
+            }
+            if self.data_chunks > 0 || self.command_count > 0 || self.frame_build_count > 0 {
+                log::info!(
+                    "SSH terminal perf window: workspace_id={workspace_id}, interval_ms={}, data_chunks={}, data_bytes={}, process_total_us={}, process_max_us={}, replies={}, reply_bytes={}, reply_send_total_us={}, reply_send_max_us={}, commands={}, command_total_us={}, command_max_us={}, frame_builds={}, frame_build_total_us={}, frame_build_max_us={}, publish_attempts={}, publish_attempt_total_us={}, publish_attempt_max_us={}",
+                    elapsed.as_millis(),
+                    self.data_chunks,
+                    self.data_bytes,
+                    self.process_time.as_micros(),
+                    self.max_process_time.as_micros(),
+                    self.response_count,
+                    self.response_bytes,
+                    self.response_send_time.as_micros(),
+                    self.max_response_send_time.as_micros(),
+                    self.command_count,
+                    self.command_time.as_micros(),
+                    self.max_command_time.as_micros(),
+                    self.frame_build_count,
+                    self.frame_build_time.as_micros(),
+                    self.max_frame_build_time.as_micros(),
+                    self.publish_attempts,
+                    self.publish_time.as_micros(),
+                    self.max_publish_time.as_micros(),
+                );
+            } else if !self.reported_idle {
+                log::info!(
+                    "SSH terminal idle window: workspace_id={workspace_id}, interval_ms={}, reason=no_channel_data_or_terminal_commands",
+                    elapsed.as_millis(),
+                );
+                self.reported_idle = true;
+            }
+            let reported_idle = self.reported_idle;
+            *self = Self::new();
+            self.reported_idle = reported_idle;
+        }
+    }
 
     pub(crate) struct TerminalSessionExit {
         pub(crate) commands: mpsc::UnboundedReceiver<TerminalSessionCommand>,
@@ -137,6 +248,7 @@ mod runtime {
         let mut content_dirty = false;
         let mut exit_message = None;
         let mut remote_eof_deadline = None;
+        let mut perf = TerminalPerfWindow::new();
 
         let stop_reason = loop {
             tokio::select! {
@@ -147,17 +259,22 @@ mod runtime {
                             &model,
                             &mut last_frame,
                             content_dirty,
+                            &mut perf,
                         );
                         frame_dirty = false;
                         content_dirty = false;
                     }
-                    if !apply_command(
+                    let command_started = Instant::now();
+                    let keep_running = apply_command(
                         command,
                         shell,
                         &model,
                         &mut frame_dirty,
                         workspace_id,
-                    ).await? {
+                    ).await?;
+                    perf.record_command(command_started.elapsed());
+                    perf.maybe_log(workspace_id);
+                    if !keep_running {
                         log::debug!(
                             "SSH terminal runtime stopping: workspace_id={workspace_id}, reason=application_command"
                         );
@@ -182,18 +299,35 @@ mod runtime {
                             &model,
                             &mut last_frame,
                             content_dirty,
+                            &mut perf,
                         );
                         frame_dirty = false;
                         content_dirty = false;
                     }
+                    perf.maybe_log(workspace_id);
                 }
                 message = shell.wait_event() => match message {
                     Some(SshChannelEvent::Data(data)) => {
-                        for response in model.process(&data) {
+                        let process_started = Instant::now();
+                        let responses = model.process(&data);
+                        perf.record_data(data.len(), process_started.elapsed());
+                        let response_count = responses.len();
+                        let mut response_bytes = 0usize;
+                        let response_started = Instant::now();
+                        for response in responses {
+                            response_bytes += response.len();
                             shell.send_data(response).await?;
+                        }
+                        if response_count > 0 {
+                            perf.record_responses(
+                                response_count,
+                                response_bytes,
+                                response_started.elapsed(),
+                            );
                         }
                         frame_dirty = true;
                         content_dirty = true;
+                        perf.maybe_log(workspace_id);
                     }
                     Some(SshChannelEvent::ExitStatus(exit_status)) => {
                         log::debug!(
@@ -262,8 +396,9 @@ mod runtime {
         };
 
         if frame_dirty {
-            publish_model(&model, &mut last_frame, content_dirty);
+            publish_model(&model, &mut last_frame, content_dirty, &mut perf);
         }
+        perf.maybe_log(workspace_id);
         log::debug!(
             "SSH terminal runtime ended: workspace_id={workspace_id}, reason={}, mcp_snapshot_version={}, gui_snapshot_version={}",
             stop_reason.0,
@@ -289,6 +424,7 @@ mod runtime {
             .data
             .frame
             .clone();
+        let mut perf = TerminalPerfWindow::new();
         let stop_reason = loop {
             let Some(command) = commands.recv().await else {
                 break "command_channel_closed";
@@ -321,7 +457,8 @@ mod runtime {
                 }
             }
             if frame_dirty {
-                publish_model(&model, &mut last_frame, false);
+                publish_model(&model, &mut last_frame, false, &mut perf);
+                perf.maybe_log(workspace_id);
             }
         };
         log::debug!(
@@ -393,13 +530,16 @@ mod runtime {
         model: &TerminalModel,
         last_frame: &mut Arc<TerminalFrame>,
         content_changed: bool,
+        perf: &mut TerminalPerfWindow,
     ) {
         let Some(snapshot) = model.read() else {
             return;
         };
+        let frame_started = Instant::now();
         let Some(frame) = model.frame_reusing(Some(last_frame.as_ref())) else {
             return;
         };
+        perf.record_frame_build(frame_started.elapsed());
         let next_frame = Arc::new(frame);
         if same_frame(last_frame, &next_frame) {
             return;
@@ -417,11 +557,13 @@ mod runtime {
             status: snapshot.data.status.clone(),
             message: snapshot.data.message.clone(),
         };
+        let publish_started = Instant::now();
         if content_changed {
             model.replace(data);
         } else {
             model.replace_view(data);
         }
+        perf.record_publish(publish_started.elapsed());
     }
 
     fn same_frame(left: &TerminalFrame, right: &TerminalFrame) -> bool {

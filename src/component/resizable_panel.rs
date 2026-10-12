@@ -1,5 +1,5 @@
-use crate::component::color::rgb_to_u32;
-use gpui_kit::component::{h_flex, v_flex};
+use crate::component::{color::rgb_to_u32, theme};
+use gpui_kit::component::{ActiveTheme, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use uuid::Uuid;
@@ -25,9 +25,9 @@ pub struct ResizeHandleStyle {
 impl Default for ResizeHandleStyle {
     fn default() -> Self {
         Self {
-            size: px(2.0),
-            bg: rgb_to_u32(220, 220, 220).into(),
-            active_bg: rgb(0x007acc).into(),
+            size: px(1.0),
+            bg: rgb_to_u32(203, 213, 225).into(),
+            active_bg: rgb_to_u32(34, 114, 209).into(),
         }
     }
 }
@@ -39,7 +39,7 @@ pub struct ResizablePanel {
     panel_size: f32,
     min_panel_size: f32,
     max_panel_size: Option<f32>,
-    resize_handle_style: ResizeHandleStyle,
+    resize_handle_style: Option<ResizeHandleStyle>,
     resize_handle_id: ElementId,
     resize_handle_hit_id: ElementId,
     resize_start: Option<(Point<Pixels>, f32)>,
@@ -58,7 +58,7 @@ impl ResizablePanel {
             panel_size: 260.0,
             min_panel_size: 150.0,
             max_panel_size: None,
-            resize_handle_style: ResizeHandleStyle::default(),
+            resize_handle_style: None,
             resize_handle_id: ElementId::Uuid(Uuid::new_v4()),
             resize_handle_hit_id: ElementId::Uuid(Uuid::new_v4()),
             resize_start: None,
@@ -82,7 +82,7 @@ impl ResizablePanel {
     }
 
     pub fn with_resize_handle_style(mut self, style: ResizeHandleStyle) -> Self {
-        self.resize_handle_style = style;
+        self.resize_handle_style = Some(style);
         self
     }
 
@@ -120,7 +120,7 @@ impl ResizablePanel {
             Axis::Horizontal => f32::from(bounds.size.width),
             Axis::Vertical => f32::from(bounds.size.height),
         };
-        let resize_handle_size = f32::from(self.resize_handle_style.size);
+        let resize_handle_size = f32::from(self.resize_handle_style.unwrap_or_default().size);
         let container_limit = (container_size - resize_handle_size).max(0.0);
 
         self.max_panel_size
@@ -129,11 +129,17 @@ impl ResizablePanel {
     }
 
     fn resize_handle_hit_size(&self) -> Pixels {
-        px(f32::from(self.resize_handle_style.size).max(10.0))
+        px(f32::from(self.resize_handle_style.unwrap_or_default().size).max(10.0))
     }
 
     fn render_resize_handle(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let style = self.resize_handle_style;
+        let style = self
+            .resize_handle_style
+            .unwrap_or_else(|| ResizeHandleStyle {
+                bg: theme::CustomerUiTheme::border_color(cx),
+                active_bg: cx.theme().primary,
+                ..ResizeHandleStyle::default()
+            });
         let hit_size = self.resize_handle_hit_size();
         let hit_offset = px((f32::from(style.size) - f32::from(hit_size)) / 2.0);
         let hit_target = div()
@@ -171,6 +177,7 @@ impl ResizablePanel {
             .id(self.resize_handle_id.clone())
             .relative()
             .bg(style.bg)
+            .hover(move |this| this.bg(style.active_bg.opacity(0.5)))
             .active(move |this| this.bg(style.active_bg))
             .when(matches!(self.axis, Axis::Horizontal), |this| {
                 this.w(style.size).h_full().cursor_col_resize()

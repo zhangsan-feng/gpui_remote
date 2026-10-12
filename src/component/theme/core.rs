@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use gpui_kit::component::{Colorize, Theme, ThemeMode};
-use gpui_kit::{App, Hsla, Rgba};
+use gpui_kit::{App, Hsla, Rgba, rgb};
 
 use crate::{
     component::color::rgb_to_u32,
@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    AppTheme, ColorOverrides, CustomerUiThemeState, HOVER_LIGHTNESS_OFFSET,
+    AppTheme, ColorOverrides, CustomerUiThemeState, DEFAULT_LIGHT_PALETTE, HOVER_LIGHTNESS_OFFSET,
     MIN_HOVER_SELECTION_CONTRAST, REGION_BACKGROUND_OFFSET, StoredColors, ThemePreview,
     ThemeSettings, VisualSettings,
 };
@@ -39,16 +39,16 @@ impl AppTheme {
                 (138, 0, 51),
                 (219, 0, 81),
             ),
-            Self::DefaultTheme => palette_from_tokens(
-                (17, 17, 17),
-                (115, 115, 115),
-                (0, 0, 0),
-                (229, 229, 229),
-                (255, 255, 255),
-                (163, 163, 163),
-                (17, 17, 17),
-                (115, 115, 115),
-            ),
+            Self::DefaultTheme => ThemePalette {
+                accent: rgb(DEFAULT_LIGHT_PALETTE.primary),
+                accent_light: rgb(DEFAULT_LIGHT_PALETTE.primary_hover),
+                accent_dark: rgb(DEFAULT_LIGHT_PALETTE.primary_active),
+                soft: rgb(DEFAULT_LIGHT_PALETTE.surface),
+                background: rgb(0xffffff),
+                border: rgb(DEFAULT_LIGHT_PALETTE.border),
+                foreground: rgb(DEFAULT_LIGHT_PALETTE.foreground),
+                muted_foreground: rgb(DEFAULT_LIGHT_PALETTE.muted_foreground),
+            },
             Self::LightBlue => palette_from_tokens(
                 (117, 179, 255),
                 (169, 207, 252),
@@ -132,8 +132,16 @@ pub(super) fn preview(theme: AppTheme) -> ThemePreview {
     let background: Hsla = palette.background.into();
     ThemePreview {
         accent,
-        background,
-        hover: derive_hover(palette.soft.into(), derive_selected(background, accent)),
+        background: if theme == AppTheme::DefaultTheme {
+            rgb(DEFAULT_LIGHT_PALETTE.canvas).into()
+        } else {
+            background
+        },
+        hover: if theme == AppTheme::DefaultTheme {
+            rgb(DEFAULT_LIGHT_PALETTE.hover).into()
+        } else {
+            derive_hover(palette.soft.into(), derive_selected(background, accent))
+        },
     }
 }
 
@@ -194,6 +202,12 @@ pub(super) fn apply_theme(cx: &mut App) {
     let primary_active = with_alpha(accent_dark, 0.92);
     let primary_foreground = default_foreground(accent.l < 0.5);
 
+    let use_default_light_palette = app_theme == AppTheme::DefaultTheme
+        && colors.background.is_none()
+        && colors.font.is_none()
+        && colors.hover.is_none()
+        && colors.selected.is_none()
+        && !super::ui::has_wallpaper(cx);
     let theme = Theme::global_mut(cx);
     theme.mode = if dark {
         ThemeMode::Dark
@@ -262,8 +276,46 @@ pub(super) fn apply_theme(cx: &mut App) {
     theme.caret = foreground;
     theme.progress_bar = accent;
     theme.slider_thumb = accent;
+    if use_default_light_palette {
+        apply_default_light_palette(theme);
+    }
     let colors = theme.colors;
     theme.tokens = (&colors).into();
+}
+
+fn apply_default_light_palette(theme: &mut Theme) {
+    let palette = &DEFAULT_LIGHT_PALETTE;
+    let surface: Hsla = rgb(palette.surface).into();
+    let sidebar: Hsla = rgb(palette.sidebar).into();
+    let hover: Hsla = rgb(palette.hover).into();
+    let selected: Hsla = rgb(palette.selected).into();
+    theme.muted = surface;
+    theme.secondary = surface;
+    theme.secondary_hover = hover;
+    theme.secondary_active = selected;
+    theme.title_bar = surface;
+    theme.sidebar = sidebar;
+    theme.tab = surface;
+    theme.tab_bar = surface;
+    theme.tab_bar_segmented = sidebar;
+    theme.tab_active = selected;
+    theme.list_head = surface;
+    theme.table_head = surface;
+    theme.group_box = surface;
+    theme.button = surface;
+    theme.button_hover = hover;
+    theme.button_active = selected;
+    theme.button_secondary = rgb(palette.orange).into();
+    theme.button_secondary_foreground = rgb(palette.orange_foreground).into();
+    theme.button_secondary_hover = rgb(palette.orange_hover).into();
+    theme.button_secondary_active = rgb(palette.orange_active).into();
+    theme.accent = rgb(palette.violet).into();
+    theme.accent_foreground = rgb(palette.violet_foreground).into();
+    theme.sidebar_accent = rgb(palette.mint).into();
+    theme.sidebar_accent_foreground = rgb(palette.mint_foreground).into();
+    theme.selection = selected;
+    theme.list_active = selected;
+    theme.list_hover = hover;
 }
 
 pub(super) fn refresh(cx: &mut App, reapply_theme: bool) {

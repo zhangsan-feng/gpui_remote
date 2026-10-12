@@ -5,6 +5,35 @@ use crate::domain::socks5_proxy::Socks5ProxySettings;
 use super::ServicesOperationWindow;
 
 impl ServicesOperationWindow {
+    pub(super) fn generate_socks5_password(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let password = uuid::Uuid::new_v4().simple().to_string();
+        self.socks5_password
+            .update(cx, |input, cx| input.set_value(password, window, cx));
+        self.socks5_error = None;
+        cx.notify();
+    }
+
+    pub(super) fn copy_socks5_password(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let password = self.socks5_password.read(cx).value().to_string();
+        if password.is_empty() {
+            self.socks5_error = Some("请先设置或随机生成密码".to_owned());
+        } else {
+            cx.write_to_clipboard(ClipboardItem::new_string(password));
+            self.socks5_error = None;
+        }
+        cx.notify();
+    }
+
     pub(super) fn toggle_socks5_proxy(
         &mut self,
         _: &ClickEvent,
@@ -42,6 +71,7 @@ impl ServicesOperationWindow {
             username: self.socks5_username.read(cx).value().to_string(),
             password: self.socks5_password.read(cx).value().to_string(),
         };
+        let restart_started_at = std::time::Instant::now();
         self.socks5_busy = true;
         self.socks5_error = None;
         cx.notify();
@@ -52,6 +82,7 @@ impl ServicesOperationWindow {
                 application.socks5_proxy.update_settings(settings).await
             })
             .await;
+            super::core::keep_restart_feedback_visible_since(restart_started_at).await;
             let _ = this.update(cx, |this, cx| {
                 this.socks5_busy = false;
                 match result {

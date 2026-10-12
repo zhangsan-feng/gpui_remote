@@ -1,6 +1,7 @@
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 
+mod active_connections;
 mod core;
 mod external;
 mod http_proxy_core;

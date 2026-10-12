@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable,
+    ActiveTheme, Disableable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputContentType},
@@ -10,9 +10,7 @@ use gpui_kit::*;
 
 use crate::component::theme;
 
-use super::ServicesOperationWindow;
-
-const MAX_VISIBLE_CONNECTIONS: usize = 5;
+use super::{ServicesOperationWindow, active_connections::active_connection_log};
 
 impl ServicesOperationWindow {
     pub(super) fn http_proxy_section(&self, cx: &Context<Self>) -> Div {
@@ -23,7 +21,9 @@ impl ServicesOperationWindow {
             .http_proxy_error
             .clone()
             .filter(|error| status_error.as_ref() != Some(error));
-        let status_label = if status.running {
+        let status_label = if self.http_proxy_busy {
+            "重启中…"
+        } else if status.running {
             "运行中"
         } else {
             "已停止"
@@ -38,8 +38,8 @@ impl ServicesOperationWindow {
             ))
             .child(
                 v_flex()
-                    .p_2()
-                    .gap_2()
+                    .p_4()
+                    .gap_3()
                     .rounded_xl()
                     .border_1()
                     .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -69,7 +69,9 @@ impl ServicesOperationWindow {
                                 Button::new("toggle-http-proxy")
                                     .when(self.http_proxy_enabled, |button| button.primary())
                                     .when(!self.http_proxy_enabled, |button| button.outline())
-                                    .label(if self.http_proxy_enabled {
+                                    .label(if self.http_proxy_busy {
+                                        "重启中…"
+                                    } else if self.http_proxy_enabled {
                                         "已启用"
                                     } else {
                                         "已关闭"
@@ -94,7 +96,7 @@ impl ServicesOperationWindow {
                     .child(
                         h_flex()
                             .w_full()
-                            .h(px(34.))
+                            .h(px(38.))
                             .gap_2()
                             .items_center()
                             .child(
@@ -109,17 +111,34 @@ impl ServicesOperationWindow {
                             .child(
                                 div().flex_1().min_w_0().child(
                                     Input::new(&self.http_proxy_password)
-                                        .small()
                                         .disabled(self.http_proxy_loading)
                                         .content_type(InputContentType::Password),
                                 ),
+                            )
+                            .child(
+                                Button::new("generate-http-proxy-password")
+                                    .outline()
+                                    .label("随机生成")
+                                    .disabled(self.http_proxy_loading || self.http_proxy_busy)
+                                    .on_click(cx.listener(Self::generate_http_proxy_password)),
+                            )
+                            .child(
+                                Button::new("copy-http-proxy-password")
+                                    .outline()
+                                    .label("复制")
+                                    .disabled(self.http_proxy_loading || self.http_proxy_busy)
+                                    .on_click(cx.listener(Self::copy_http_proxy_password)),
                             ),
                     )
                     .child(
                         h_flex().justify_end().pt_2().child(
                             Button::new("apply-http-proxy")
                                 .primary()
-                                .label("保存并重启")
+                                .label(if self.http_proxy_busy {
+                                    "重启中…"
+                                } else {
+                                    "保存并重启"
+                                })
                                 .disabled(self.http_proxy_loading || self.http_proxy_busy)
                                 .on_click(cx.listener(Self::apply_http_proxy)),
                         ),
@@ -140,7 +159,7 @@ impl ServicesOperationWindow {
                     // )
                     .child(
                         v_flex()
-                            .gap_2()
+                            .gap_1()
                             .child(
                                 h_flex()
                                     .items_center()
@@ -152,69 +171,29 @@ impl ServicesOperationWindow {
                                             .child("活跃连接"),
                                     )
                                     .child(
-                                        h_flex()
-                                            .items_center()
-                                            .gap_2()
-                                            .when(
-                                                status.connections.len() > MAX_VISIBLE_CONNECTIONS,
-                                                |this| {
-                                                    this.child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(colors.muted_foreground)
-                                                            .child(format!(
-                                                                "显示最新 {} 条",
-                                                                MAX_VISIBLE_CONNECTIONS
-                                                            )),
-                                                    )
-                                                },
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(colors.muted_foreground)
-                                                    .child(format!(
-                                                        "{} 条",
-                                                        status.connections.len()
-                                                    )),
-                                            ),
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors.muted_foreground)
+                                            .child(format!("{} 条", status.connections.len())),
                                     ),
                             )
-                            .when(status.connections.is_empty(), |this| {
-                                this.child(
-                                    div()
-                                        .w_full()
-                                        .p_2()
-                                        .rounded_lg()
-                                        .border_1()
-                                        .border_color(theme::CustomerUiTheme::border_color(cx))
-                                        .text_xs()
-                                        .text_color(colors.muted_foreground)
-                                        .child("当前没有活跃连接"),
-                                )
-                            })
-                            .children(
+                            .child(active_connection_log(
                                 status
                                     .connections
                                     .iter()
                                     .rev()
-                                    .take(MAX_VISIBLE_CONNECTIONS)
                                     .map(|connection| {
-                                        div()
-                                            .w_full()
-                                            .p_2()
-                                            .rounded_lg()
-                                            .border_1()
-                                            .border_color(theme::CustomerUiTheme::border_color(cx))
-                                            .text_xs()
-                                            .child(format!(
-                                                "客户端 {} → 我的代理 {} → 目的 {}",
-                                                connection.client,
-                                                connection.proxy,
-                                                connection.destination
-                                            ))
-                                    }),
-                            ),
+                                        format!(
+                                            "客户端 {} → 我的代理 {} → 目的 {}",
+                                            connection.client,
+                                            connection.proxy,
+                                            connection.destination
+                                        )
+                                    })
+                                    .collect(),
+                                "当前没有活跃连接",
+                                cx,
+                            )),
                     )
                     .when_some(status_error, |this, error| {
                         this.child(
@@ -243,7 +222,7 @@ impl ServicesOperationWindow {
     ) -> Div {
         h_flex()
             .w_full()
-            .h(px(34.))
+            .h(px(38.))
             .gap_2()
             .items_center()
             .child(
@@ -259,7 +238,7 @@ impl ServicesOperationWindow {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .child(Input::new(input).small().disabled(loading)),
+                    .child(Input::new(input).disabled(loading)),
             )
     }
 }

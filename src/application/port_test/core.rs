@@ -23,22 +23,14 @@ pub(super) async fn test_tcp_port(host: String, port: String) -> ApplicationResu
     }
 
     let started = Instant::now();
-    let result = INFRASTRUCTURE.probe_tcp_port(host.clone(), port).await;
+    let result = INFRASTRUCTURE.probe_tcp_port(host.clone(), port).await?;
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    match result {
-        Ok(()) => Ok(PortTestResult {
-            host,
-            port,
-            reachable: true,
-            elapsed_ms,
-            error: None,
-        }),
-        Err(error) => Ok(PortTestResult {
-            host,
-            port,
-            reachable: false,
-            elapsed_ms,
-            error: Some(error),
-        }),
-    }
+    Ok(PortTestResult {
+        host,
+        port,
+        reachable: result.reachable,
+        host_reachable: result.host_reachable,
+        elapsed_ms,
+        error: result.error,
+    })
 }

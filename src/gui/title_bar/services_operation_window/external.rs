@@ -10,16 +10,20 @@ pub(crate) fn open_services_window(window: &mut Window, cx: &mut App) {
         traffic_light_position: None,
     });
     options.window_decorations = Some(WindowDecorations::Client);
-    options.kind = WindowKind::Normal;
+    options.kind = WindowKind::Dialog;
     options.is_resizable = false;
-    options.is_minimizable = true;
+    options.is_minimizable = false;
 
-    let _ = cx.open_window(options, |window, cx| {
+    match cx.open_window(options, |window, cx| {
         window.on_window_should_close(cx, |window, _| {
+            log::debug!("services_window_close_requested");
             window.remove_window();
             false
         });
         let services = cx.new(|cx| ServicesOperationWindow::new(window, cx));
         cx.new(|cx| gpui_kit::component::Root::new(services, window, cx))
-    });
+    }) {
+        Ok(_) => log::info!("services_window_opened"),
+        Err(error) => log::error!("services_window_open_failed: {error}"),
+    }
 }

@@ -30,6 +30,10 @@ pub(crate) fn initialize(log_dir: impl AsRef<Path>, date_format: &str) -> [Worke
         .level_for("gpui_remote::gui::workspace", log::LevelFilter::Debug)
         .level_for("gpui_remote::gui::workspace::ssh", log::LevelFilter::Debug)
         .level_for("gpui_remote::gui::workspace::sftp", log::LevelFilter::Debug)
+        .level_for(
+            "gpui_remote::data_context::terminal::update",
+            log::LevelFilter::Debug,
+        )
         .chain(fern::Output::writer(Box::new(stdout_writer), "\n"))
         .chain(fern::Output::writer(Box::new(file_writer), "\n"))
         .apply()

@@ -1,26 +1,55 @@
 use gpui_kit::*;
+use std::time::{Duration, Instant};
 
 use crate::application::mcp::McpSettings;
 
 use super::ServicesOperationWindow;
 
+const MIN_RESTART_FEEDBACK_DURATION: Duration = Duration::from_millis(500);
+
+pub(super) async fn keep_restart_feedback_visible_since(started_at: Instant) {
+    let remaining = MIN_RESTART_FEEDBACK_DURATION.saturating_sub(started_at.elapsed());
+    tokio::time::sleep(remaining).await;
+}
+
 impl ServicesOperationWindow {
-    pub(super) fn toggle_mcp_enabled(
-        &mut self,
-        _: &ClickEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.apply_mcp_settings_for_enabled(!self.mcp_enabled, cx);
+    pub(super) fn set_mcp_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if !self.mcp_busy && self.mcp_enabled != enabled {
+            self.apply_mcp_settings_for_enabled(enabled, cx);
+        }
     }
 
-    pub(super) fn toggle_mcp_token_enabled(
+    pub(super) fn set_mcp_token_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if !self.mcp_busy && self.mcp_token_enabled != enabled {
+            self.mcp_token_enabled = enabled;
+            self.mcp_error = None;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn generate_mcp_token(
         &mut self,
         _: &ClickEvent,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.mcp_token_enabled = !self.mcp_token_enabled;
+        self.mcp_token = uuid::Uuid::new_v4().simple().to_string();
+        self.mcp_error = None;
+        cx.notify();
+    }
+
+    pub(super) fn copy_mcp_token(
+        &mut self,
+        _: &ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.mcp_token.is_empty() {
+            self.mcp_error = Some("请先设置或随机生成 MCP Token".to_owned());
+        } else {
+            cx.write_to_clipboard(ClipboardItem::new_string(self.mcp_token.clone()));
+            self.mcp_error = None;
+        }
         cx.notify();
     }
 
@@ -109,6 +138,7 @@ impl ServicesOperationWindow {
             port,
             token,
         };
+        let restart_started_at = Instant::now();
         self.mcp_busy = true;
         self.mcp_error = None;
         cx.notify();
@@ -118,6 +148,7 @@ impl ServicesOperationWindow {
                 application.mcp.update_settings(settings).await
             })
             .await;
+            keep_restart_feedback_visible_since(restart_started_at).await;
             let _ = this.update(cx, |this, cx| {
                 this.mcp_busy = false;
                 match result {

@@ -1,4 +1,7 @@
-use super::{ServicesOperationWindow, port_forward_core::PortForwardAction};
+use super::{
+    ServicesOperationWindow, active_connections::active_connection_log,
+    port_forward_core::PortForwardAction,
+};
 use crate::component::theme;
 use gpui_kit::component::Disableable;
 use gpui_kit::component::{
@@ -14,7 +17,7 @@ impl ServicesOperationWindow {
         let colors = cx.theme().colors;
         let statuses = crate::data_context::DATA_CONTEXT.port_forward_statuses();
         v_flex()
-            .gap_2()
+            .gap_4()
             .child(self.section_heading(
                 "端口转发",
                 "将本机 TCP 端口转发到目标主机。启用的规则会在应用启动时自动运行。",
@@ -93,7 +96,7 @@ impl ServicesOperationWindow {
                 let confirming = self.port_forward_delete_confirmation.as_ref() == Some(&rule.id);
                 v_flex()
                     .gap_3()
-                    .p_2()
+                    .p_3()
                     .rounded_xl()
                     .border_1()
                     .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -135,37 +138,16 @@ impl ServicesOperationWindow {
                         },
                     )
                     .when(enabled, |this| {
-                        this.child(
-                            v_flex()
-                                .gap_1()
-                                .p_2()
-                                .rounded_lg()
-                                .border_1()
-                                .border_color(theme::CustomerUiTheme::border_color(cx))
-                                .bg(theme::CustomerUiTheme::panel_background(cx))
-                                // .child(
-                                //     div()
-                                //         .text_xs()
-                                //         .font_weight(FontWeight::SEMIBOLD)
-                                //         .child("活动连接（最新 5 条）"),
-                                // )
-                                .when(active_routes.is_empty(), |this| {
-                                    this.child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(colors.muted_foreground)
-                                            .child("暂无活动连接"),
-                                    )
+                        this.child(active_connection_log(
+                            active_routes
+                                .iter()
+                                .map(|route| {
+                                    format!("{} → {}", route.client_address, route.target_address)
                                 })
-                                .children(active_routes.iter().take(5).map(|route| {
-                                    div().text_xs().text_color(colors.muted_foreground).child(
-                                        format!(
-                                            "{} → {}",
-                                            route.client_address, route.target_address
-                                        ),
-                                    )
-                                })),
-                        )
+                                .collect(),
+                            "暂无活动连接",
+                            cx,
+                        ))
                     })
                     .child(
                         h_flex()

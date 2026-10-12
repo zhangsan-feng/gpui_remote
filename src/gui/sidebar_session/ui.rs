@@ -14,6 +14,66 @@ impl SessionComponent {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let component_colors = cx.theme();
         let ui_colors = theme::CustomerUiTheme::colors(cx);
+        let query = self.search_input.read(cx).value().trim().to_lowercase();
+        let has_matches = self.sessions.iter().any(|session| {
+            format!(
+                "{} {} {} {}",
+                session.name,
+                session.host,
+                session.username,
+                session.connection_protocol.as_str(),
+            )
+            .to_lowercase()
+            .contains(&query)
+        });
+        let session_content = if self.sessions.is_empty() {
+            v_flex()
+                .flex_1()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .px_4()
+                .text_center()
+                .child(
+                    Icon::new(IconName::SquareTerminal)
+                        .large()
+                        .text_color(component_colors.muted_foreground),
+                )
+                .into_any_element()
+        } else if !has_matches {
+            v_flex()
+                .flex_1()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .px_4()
+                .text_center()
+                .child(
+                    Icon::new(IconName::Search)
+                        .large()
+                        .text_color(component_colors.muted_foreground),
+                )
+                .child(
+                    div()
+                        .mt_1()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("没有匹配的会话"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(component_colors.muted_foreground)
+                        .child("试试其他主机名或用户名。"),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .child(self.draggable_list.clone())
+                .into_any_element()
+        };
         v_flex()
             .on_action(cx.listener(Self::create_active_session))
             .on_action(cx.listener(Self::create_active_sftp_session))
@@ -35,6 +95,7 @@ impl SessionComponent {
                     .justify_between()
                     .border_b_1()
                     .border_color(component_colors.sidebar_border)
+                    .bg(theme::CustomerUiTheme::panel_background(cx))
                     .child(
                         div()
                             .text_sm()
@@ -47,8 +108,6 @@ impl SessionComponent {
                     .h(px(42.))
                     .px_3()
                     .py_2()
-                    .border_b_1()
-                    .border_color(component_colors.sidebar_border)
                     .child(Input::new(&self.search_input).small().cleanable(true)),
             )
             .when_some(self.core_err.as_ref(), |this, error| {
@@ -63,12 +122,7 @@ impl SessionComponent {
                         .child(error.to_string()),
                 )
             })
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(self.draggable_list.clone()),
-            )
+            .child(session_content)
     }
 
     pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
@@ -192,6 +246,11 @@ impl SessionComponent {
             for session in sessions {
                 this.child(session.id.clone(), move || {
                     let session_id = session.id.clone();
+                    let display_name = if session.name.trim().is_empty() {
+                        session.host.clone()
+                    } else {
+                        session.name.clone()
+                    };
                     h_flex()
                         .id(format!("top_session-row-{session_id}"))
                         .h(px(58.))
@@ -221,7 +280,7 @@ impl SessionComponent {
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(sidebar_foreground)
                                         .whitespace_nowrap()
-                                        .child(session.name.clone()),
+                                        .child(display_name),
                                 )
                                 .child(
                                     div()

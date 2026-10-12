@@ -108,19 +108,11 @@ impl FormSection {
         }
     }
 
-    fn description(self) -> &'static str {
-        match self {
-            Self::Connection => "主机与登录信息",
-            Self::Proxy => "代理服务器设置",
-            Self::SshTunnel => "反向端口转发设置",
-        }
-    }
-
     fn icon(self) -> IconName {
         match self {
             Self::Connection => IconName::SquareTerminal,
-            Self::Proxy => IconName::Settings2,
-            Self::SshTunnel => IconName::Settings2,
+            Self::Proxy => IconName::Globe,
+            Self::SshTunnel => IconName::ArrowRight,
         }
     }
 }
@@ -146,19 +138,19 @@ impl SessionOperationWindow {
     fn field(label: &'static str, input: &Entity<InputState>, colors: ThemeColor) -> Div {
         h_flex()
             .w_full()
-            .h(px(34.))
+            .h(px(38.))
             .gap_2()
             .items_center()
             .child(
                 div()
-                    .w(px(80.))
+                    .w(px(64.))
                     .flex_shrink_0()
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.muted_foreground)
                     .child(label),
             )
-            .child(div().flex_1().child(Input::new(input).small()))
+            .child(div().flex_1().child(Input::new(input)))
     }
 
     fn connection_panel(&self, cx: &Context<Self>) -> Div {
@@ -166,11 +158,9 @@ impl SessionOperationWindow {
         v_flex()
             .flex_1()
             .h_full()
-            .p_3()
-            .gap_2()
+            .p_4()
+            .gap_3()
             .rounded_xl()
-            .border_1()
-            .border_color(theme::CustomerUiTheme::border_color(cx))
             .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::SquareTerminal,
@@ -195,23 +185,23 @@ impl SessionOperationWindow {
             .to_owned();
         h_flex()
             .w_full()
-            .h(px(34.))
+            .h(px(38.))
             .gap_2()
             .items_center()
             .child(
                 div()
-                    .w(px(80.))
+                    .w(px(64.))
                     .flex_shrink_0()
-                    .text_xs()
+                    .text_sm()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.muted_foreground)
-                    .child("秘钥"),
+                    .child("私钥"),
             )
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_xs()
+                    .text_sm()
                     .text_color(if self.private_key_path.is_some() {
                         colors.foreground
                     } else {
@@ -243,11 +233,9 @@ impl SessionOperationWindow {
         v_flex()
             .flex_1()
             .h_full()
-            .p_3()
-            .gap_2()
+            .p_4()
+            .gap_3()
             .rounded_xl()
-            .border_1()
-            .border_color(theme::CustomerUiTheme::border_color(cx))
             .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::Settings2,
@@ -267,11 +255,9 @@ impl SessionOperationWindow {
         v_flex()
             .flex_1()
             .h_full()
-            .p_3()
-            .gap_2()
+            .p_4()
+            .gap_3()
             .rounded_xl()
-            .border_1()
-            .border_color(theme::CustomerUiTheme::border_color(cx))
             .bg(theme::CustomerUiTheme::panel_background(cx))
             .child(Self::panel_heading(
                 IconName::Settings2,
@@ -300,12 +286,12 @@ impl SessionOperationWindow {
     fn read_only_field(label: &'static str, value: String, colors: ThemeColor) -> Div {
         h_flex()
             .w_full()
-            .h(px(34.))
+            .h(px(38.))
             .gap_2()
             .items_center()
             .child(
                 div()
-                    .w(px(80.))
+                    .w(px(64.))
                     .flex_shrink_0()
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
@@ -339,8 +325,8 @@ impl SessionOperationWindow {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .bg(colors.accent)
-                    .child(Icon::new(icon).small().text_color(colors.accent_foreground)),
+                    .bg(colors.primary.opacity(0.12))
+                    .child(Icon::new(icon).small().text_color(colors.primary)),
             )
             .child(
                 v_flex()
@@ -377,13 +363,7 @@ impl SessionOperationWindow {
             .bg(if selected {
                 ui_colors.select_background
             } else {
-                theme::CustomerUiTheme::panel_background(cx)
-            })
-            .border_1()
-            .border_color(if selected {
-                colors.primary
-            } else {
-                theme::CustomerUiTheme::border_color(cx)
+                Hsla::transparent_black()
             })
             .hover(|style| style.bg(ui_colors.hover_background))
             .child(
@@ -391,30 +371,20 @@ impl SessionOperationWindow {
                     .gap_2()
                     .items_center()
                     .child(Icon::new(section.icon()).small().text_color(if selected {
-                        colors.accent
+                        colors.primary
                     } else {
                         colors.muted_foreground
                     }))
                     .child(
-                        v_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(if selected {
-                                        FontWeight::SEMIBOLD
-                                    } else {
-                                        FontWeight::MEDIUM
-                                    })
-                                    .text_color(colors.foreground)
-                                    .child(label),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(colors.muted_foreground)
-                                    .child(section.description()),
-                            ),
+                        div()
+                            .text_sm()
+                            .font_weight(if selected {
+                                FontWeight::SEMIBOLD
+                            } else {
+                                FontWeight::MEDIUM
+                            })
+                            .text_color(colors.foreground)
+                            .child(label),
                     ),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -427,80 +397,28 @@ impl SessionOperationWindow {
         let colors = cx.theme();
         let ui_colors = theme::CustomerUiTheme::colors(cx);
         v_flex()
-            .gap_2()
-            .p_2()
             .size_full()
+            .p_3()
+            .gap_3()
             .bg(ui_colors.background)
-            // .child(
-            //     h_flex()
-            //         .h(px(52.))
-            //         .flex_shrink_0()
-            //         .px_3()
-            //         .gap_3()
-            //         .items_center()
-            //         .rounded_lg()
-            //         .border_1()
-            //         .border_color(theme::CustomerUiTheme::border_color(cx))
-            //         .bg(theme::CustomerUiTheme::panel_background(cx))
-            //         .child(
-            //             h_flex()
-            //                 .gap_2()
-            //                 .items_center()
-            //                 .child(
-            //                     div()
-            //                         .size(px(28.))
-            //                         .rounded_md()
-            //                         .flex()
-            //                         .items_center()
-            //                         .justify_center()
-            //                         .bg(ui_colors.select_background)
-            //                         .child(
-            //                             Icon::new(IconName::Settings2)
-            //                                 .small()
-            //                                 .text_color(colors.accent),
-            //                         ),
-            //                 )
-            //                 .child(
-            //                     v_flex()
-            //                         .gap_0p5()
-            //                         .child(
-            //                             div()
-            //                                 .text_sm()
-            //                                 .font_weight(FontWeight::SEMIBOLD)
-            //                                 .text_color(colors.foreground)
-            //                                 .child("连接协议"),
-            //                         )
-            //                         .child(
-            //                             div()
-            //                                 .text_xs()
-            //                                 .text_color(colors.muted_foreground)
-            //                                 .child("选择远程连接类型"),
-            //                         ),
-            //                 ),
-            //         )
-            //         .child(self.protocol_selector(cx)),
-            // )
             .child(
                 h_flex()
                     .flex_1()
-                    .p_2()
-                    .gap_2()
+                    .min_h_0()
+                    .gap_3()
                     .items_stretch()
                     .child(
                         v_flex()
-                            .w(px(144.))
+                            .w(px(132.))
                             .flex_shrink_0()
                             .p_2()
-                            .gap_2()
-                            .rounded_xl()
-                            .border_1()
-                            .border_color(theme::CustomerUiTheme::border_color(cx))
-                            .bg(theme::CustomerUiTheme::panel_background(cx))
+                            .gap_1()
+                            .rounded_lg()
+                            .bg(theme::CustomerUiTheme::sidebar_background(cx))
                             .child(
                                 div()
                                     .px_3()
-                                    .pt_1()
-                                    .pb_1()
+                                    .py_2()
                                     .text_xs()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(colors.muted_foreground)

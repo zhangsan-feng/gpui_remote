@@ -1,16 +1,68 @@
-use std::time::Duration;
+use std::{process::Stdio, time::Duration};
 
 use tokio::{
     net::{TcpStream, lookup_host},
+    process::Command,
     time::timeout,
 };
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+use super::PortTestProbeResult;
 
-pub(super) async fn probe_tcp_port(host: String, port: u16) -> Result<(), String> {
-    match timeout(PROBE_TIMEOUT, resolve_and_connect(&host, port)).await {
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const ICMP_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+
+pub(super) async fn probe_tcp_port(host: String, port: u16) -> PortTestProbeResult {
+    let tcp_result = match timeout(PROBE_TIMEOUT, resolve_and_connect(&host, port)).await {
         Ok(result) => result,
         Err(_) => Err("TCP 端口测试超时（5 秒）".to_owned()),
+    };
+
+    match tcp_result {
+        Ok(()) => PortTestProbeResult {
+            reachable: true,
+            host_reachable: None,
+            error: None,
+        },
+        Err(tcp_error) => match ping_host(&host).await {
+            Ok(host_reachable) => PortTestProbeResult {
+                reachable: false,
+                host_reachable: Some(host_reachable),
+                error: Some(if host_reachable {
+                    tcp_error
+                } else {
+                    format!("{tcp_error}；主机 {host} ICMP 不可达")
+                }),
+            },
+            Err(icmp_error) => PortTestProbeResult {
+                reachable: false,
+                host_reachable: None,
+                error: Some(format!("{tcp_error}；{icmp_error}")),
+            },
+        },
+    }
+}
+
+async fn ping_host(host: &str) -> Result<bool, String> {
+    let mut command = Command::new("ping");
+    #[cfg(target_os = "windows")]
+    command.args(["-n", "1", "-w", "3000"]);
+    #[cfg(target_os = "macos")]
+    command.args(["-c", "1", "-W", "3000"]);
+    #[cfg(target_os = "linux")]
+    command.args(["-c", "1", "-W", "3"]);
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    command.args(["-c", "1"]);
+
+    command
+        .arg(host)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+
+    match timeout(ICMP_PROBE_TIMEOUT, command.status()).await {
+        Ok(Ok(status)) => Ok(status.success()),
+        Ok(Err(error)) => Err(format!("ICMP 主机探测启动失败: {error}")),
+        Err(_) => Ok(false),
     }
 }
 

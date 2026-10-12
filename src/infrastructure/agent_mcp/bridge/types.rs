@@ -175,5 +175,5 @@ pub(crate) struct McpBridgeReceiver {
     pub(crate) command_rx: mpsc::Receiver<CommandEnvelope>,
     pub(crate) notification_tx: broadcast::Sender<NotificationEnvelope>,
     pub(crate) data_context: &'static crate::data_context::DataContext,
-    pub(crate) notice: crate::data_context::DataContextNotice,
+    pub(crate) notice: crate::data_context::notice::DataContextNotice,
 }

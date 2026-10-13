@@ -42,7 +42,7 @@ fn main_window_options(cx: &mut App) -> WindowOptions {
     options.window_bounds = Some(WindowBounds::centered(window_size, cx));
     options.window_min_size = Some(window_size);
     options.titlebar = Some(TitlebarOptions {
-        title: None,
+        title: Some(SharedString::from("gpui_remote")),
         appears_transparent: true,
         traffic_light_position: None,
     });

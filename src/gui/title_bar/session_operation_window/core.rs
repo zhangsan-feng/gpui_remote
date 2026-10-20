@@ -1,8 +1,6 @@
 use gpui_kit::*;
 
-use crate::domain::session::{
-    ConnectionProtocol as DomainConnectionProtocol, NewSession, ProxyConfig, SshReverseTunnelConfig,
-};
+use crate::domain::session::{ConnectionProtocol as DomainConnectionProtocol, NewSession};
 
 use super::{ConnectionProtocol, SessionOperationWindow};
 
@@ -30,48 +28,24 @@ impl ConnectionProtocol {
 
 impl SessionOperationWindow {
     pub(super) fn draft(&self, cx: &App) -> Result<NewSession, String> {
-        let proxy_host = self.proxy_host.read(cx).value().trim().to_owned();
-        let proxy = if proxy_host.is_empty() {
-            None
-        } else {
-            Some(ProxyConfig {
-                host: proxy_host,
-                port: parse_port(self.proxy_port.read(cx).value().as_ref(), "代理")?,
-                username: self.proxy_username.read(cx).value().trim().to_owned(),
-                password: self.proxy_password.read(cx).value().to_string(),
-            })
-        };
+        let proxy = self
+            .proxy_select
+            .read(cx)
+            .selected_value()
+            .and_then(|choice| choice.config.clone());
         let connection_protocol = match self.protocol {
             ConnectionProtocol::SshAndSftp => DomainConnectionProtocol::SshAndSftp,
             ConnectionProtocol::Mysql => DomainConnectionProtocol::Mysql,
             ConnectionProtocol::Pgsql => DomainConnectionProtocol::Pgsql,
             ConnectionProtocol::Redis => DomainConnectionProtocol::Redis,
         };
-        let remote_port = self
-            .ssh_tunnel_remote_port
-            .read(cx)
-            .value()
-            .trim()
-            .to_owned();
-        let forward_port = self
-            .ssh_tunnel_forward_port
-            .read(cx)
-            .value()
-            .trim()
-            .to_owned();
-        let ssh_reverse_tunnel = if remote_port.is_empty() && forward_port.is_empty() {
-            None
+        let ssh_reverse_tunnel = if self.protocol == ConnectionProtocol::SshAndSftp {
+            self.tunnel_select
+                .read(cx)
+                .selected_value()
+                .and_then(|choice| choice.config.clone())
         } else {
-            Some(SshReverseTunnelConfig {
-                remote_port: parse_port(&remote_port, "SSH 隧道远端")?,
-                forward_address: self
-                    .ssh_tunnel_forward_address
-                    .read(cx)
-                    .value()
-                    .trim()
-                    .to_owned(),
-                forward_port: parse_port(&forward_port, "SSH 隧道转发")?,
-            })
+            None
         };
         let draft = NewSession {
             connection_protocol,

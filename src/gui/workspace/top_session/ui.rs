@@ -68,7 +68,11 @@ pub(in crate::gui::workspace) fn workspace_tab(
     let palette = workspace_tab_palette(cx);
     let session_id = workspace_id.clone();
     let close_id = workspace_id;
-    let protocol = profile.protocol.as_str();
+    let protocol = if profile.is_ssh_tunnel {
+        "SSH 隧道"
+    } else {
+        profile.protocol.as_str()
+    };
     let (status_color, status_text) = match status {
         TerminalStatus::Connecting => (rgb_to_u32(217, 119, 6), "连接中"),
         TerminalStatus::Connected => (rgb_to_u32(22, 163, 74), "已连接"),

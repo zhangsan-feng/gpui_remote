@@ -1,6 +1,6 @@
 use std::{fmt, path::PathBuf, str::FromStr};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
     pub host: String,
     pub port: u16,
@@ -8,7 +8,7 @@ pub struct ProxyConfig {
     pub password: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SshReverseTunnelConfig {
     pub remote_port: u16,
     pub forward_address: String,

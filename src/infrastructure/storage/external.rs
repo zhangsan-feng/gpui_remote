@@ -101,3 +101,26 @@ impl InfrastructureContext {
         })
     }
 }
+
+impl InfrastructureContext {
+    pub(crate) async fn load_network_configs(
+        &self,
+    ) -> Result<crate::domain::network_config::NetworkConfigs, String> {
+        let repository = self.storage().map_err(|e| e.to_string())?.session.clone();
+        tokio::task::spawn_blocking(move || repository.load_network_configs())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())
+    }
+
+    pub(crate) async fn save_network_configs(
+        &self,
+        configs: crate::domain::network_config::NetworkConfigs,
+    ) -> Result<(), String> {
+        let repository = self.storage().map_err(|e| e.to_string())?.session.clone();
+        tokio::task::spawn_blocking(move || repository.save_network_configs(&configs))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())
+    }
+}

@@ -229,82 +229,81 @@ impl SessionOperationWindow {
     }
 
     fn proxy_panel(&self, cx: &Context<Self>) -> Div {
-        let colors = cx.theme().colors;
-        v_flex()
-            .flex_1()
-            .h_full()
-            .p_4()
-            .gap_3()
-            .rounded_xl()
-            .bg(theme::CustomerUiTheme::panel_background(cx))
-            .child(Self::panel_heading(
-                IconName::Settings2,
-                "代理",
-                "可选的 SOCKS 或跳板代理配置",
-                colors,
-            ))
-            .child(Self::field("代理主机", &self.proxy_host, colors))
-            .child(Self::field("代理端口", &self.proxy_port, colors))
-            .child(Self::field("代理用户名", &self.proxy_username, colors))
-            .child(Self::field("代理密码", &self.proxy_password, colors))
+        self.network_config_panel(
+            Select::new(&self.proxy_select)
+                .w_full()
+                .h(px(36.))
+                .rounded_lg()
+                .placeholder("选择代理配置")
+                .accessibility_label("代理配置")
+                .into_any_element(),
+            true,
+            cx,
+        )
     }
 
     fn ssh_tunnel_panel(&self, cx: &Context<Self>) -> Div {
-        let colors = cx.theme().colors;
-        let remote_host = self.host.read(cx).value().to_string();
-        v_flex()
-            .flex_1()
-            .h_full()
-            .p_4()
-            .gap_3()
-            .rounded_xl()
-            .bg(theme::CustomerUiTheme::panel_background(cx))
-            .child(Self::panel_heading(
-                IconName::Settings2,
-                "SSH 隧道",
-                "将远端监听端口反向转发到本机服务",
-                colors,
-            ))
-            .child(Self::read_only_field("远端主机", remote_host, colors))
-            .child(Self::field(
-                "远端端口",
-                &self.ssh_tunnel_remote_port,
-                colors,
-            ))
-            .child(Self::field(
-                "转发地址",
-                &self.ssh_tunnel_forward_address,
-                colors,
-            ))
-            .child(Self::field(
-                "转发端口",
-                &self.ssh_tunnel_forward_port,
-                colors,
-            ))
+        self.network_config_panel(
+            Select::new(&self.tunnel_select)
+                .w_full()
+                .h(px(36.))
+                .rounded_lg()
+                .placeholder("选择 SSH 隧道配置")
+                .accessibility_label("SSH 隧道配置")
+                .into_any_element(),
+            false,
+            cx,
+        )
     }
 
-    fn read_only_field(label: &'static str, value: String, colors: ThemeColor) -> Div {
-        h_flex()
-            .w_full()
-            .h(px(38.))
-            .gap_2()
-            .items_center()
+    fn network_config_panel(&self, selector: AnyElement, proxy: bool, cx: &Context<Self>) -> Div {
+        let border = theme::CustomerUiTheme::border_color(cx);
+        v_flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .rounded_xl()
+            .border_1()
+            .border_color(border.opacity(0.6))
+            .overflow_hidden()
+            .bg(theme::CustomerUiTheme::workspace_background(cx))
             .child(
-                div()
-                    .w(px(64.))
+                v_flex()
+                    .w_full()
                     .flex_shrink_0()
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors.muted_foreground)
-                    .child(label),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_sm()
-                    .text_color(colors.foreground)
-                    .child(value),
+                    .p_4()
+                    .gap_2()
+                    .border_b_1()
+                    .border_color(border.opacity(0.6))
+                    .bg(theme::CustomerUiTheme::panel_background(cx).opacity(0.35))
+                    // Select renders a full-height root, so constrain its wrapper.
+                    .child(div().w_full().h(px(36.)).flex_shrink_0().child(selector))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .h(px(28.))
+                            .flex_shrink_0()
+                            .justify_end()
+                            .child(
+                                Button::new(if proxy {
+                                    "manage-proxy-config"
+                                } else {
+                                    "manage-tunnel-config"
+                                })
+                                .link()
+                                .small()
+                                .h(px(28.))
+                                .px_1()
+                                .icon(IconName::Settings)
+                                .label("管理配置")
+                                .text_color(cx.theme().primary)
+                                .on_click(move |_, window, cx| {
+                                    super::super::settings_operation_window::open_network_settings_window(
+                                        proxy, window, cx,
+                                    );
+                                }),
+                            ),
+                    ),
             )
     }
 

@@ -1,6 +1,7 @@
 mod core;
 mod external;
 mod internal;
+mod network_config;
 mod ui;
 
 use gpui_kit::component::{
@@ -46,13 +47,21 @@ pub struct SessionOperationWindow {
     password: Entity<InputState>,
     private_key_path: Option<String>,
     protocol_select: Entity<SelectState<SearchableVec<ConnectionProtocol>>>,
-    proxy_host: Entity<InputState>,
-    proxy_port: Entity<InputState>,
-    proxy_username: Entity<InputState>,
-    proxy_password: Entity<InputState>,
-    ssh_tunnel_remote_port: Entity<InputState>,
-    ssh_tunnel_forward_address: Entity<InputState>,
-    ssh_tunnel_forward_port: Entity<InputState>,
+    proxy_select: Entity<
+        SelectState<
+            SearchableVec<network_config::ConfigChoice<crate::domain::session::ProxyConfig>>,
+        >,
+    >,
+    tunnel_select: Entity<
+        SelectState<
+            SearchableVec<
+                network_config::ConfigChoice<crate::domain::session::SshReverseTunnelConfig>,
+            >,
+        >,
+    >,
+    proxy_choices: Vec<network_config::ConfigChoice<crate::domain::session::ProxyConfig>>,
+    tunnel_choices:
+        Vec<network_config::ConfigChoice<crate::domain::session::SshReverseTunnelConfig>>,
     error: Option<String>,
 }
 
@@ -111,6 +120,41 @@ impl SessionOperationWindow {
         )
         .detach();
 
+        let configs = crate::data_context::DATA_CONTEXT.network_configs();
+        let (proxy_choices, proxy_index) =
+            network_config::choices(&configs.proxies, proxy.cloned(), "不使用代理");
+        let (tunnel_choices, tunnel_index) =
+            network_config::choices(&configs.tunnels, ssh_tunnel.cloned(), "不使用 SSH 隧道");
+        let proxy_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(proxy_choices.clone()),
+                Some(IndexPath::new(proxy_index)),
+                window,
+                cx,
+            )
+        });
+        let tunnel_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(tunnel_choices.clone()),
+                Some(IndexPath::new(tunnel_index)),
+                window,
+                cx,
+            )
+        });
+        cx.observe(&proxy_select, |_, _, cx| cx.notify()).detach();
+        cx.observe(&tunnel_select, |_, _, cx| cx.notify()).detach();
+        let mut updates = crate::data_context::DATA_CONTEXT
+            .notice
+            .subscribe_gui_refresh();
+        cx.spawn(async move |this, cx| {
+            while updates.changed().await.is_ok() {
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+
         Self {
             mode,
             protocol,
@@ -158,56 +202,10 @@ impl SessionOperationWindow {
             }),
             private_key_path: profile.as_ref().and_then(|p| p.private_key_path.clone()),
             protocol_select,
-            proxy_host: Self::input_with_value(
-                proxy.map(|p| p.host.clone()).unwrap_or_default(),
-                "留空表示直连",
-                window,
-                cx,
-            ),
-            proxy_port: Self::input_with_value(
-                proxy
-                    .map(|p| p.port.to_string())
-                    .unwrap_or_else(|| "1080".into()),
-                "代理端口",
-                window,
-                cx,
-            ),
-            proxy_username: Self::input_with_value(
-                proxy.map(|p| p.username.clone()).unwrap_or_default(),
-                "代理用户名（可选）",
-                window,
-                cx,
-            ),
-            proxy_password: cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("代理密码（可选）")
-                    .default_value(proxy.map(|p| p.password.clone()).unwrap_or_default())
-                    .masked(true)
-            }),
-            ssh_tunnel_remote_port: Self::input_with_value(
-                ssh_tunnel
-                    .map(|tunnel| tunnel.remote_port.to_string())
-                    .unwrap_or_default(),
-                "远端监听端口",
-                window,
-                cx,
-            ),
-            ssh_tunnel_forward_address: Self::input_with_value(
-                ssh_tunnel
-                    .map(|tunnel| tunnel.forward_address.clone())
-                    .unwrap_or_else(|| "127.0.0.1".into()),
-                "转发地址",
-                window,
-                cx,
-            ),
-            ssh_tunnel_forward_port: Self::input_with_value(
-                ssh_tunnel
-                    .map(|tunnel| tunnel.forward_port.to_string())
-                    .unwrap_or_default(),
-                "转发端口",
-                window,
-                cx,
-            ),
+            proxy_select,
+            tunnel_select,
+            proxy_choices,
+            tunnel_choices,
             error: None,
         }
     }
@@ -227,7 +225,8 @@ impl SessionOperationWindow {
 }
 
 impl Render for SessionOperationWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_network_choices(window, cx);
         self.render_view(cx)
     }
 }

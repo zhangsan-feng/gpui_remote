@@ -1,3 +1,4 @@
+mod network_config;
 pub(crate) mod notice;
 mod service_status;
 mod sftp;
@@ -13,6 +14,7 @@ use std::{
 pub(crate) static DATA_CONTEXT: LazyLock<DataContext> = LazyLock::new(DataContext::new);
 
 pub(crate) struct DataContext {
+    network_configs: RwLock<crate::domain::network_config::NetworkConfigs>,
     snapshot: RwLock<DataSnapshot>,
     terminals: RwLock<HashMap<String, state::TerminalWorkspaceData>>,
     sftp: RwLock<HashMap<String, state::SftpWorkspaceData>>,
@@ -21,11 +23,10 @@ pub(crate) struct DataContext {
     pub(crate) notice: DataContextNotice,
 }
 
-
-
 impl DataContext {
     fn new() -> Self {
         Self {
+            network_configs: RwLock::new(Default::default()),
             snapshot: RwLock::new(DataSnapshot::default()),
             terminals: RwLock::new(HashMap::new()),
             sftp: RwLock::new(HashMap::new()),
@@ -36,6 +37,7 @@ impl DataContext {
     }
 }
 
+use crate::data_context::notice::DataContextNotice;
 pub(crate) use sftp::SftpModel;
 pub(crate) use state::{
     DataChange, DataSnapshot, LocalSnapshot, SftpDirectorySummary, SftpEntrySummary, SftpSnapshot,
@@ -43,4 +45,3 @@ pub(crate) use state::{
     TerminalReadSnapshot, TransferRecord, TransferRequest, WorkspaceSummary,
     is_transfer_cancellable,
 };
-use crate::data_context::notice::DataContextNotice;

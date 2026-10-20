@@ -17,6 +17,7 @@ pub(crate) struct WorkspaceSummary {
     pub(crate) title: String,
     pub(crate) host: String,
     pub(crate) protocol: Protocol,
+    pub(crate) is_ssh_tunnel: bool,
     pub(crate) status: TerminalStatus,
     pub(crate) terminal_revision: u64,
     pub(crate) sftp_revision: u64,

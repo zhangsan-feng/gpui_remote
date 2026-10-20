@@ -29,7 +29,7 @@ impl SessionStorageRepository {
         })
     }
 
-    fn lock_drive(&self) -> MutexGuard<'_, SqliteDrive> {
+    pub(super) fn lock_drive(&self) -> MutexGuard<'_, SqliteDrive> {
         self.drive
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())

@@ -9,6 +9,7 @@ use crate::{
 impl Application {
     pub(crate) async fn initialize(&self) -> ApplicationResult<()> {
         INFRASTRUCTURE.initialize().await?;
+        self.initialize_network_configs().await?;
         if let Err(error) = self.port_forward.initialize().await {
             log::error!("初始化端口转发失败: {error}");
         }

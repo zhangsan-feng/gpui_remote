@@ -35,6 +35,7 @@ impl WorkspaceSession {
                     && old.profile.title == new.profile.title
                     && old.profile.host == new.profile.host
                     && old.profile.protocol == new.profile.protocol
+                    && old.profile.is_ssh_tunnel == new.profile.is_ssh_tunnel
             });
         if same_sessions
             && self.selected_id == snapshot.selected_workspace_id

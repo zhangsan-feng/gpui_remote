@@ -6,3 +6,5 @@ pub mod socks5_proxy;
 pub mod ssh_server;
 pub mod terminal;
 pub mod theme;
+
+pub(crate) mod network_config;

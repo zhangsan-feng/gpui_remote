@@ -39,10 +39,12 @@ async fn main() {
     // Otherwise GPUI tasks awaiting Tokio channels stop progressing once it is exhausted.
     tokio::task::block_in_place(move || {
         info!("GPUI application event loop starting: execution=block_in_place");
-        gpui_kit::application()
+        let platform = gpui_kit::platform::current_platform(false);
+        gpui_kit::Application::with_platform(platform.clone())
             .with_http_client(Arc::new(http_client))
             .with_assets(component::assets::MergedAssets::new())
             .run(move |cx| {
+                component::clipboard::init(platform.clone(), cx);
                 gui::home::open_main_window(
                     cx,
                     theme_settings.clone(),

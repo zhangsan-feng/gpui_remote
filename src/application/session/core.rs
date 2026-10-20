@@ -29,6 +29,7 @@ impl SessionApplication {
         &self,
         workspace_id: String,
         profile: SessionProfile,
+        is_ssh_tunnel: bool,
     ) -> ApplicationResult<()> {
         let mut profiles = self
             .inner
@@ -46,6 +47,7 @@ impl SessionApplication {
             title: profile.name,
             host: profile.host,
             protocol: profile.protocol,
+            is_ssh_tunnel,
             status: TerminalStatus::Connecting,
             terminal_revision: 0,
             sftp_revision: 0,
@@ -177,8 +179,11 @@ impl Application {
         } else {
             None
         };
-        self.sessions
-            .register(workspace_id.clone(), profile.clone())?;
+        self.sessions.register(
+            workspace_id.clone(),
+            profile.clone(),
+            send_tunnel_proxy_exports,
+        )?;
         let open_result = match protocol {
             Protocol::Ssh => self.ssh.open(workspace_id.clone(), profile).await,
             Protocol::Sftp => {

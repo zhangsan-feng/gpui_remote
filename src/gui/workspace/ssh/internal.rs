@@ -328,7 +328,7 @@ mod selection {
             };
             let text = selected_text(&selection.frame, selection);
             if !text.is_empty() {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                crate::component::clipboard::write_text(text, cx);
             }
             cx.stop_propagation();
         }

@@ -9,17 +9,22 @@ use crate::component::theme;
 
 mod core;
 mod external;
+mod network_config;
 mod ui;
 
-pub(crate) use external::open_settings_window;
+pub(crate) use external::{open_network_settings_window, open_settings_window};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SettingsSection {
     Theme,
     Wallpaper,
+    Proxy,
+    SshTunnel,
 }
 
 pub struct SettingsOperationWindow {
+    proxy_editor: Entity<network_config::NetworkConfigEditor>,
+    tunnel_editor: Entity<network_config::NetworkConfigEditor>,
     color_picker: Entity<ColorPickerState>,
     font_color_picker: Entity<ColorPickerState>,
     background_color_picker: Entity<ColorPickerState>,
@@ -121,6 +126,8 @@ impl SettingsOperationWindow {
         .detach();
 
         Self {
+            proxy_editor: cx.new(|cx| network_config::NetworkConfigEditor::new(true, window, cx)),
+            tunnel_editor: cx.new(|cx| network_config::NetworkConfigEditor::new(false, window, cx)),
             color_picker,
             font_color_picker,
             background_color_picker,

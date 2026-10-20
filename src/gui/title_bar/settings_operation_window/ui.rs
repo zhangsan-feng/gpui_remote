@@ -21,8 +21,31 @@ impl SettingsOperationWindow {
     ) -> impl IntoElement {
         let colors = theme::CustomerUiTheme::colors(cx);
         let content = match self.active_section {
+            SettingsSection::Proxy => self.proxy_editor.clone().into_any_element(),
+            SettingsSection::SshTunnel => self.tunnel_editor.clone().into_any_element(),
             SettingsSection::Theme => self.theme_section(cx).into_any_element(),
             SettingsSection::Wallpaper => self.wallpaper_section(cx).into_any_element(),
+        };
+
+        let content_area = if matches!(
+            self.active_section,
+            SettingsSection::Proxy | SettingsSection::SshTunnel
+        ) {
+            v_flex()
+                .flex_1()
+                .min_h_0()
+                .p_6()
+                .child(content)
+                .into_any_element()
+        } else {
+            v_flex()
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scrollbar()
+                .p_6()
+                .gap_5()
+                .child(content)
+                .into_any_element()
         };
 
         h_flex()
@@ -36,14 +59,8 @@ impl SettingsOperationWindow {
                     .flex_1()
                     .min_w_0()
                     .bg(Hsla::transparent_black())
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .overflow_y_scrollbar()
-                            .p_6()
-                            .gap_5()
-                            .child(content),
-                    ),
+                    .min_h_0()
+                    .child(content_area),
             )
     }
 
@@ -65,6 +82,13 @@ impl SettingsOperationWindow {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child("系统设置"),
             )
+            .child(self.sidebar_item(SettingsSection::Proxy, IconName::Globe, "代理配置", cx))
+            .child(self.sidebar_item(
+                SettingsSection::SshTunnel,
+                IconName::ArrowRight,
+                "SSH 隧道配置",
+                cx,
+            ))
             .child(self.sidebar_item(SettingsSection::Theme, IconName::Palette, "主题", cx))
             .child(self.sidebar_item(SettingsSection::Wallpaper, IconName::File, "背景图片", cx))
     }
@@ -80,6 +104,8 @@ impl SettingsOperationWindow {
         let selected = self.active_section == section;
         h_flex()
             .id(match section {
+                SettingsSection::Proxy => "settings-section-proxy",
+                SettingsSection::SshTunnel => "settings-section-tunnel",
                 SettingsSection::Theme => "settings-section-theme",
                 SettingsSection::Wallpaper => "settings-section-wallpaper",
             })

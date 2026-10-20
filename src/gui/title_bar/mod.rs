@@ -61,12 +61,8 @@ impl Render for AppTitleBar {
                             .ghost()
                             .small()
                             .label("设置")
-                            .dropdown_menu(|menu, _, _| {
-                                menu.menu_with_icon(
-                                    "通用设置",
-                                    IconName::Settings2,
-                                    Box::new(OpenSettings),
-                                )
+                            .on_click(|_, window, cx| {
+                                settings_operation_window::open_settings_window(window, cx);
                             }),
                     )
                     .child(

@@ -5,33 +5,36 @@ use crate::{
 };
 
 pub(super) async fn initialize() -> ApplicationResult<()> {
-    DATA_CONTEXT.set_network_configs(INFRASTRUCTURE.load_network_configs().await?);
+    let mut configs = INFRASTRUCTURE.load_network_configs().await?;
+    update_names(&mut configs);
+    DATA_CONTEXT.set_network_configs(configs);
     Ok(())
 }
 
 pub(super) async fn save(
     proxy: bool,
     id: String,
-    name: String,
-    config: NetworkConfigs,
+    mut config: NetworkConfigs,
     delete: bool,
 ) -> ApplicationResult<()> {
     let _write = CONFIG_WRITE.lock().await;
+    update_names(&mut config);
     let mut current = DATA_CONTEXT.network_configs();
     if proxy {
         current.proxies.retain(|p| p.id != id);
         if !delete {
-            validate_name(&name, current.proxies.iter().map(|p| p.name.as_str()))?;
             let value = config.proxies.into_iter().next().ok_or("代理配置为空")?;
             if value.config.host.trim().is_empty() || value.config.port == 0 {
                 return Err("请输入代理主机和有效端口".into());
+            }
+            if current.proxies.iter().any(|p| p.name == value.name) {
+                return Err("相同主机和端口的代理配置已存在".into());
             }
             current.proxies.push(value);
         }
     } else {
         current.tunnels.retain(|p| p.id != id);
         if !delete {
-            validate_name(&name, current.tunnels.iter().map(|p| p.name.as_str()))?;
             let value = config
                 .tunnels
                 .into_iter()
@@ -43,6 +46,9 @@ pub(super) async fn save(
             {
                 return Err("请输入有效的隧道端口和转发地址".into());
             }
+            if current.tunnels.iter().any(|p| p.name == value.name) {
+                return Err("相同转发参数的 SSH 隧道配置已存在".into());
+            }
             current.tunnels.push(value);
         }
     }
@@ -52,15 +58,14 @@ pub(super) async fn save(
     Ok(())
 }
 
-pub(super) fn validate_name<'a>(
-    name: &str,
-    existing: impl Iterator<Item = &'a str>,
-) -> Result<(), String> {
-    if name.trim().is_empty() {
-        return Err("请输入配置名称".into());
+fn update_names(configs: &mut NetworkConfigs) {
+    for proxy in &mut configs.proxies {
+        proxy.name = format!("{}:{}", proxy.config.host, proxy.config.port);
     }
-    if existing.into_iter().any(|existing| existing == name) {
-        return Err("配置名称已存在".into());
+    for tunnel in &mut configs.tunnels {
+        tunnel.name = format!(
+            "{} → {}:{}",
+            tunnel.config.remote_port, tunnel.config.forward_address, tunnel.config.forward_port
+        );
     }
-    Ok(())
 }

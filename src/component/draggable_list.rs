@@ -38,6 +38,7 @@ struct DraggableListState {
 struct DraggableListItem {
     id: ElementId,
     render: Rc<dyn Fn(&App) -> AnyElement>,
+    measured_width: Option<Pixels>,
 }
 
 struct DraggableListDragPreview {
@@ -108,6 +109,7 @@ impl Render for DraggableList {
 
         self.view_state = state.read(cx).clone();
 
+        self.measure_item_widths(window, cx);
         self.render_virtualized(cx)
     }
 }
@@ -156,6 +158,7 @@ impl DraggableList {
         self.items.push(DraggableListItem {
             id,
             render: Rc::new(move |cx| render(cx).into_any_element()),
+            measured_width: None,
         });
         self.rebuild_item_sizes();
         self
@@ -419,10 +422,51 @@ impl DraggableList {
         }
     }
 
+    fn measure_item_widths(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.axis != Axis::Horizontal || !self.item_width.is_zero() {
+            return;
+        }
+
+        let available_space = size(
+            AvailableSpace::MaxContent,
+            if self.item_height.is_zero() {
+                AvailableSpace::MaxContent
+            } else {
+                AvailableSpace::Definite(self.item_height)
+            },
+        );
+        let mut changed = false;
+        for item in &mut self.items {
+            let width = (item.render)(cx)
+                .layout_as_root(available_space, window, cx)
+                .width
+                .ceil();
+            if item.measured_width != Some(width) {
+                log::debug!(
+                    "draggable_list_item_measured: id={}, width={width:?}",
+                    item.id
+                );
+                item.measured_width = Some(width);
+                changed = true;
+            }
+        }
+        if changed {
+            self.rebuild_item_sizes();
+        }
+    }
+
     fn rebuild_item_sizes(&mut self) {
         self.item_sizes = Rc::new(
-            (0..self.items.len())
-                .map(|_| size(self.item_width, self.item_height))
+            self.items
+                .iter()
+                .map(|item| {
+                    let width = if self.item_width.is_zero() && self.axis == Axis::Horizontal {
+                        item.measured_width.unwrap_or_default()
+                    } else {
+                        self.item_width
+                    };
+                    size(width, self.item_height)
+                })
                 .collect(),
         );
     }
@@ -464,7 +508,7 @@ impl DraggableList {
         let axis = self.axis;
         let state = self.state.clone();
         let drag_state = state.clone();
-        let item_width = self.item_width;
+        let item_width = self.item_sizes[visible_index].width;
 
         let drag_preview_render = render.clone();
         let drag_preview_width = match (axis, item_width.as_f32() == 0.0) {
@@ -615,6 +659,7 @@ impl DraggableList {
                     if from_index < this.items.len() && insertion_index <= this.items.len() {
                         let item = this.items.remove(from_index);
                         this.items.insert(to_index, item);
+                        this.rebuild_item_sizes();
                     }
                     state.update(cx, |state, _| {
                         state.transition_epoch = state.transition_epoch.wrapping_add(1);
@@ -645,7 +690,12 @@ impl DraggableList {
         let root = if let Some((transition, direction)) = transition {
             let axis = self.axis;
             let distance = match axis {
-                Axis::Horizontal => self.item_width,
+                Axis::Horizontal => self
+                    .items
+                    .iter()
+                    .position(|item| Some(&item.id) == self.view_state.dragging_id.as_ref())
+                    .map(|index| self.item_sizes[index].width)
+                    .unwrap_or(item_width),
                 Axis::Vertical => self.item_height,
             };
             let start_offset = distance * direction;

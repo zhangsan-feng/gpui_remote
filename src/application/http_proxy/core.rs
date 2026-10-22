@@ -17,9 +17,6 @@ pub(super) fn normalize_and_validate_settings(
     if settings.username.contains(':') {
         return Err("HTTP Basic 用户名不能包含冒号".to_owned());
     }
-    if settings.enabled && settings.username.is_empty() {
-        return Err("HTTP 代理非回环监听必须配置用户名和密码".to_owned());
-    }
     Ok(())
 }
 

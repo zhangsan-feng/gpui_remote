@@ -187,7 +187,7 @@ mod runtime {
                 return;
             }
             if self.data_chunks > 0 || self.command_count > 0 || self.frame_build_count > 0 {
-                log::info!(
+                log::debug!(
                     "SSH terminal perf window: workspace_id={workspace_id}, interval_ms={}, data_chunks={}, data_bytes={}, process_total_us={}, process_max_us={}, replies={}, reply_bytes={}, reply_send_total_us={}, reply_send_max_us={}, commands={}, command_total_us={}, command_max_us={}, frame_builds={}, frame_build_total_us={}, frame_build_max_us={}, publish_attempts={}, publish_attempt_total_us={}, publish_attempt_max_us={}",
                     elapsed.as_millis(),
                     self.data_chunks,
@@ -209,7 +209,7 @@ mod runtime {
                     self.max_publish_time.as_micros(),
                 );
             } else if !self.reported_idle {
-                log::info!(
+                log::debug!(
                     "SSH terminal idle window: workspace_id={workspace_id}, interval_ms={}, reason=no_channel_data_or_terminal_commands",
                     elapsed.as_millis(),
                 );

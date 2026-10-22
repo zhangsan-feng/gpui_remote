@@ -1,3 +1,5 @@
+mod core;
+
 use gpui_kit::component::{Root, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -19,9 +21,9 @@ pub(crate) fn open_main_window(
     let window_options = main_window_options(cx);
     cx.open_window(window_options, move |window, app| {
         window.on_window_should_close(app, |window, _| {
-            log::info!("Main window native close requested: action=remove_window");
+            log::debug!("Main window native close requested: action=remove_window");
             window.remove_window();
-            log::info!("Main window native close handled: action=remove_window");
+            log::debug!("Main window native close handled: action=remove_window");
             false
         });
         gpui_kit::init(app);
@@ -53,10 +55,13 @@ fn main_window_options(cx: &mut App) -> WindowOptions {
 pub struct HomeView {
     title_bar: Entity<AppTitleBar>,
     content: Entity<ResizablePanel>,
+    diagnostics: core::WindowDiagnostics,
+    _bounds_subscription: Subscription,
 }
 
 impl HomeView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        core::log_window_bounds(window);
         let left_session = cx.new(|cx| SessionComponent::new(window, cx));
         let workspace = cx.new(|cx| Workspace::new(window, cx));
         let content = cx.new(|cx| {
@@ -69,6 +74,10 @@ impl HomeView {
         Self {
             title_bar: cx.new(|cx| AppTitleBar::new(window, cx)),
             content,
+            diagnostics: core::WindowDiagnostics::default(),
+            _bounds_subscription: cx.observe_window_bounds(window, |_, window, _| {
+                core::log_window_bounds(window);
+            }),
         }
     }
 }
@@ -86,6 +95,7 @@ impl Render for HomeView {
             .relative()
             .size_full()
             .bg(root_background)
+            .child(self.diagnostics.layout_probe())
             .when_some(wallpaper, |this, (path, opacity)| {
                 this.child(
                     img(path)

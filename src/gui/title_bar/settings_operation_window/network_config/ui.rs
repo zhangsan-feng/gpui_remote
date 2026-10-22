@@ -18,28 +18,13 @@ impl NetworkConfigEditor {
             configs
                 .proxies
                 .iter()
-                .map(|p| {
-                    (
-                        p.id.clone(),
-                        p.name.clone(),
-                        format!("{}:{}", p.config.host, p.config.port),
-                    )
-                })
+                .map(|p| (p.id.clone(), p.name.clone()))
                 .collect()
         } else {
             configs
                 .tunnels
                 .iter()
-                .map(|p| {
-                    (
-                        p.id.clone(),
-                        p.name.clone(),
-                        format!(
-                            "{} → {}:{}",
-                            p.config.remote_port, p.config.forward_address, p.config.forward_port
-                        ),
-                    )
-                })
+                .map(|p| (p.id.clone(), p.name.clone()))
                 .collect()
         };
         v_flex()
@@ -99,7 +84,6 @@ impl NetworkConfigEditor {
                                 "新增配置"
                             },
                         ))
-                        .child(self.field("配置名称", &self.name))
                         .child(self.field(
                             if self.proxy {
                                 "代理主机"
@@ -185,7 +169,7 @@ impl NetworkConfigEditor {
                                 .child("暂无配置，点击“新增配置”开始添加。"),
                         )
                     })
-                    .children(entries.into_iter().map(|(id, name, detail)| {
+                    .children(entries.into_iter().map(|(id, name)| {
                         let selected = self.show_editor && self.editing.as_ref() == Some(&id);
                         let delete_id = id.clone();
                         h_flex()
@@ -200,21 +184,35 @@ impl NetworkConfigEditor {
                             } else {
                                 CustomerUiTheme::border_color(cx)
                             })
-                            .bg(CustomerUiTheme::panel_background(cx))
+                            .bg(if selected {
+                                CustomerUiTheme::colors(cx).workspace_select_color
+                            } else {
+                                CustomerUiTheme::panel_background(cx)
+                            })
                             .child(
-                                v_flex()
+                                div()
                                     .flex_1()
                                     .min_w_0()
-                                    .gap_1()
-                                    .child(div().text_sm().truncate().child(name))
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .truncate()
-                                            .child(detail),
-                                    ),
+                                    .text_sm()
+                                    .truncate()
+                                    .when(selected, |name| name.font_weight(FontWeight::SEMIBOLD))
+                                    .child(name),
                             )
+                            .when(selected, |row| {
+                                row.child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .px_2()
+                                        .py_0p5()
+                                        .rounded_md()
+                                        .bg(cx.theme().primary)
+                                        .text_color(cx.theme().primary_foreground)
+                                        .text_xs()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .whitespace_nowrap()
+                                        .child("编辑中"),
+                                )
+                            })
                             .child(
                                 Button::new(SharedString::from(format!("edit-{id}")))
                                     .ghost()

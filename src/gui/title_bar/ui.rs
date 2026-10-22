@@ -79,9 +79,9 @@ impl AppTitleBar {
             .text_color(foreground)
             .hover(move |style| style.bg(hover_color))
             .on_click(cx.listener(|_, _, window, _| {
-                log::info!("Main window custom close clicked: action=remove_window");
+                log::debug!("Main window custom close clicked: action=remove_window");
                 window.remove_window();
-                log::info!("Main window custom close handled: action=remove_window");
+                log::debug!("Main window custom close handled: action=remove_window");
             }))
             .child("×")
             .into_any_element()

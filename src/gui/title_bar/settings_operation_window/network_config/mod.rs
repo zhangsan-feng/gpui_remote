@@ -8,7 +8,6 @@ pub(super) struct NetworkConfigEditor {
     proxy: bool,
     editing: Option<String>,
     show_editor: bool,
-    name: Entity<InputState>,
     address: Entity<InputState>,
     port: Entity<InputState>,
     username: Entity<InputState>,
@@ -36,7 +35,6 @@ impl NetworkConfigEditor {
             proxy,
             editing: None,
             show_editor: false,
-            name: Self::input("配置名称", "", false, window, cx),
             address: Self::input(
                 if proxy {
                     "代理主机"

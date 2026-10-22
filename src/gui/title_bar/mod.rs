@@ -44,6 +44,11 @@ impl Render for AppTitleBar {
                     .gap_2()
                     .text_color(palette.foreground)
                     .child(
+                        img(crate::component::assets::APP_ICON)
+                            .size(px(18.))
+                            .flex_shrink_0(),
+                    )
+                    .child(
                         Button::new("top_session-menu")
                             .ghost()
                             .small()

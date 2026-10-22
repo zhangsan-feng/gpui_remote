@@ -1,6 +1,7 @@
 
 ## 项目约束
 禁止编写superpowers 的计划 禁止使用computer use 除非用户本次会话指定使用
+禁止修改README.md
 明确的需求不要设计方案直接开始执行
 UI 样式参考 [Tailwind CSS](https://tailwindcss.com/)
 使用 Product Design 规范来约束视觉层次和交互状态

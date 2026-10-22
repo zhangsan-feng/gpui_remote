@@ -11,7 +11,6 @@ impl NetworkConfigEditor {
             return;
         }
         let configs = crate::data_context::DATA_CONTEXT.network_configs();
-        let mut name = String::new();
         let mut address = if self.proxy {
             String::new()
         } else {
@@ -28,14 +27,12 @@ impl NetworkConfigEditor {
         if let Some(id) = &id {
             if self.proxy {
                 if let Some(p) = configs.proxies.iter().find(|p| &p.id == id) {
-                    name = p.name.clone();
                     address = p.config.host.clone();
                     port = p.config.port.to_string();
                     username = p.config.username.clone();
                     password = p.config.password.clone();
                 }
             } else if let Some(p) = configs.tunnels.iter().find(|p| &p.id == id) {
-                name = p.name.clone();
                 address = p.config.forward_address.clone();
                 port = p.config.remote_port.to_string();
                 forward_port = p.config.forward_port.to_string();
@@ -44,7 +41,6 @@ impl NetworkConfigEditor {
         self.editing = id;
         self.show_editor = true;
         for (input, value) in [
-            (&self.name, name),
             (&self.address, address),
             (&self.port, port),
             (&self.username, username),
@@ -57,7 +53,7 @@ impl NetworkConfigEditor {
         cx.notify();
     }
 
-    fn draft(&self, id: String, name: String, cx: &App) -> Result<NetworkConfigs, String> {
+    fn draft(&self, id: String, cx: &App) -> Result<NetworkConfigs, String> {
         let port = |input: &Entity<gpui_kit::component::input::InputState>| -> Result<u16, String> {
             input
                 .read(cx)
@@ -72,7 +68,7 @@ impl NetworkConfigEditor {
         if self.proxy {
             configs.proxies.push(NamedConfig {
                 id,
-                name,
+                name: String::new(),
                 config: ProxyConfig {
                     host: self.address.read(cx).value().trim().into(),
                     port: port(&self.port)?,
@@ -83,7 +79,7 @@ impl NetworkConfigEditor {
         } else {
             configs.tunnels.push(NamedConfig {
                 id,
-                name,
+                name: String::new(),
                 config: SshReverseTunnelConfig {
                     remote_port: port(&self.port)?,
                     forward_address: self.address.read(cx).value().trim().into(),
@@ -108,7 +104,7 @@ impl NetworkConfigEditor {
         if self.busy {
             return;
         }
-        self.persist(id, String::new(), NetworkConfigs::default(), true, cx);
+        self.persist(id, NetworkConfigs::default(), true, cx);
     }
 
     pub(super) fn save(&mut self, cx: &mut Context<Self>) {
@@ -119,8 +115,7 @@ impl NetworkConfigEditor {
             .editing
             .clone()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let name = self.name.read(cx).value().trim().to_owned();
-        let configs = self.draft(id.clone(), name.clone(), cx);
+        let configs = self.draft(id.clone(), cx);
         let configs = match configs {
             Ok(configs) => configs,
             Err(error) => {
@@ -130,13 +125,12 @@ impl NetworkConfigEditor {
                 return;
             }
         };
-        self.persist(id, name, configs, false, cx);
+        self.persist(id, configs, false, cx);
     }
 
     fn persist(
         &mut self,
         id: String,
-        name: String,
         configs: NetworkConfigs,
         delete: bool,
         cx: &mut Context<Self>,
@@ -149,7 +143,7 @@ impl NetworkConfigEditor {
             let saved_id = id.clone();
             let result = crate::global_state::run_application(async move {
                 crate::application::APPLICATION
-                    .save_network_config(proxy, id, name, configs, delete)
+                    .save_network_config(proxy, id, configs, delete)
                     .await
             })
             .await;

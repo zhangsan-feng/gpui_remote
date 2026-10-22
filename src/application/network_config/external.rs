@@ -12,10 +12,9 @@ impl Application {
         &self,
         proxy: bool,
         id: String,
-        name: String,
         config: NetworkConfigs,
         delete: bool,
     ) -> ApplicationResult<()> {
-        super::core::save(proxy, id, name, config, delete).await
+        super::core::save(proxy, id, config, delete).await
     }
 }

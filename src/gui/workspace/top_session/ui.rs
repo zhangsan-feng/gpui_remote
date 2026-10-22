@@ -49,7 +49,6 @@ pub fn workspace_tab_bar_background(cx: &App) -> Hsla {
 pub(super) fn new_workspace_tabs(_: &App) -> DraggableList {
     let mut tabs = DraggableList::new();
     tabs.set_axis(Axis::Horizontal)
-        .set_item_width(px(240.))
         .set_item_height(px(40.))
         .set_item_bg_provider(|cx| workspace_tab_palette(cx).background.into())
         .set_item_selected_bg_provider(|cx| workspace_tab_palette(cx).selected_background.into())
@@ -90,7 +89,8 @@ pub(in crate::gui::workspace) fn workspace_tab(
         };
     h_flex()
         .id(format!("workspace-tab-{session_id}"))
-        .size_full()
+        .w_auto()
+        .h_full()
         .p_2()
         .gap_2()
         .cursor_pointer()
@@ -118,7 +118,7 @@ pub(in crate::gui::workspace) fn workspace_tab(
         )
         .child(
             div()
-                .flex_1()
+                .flex_shrink_0()
                 .text_sm()
                 .whitespace_nowrap()
                 .overflow_hidden()

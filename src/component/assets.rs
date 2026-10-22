@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use gpui_kit::*;
 use rust_embed::RustEmbed;
 
+pub(crate) const APP_ICON: &str = "app/app-logo-v3.png";
+
 #[derive(RustEmbed)]
 #[folder = "./src/icon"]
 struct AssetFiles;
@@ -21,6 +23,12 @@ impl MergedAssets {
 
 impl AssetSource for MergedAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path == APP_ICON {
+            return Ok(Some(Cow::Borrowed(include_bytes!(
+                "../../assets/app/app-logo-v3.png"
+            ))));
+        }
+
         let clean_path = path.trim_start_matches("icon/").trim_start_matches('/');
         if let Some(file) = AssetFiles::get(clean_path) {
             return Ok(Some(file.data));
@@ -31,6 +39,10 @@ impl AssetSource for MergedAssets {
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut all_files = std::collections::HashSet::new();
+        if APP_ICON.starts_with(path) {
+            all_files.insert(APP_ICON.to_owned());
+        }
+
         let clean_path = path.trim_start_matches("icon/").trim_start_matches('/');
         for file_path in AssetFiles::iter() {
             if file_path.starts_with(clean_path) {

@@ -33,7 +33,7 @@ impl ServicesOperationWindow {
             .gap_5()
             .child(self.section_heading(
                 "HTTP 代理",
-                "提供 HTTP 和 HTTPS CONNECT 代理供局域网客户端使用；非回环监听需要设置账号和密码。",
+                "提供 HTTP 和 HTTPS CONNECT 代理供局域网客户端使用；账号密码留空时无需认证。",
                 cx,
             ))
             .child(

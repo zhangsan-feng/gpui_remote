@@ -195,7 +195,7 @@ impl Workspace {
                     dispatch_started.elapsed().as_micros()
                 );
             }
-            log::info!("GUI refresh notification subscription stopped");
+            log::debug!("GUI refresh notification subscription stopped");
         })
         .detach();
     }

@@ -119,9 +119,6 @@ impl HttpProxyController {
         let address = listener
             .local_addr()
             .map_err(|error| format!("读取 HTTP 代理监听地址失败: {error}"))?;
-        if !address.ip().is_loopback() && settings.username.is_empty() {
-            return Err("HTTP 代理非回环监听必须配置用户名和密码".to_owned());
-        }
         let credentials = if settings.username.is_empty() {
             None
         } else {

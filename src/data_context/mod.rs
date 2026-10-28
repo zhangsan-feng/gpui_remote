@@ -1,5 +1,4 @@
 mod network_config;
-pub(crate) mod notice;
 mod service_status;
 mod sftp;
 mod state;
@@ -20,7 +19,6 @@ pub(crate) struct DataContext {
     sftp: RwLock<HashMap<String, state::SftpWorkspaceData>>,
     next_sftp_transfer_id: AtomicU64,
     commit: Mutex<()>,
-    pub(crate) notice: DataContextNotice,
 }
 
 impl DataContext {
@@ -32,12 +30,10 @@ impl DataContext {
             sftp: RwLock::new(HashMap::new()),
             next_sftp_transfer_id: AtomicU64::new(1),
             commit: Mutex::new(()),
-            notice: DataContextNotice::new(),
         }
     }
 }
 
-use crate::data_context::notice::DataContextNotice;
 pub(crate) use sftp::SftpModel;
 pub(crate) use state::{
     DataChange, DataSnapshot, LocalSnapshot, SftpDirectorySummary, SftpEntrySummary, SftpSnapshot,

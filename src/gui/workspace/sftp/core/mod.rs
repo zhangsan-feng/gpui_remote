@@ -136,16 +136,20 @@ impl SftpView {
         let previous = projection.remote_navigation_tail.take();
         let (complete, next) = tokio::sync::oneshot::channel();
         projection.remote_navigation_tail = Some(next);
-        let application = crate::application::APPLICATION.clone();
         let workspace_id = workspace_id.to_owned();
         cx.spawn(async move |_this, _cx| {
             if let Some(previous) = previous {
                 let _ = previous.await;
             }
             let result = crate::global_state::run_application(async move {
-                application
-                    .sftp
-                    .change_remote_directory_checked(workspace_id, profile_ip, profile_title, path)
+                crate::event_bus::EVENT_BUS
+                    .refresh_data_context(crate::event_bus::RefreshDataContext::SftpDirectory {
+                        workspace_id,
+                        ip: profile_ip,
+                        title: profile_title,
+                        path,
+                        local: false,
+                    })
                     .await
             })
             .await;

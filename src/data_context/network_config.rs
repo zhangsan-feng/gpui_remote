@@ -1,5 +1,6 @@
 use super::DataContext;
 use crate::domain::network_config::NetworkConfigs;
+use crate::event_bus::{EVENT_BUS, refresh_gui::GuiComponent};
 
 impl DataContext {
     pub(crate) fn network_configs(&self) -> NetworkConfigs {
@@ -14,6 +15,6 @@ impl DataContext {
             .network_configs
             .write()
             .unwrap_or_else(|e| e.into_inner()) = configs;
-        self.notice.notify_gui_refresh();
+        EVENT_BUS.refresh_gui.notify(&[GuiComponent::NetworkConfig]);
     }
 }

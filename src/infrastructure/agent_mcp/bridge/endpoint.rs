@@ -32,7 +32,6 @@ pub(crate) fn new() -> (McpBridgeEndpoint, McpBridgeReceiver) {
             command_rx,
             notification_tx,
             data_context,
-            notice: DATA_CONTEXT.notice.clone(),
         },
     )
 }

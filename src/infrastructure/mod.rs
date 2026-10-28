@@ -1,4 +1,6 @@
 pub(crate) mod agent_mcp;
+#[cfg(windows)]
+mod clipboard;
 mod connection;
 mod database;
 mod http_proxy;

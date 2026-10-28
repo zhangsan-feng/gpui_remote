@@ -9,7 +9,10 @@ use crate::{
 impl Application {
     pub(crate) async fn initialize(&self) -> ApplicationResult<()> {
         INFRASTRUCTURE.initialize().await?;
-        self.initialize_network_configs().await?;
+        self.start_event_bus();
+        crate::event_bus::EVENT_BUS
+            .refresh_data_context(crate::event_bus::RefreshDataContext::NetworkConfigs)
+            .await?;
         if let Err(error) = self.port_forward.initialize().await {
             log::error!("初始化端口转发失败: {error}");
         }
@@ -48,6 +51,7 @@ impl Application {
 
     pub(crate) async fn shutdown(&self) {
         self.begin_shutdown().await;
+        self.stop_event_bus().await;
         self.port_forward.shutdown().await;
         if let Err(error) = INFRASTRUCTURE.shutdown_mcp().await {
             log::warn!("关闭 MCP 服务失败: {error}");

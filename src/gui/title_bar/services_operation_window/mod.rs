@@ -232,9 +232,9 @@ impl ServicesOperationWindow {
         })
         .detach();
 
-        let mut gui_refresh = crate::data_context::DATA_CONTEXT
-            .notice
-            .subscribe_gui_refresh();
+        let mut gui_refresh = crate::event_bus::EVENT_BUS
+            .refresh_gui
+            .subscribe(crate::event_bus::refresh_gui::GuiComponent::Services);
         cx.spawn(async move |this, cx| {
             let _ = this.update(cx, |this, cx| this.refresh_port_forward_rules(cx));
             while gui_refresh.changed().await.is_ok() {

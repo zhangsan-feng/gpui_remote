@@ -8,6 +8,7 @@ mod build_info;
 mod component;
 mod data_context;
 mod domain;
+mod event_bus;
 mod global_state;
 mod gui;
 mod infrastructure;
@@ -44,6 +45,7 @@ async fn main() {
             .with_http_client(Arc::new(http_client))
             .with_assets(component::assets::MergedAssets::new())
             .run(move |cx| {
+                #[cfg(not(windows))]
                 component::clipboard::init(platform.clone(), cx);
                 gui::home::open_main_window(
                     cx,

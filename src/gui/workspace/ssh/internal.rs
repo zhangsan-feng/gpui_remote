@@ -326,7 +326,17 @@ mod selection {
             let Some(selection) = &self.selection else {
                 return;
             };
+            let started = std::time::Instant::now();
+            log::info!(
+                "terminal_copy_selection_started workspace_id={}",
+                selection.workspace_id
+            );
             let text = selected_text(&selection.frame, selection);
+            log::info!(
+                "terminal_copy_selection_extracted bytes={} elapsed_ms={}",
+                text.len(),
+                started.elapsed().as_millis()
+            );
             if !text.is_empty() {
                 crate::component::clipboard::write_text(text, cx);
             }

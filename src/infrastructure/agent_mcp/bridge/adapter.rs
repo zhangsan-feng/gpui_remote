@@ -17,14 +17,13 @@ pub(crate) fn start_mcp_bridge(
         mut command_rx,
         notification_tx,
         data_context,
-        notice,
     } = bridge;
 
     let lifecycle_data_context = data_context;
     let notification_data_context = data_context;
     // Subscribe synchronously before serving commands so early events are observed.
-    let mut lifecycle_events = notice.subscribe_session_lifecycle();
-    let mut notification_events = notice.subscribe_session_lifecycle();
+    let mut lifecycle_events = crate::event_bus::EVENT_BUS.subscribe_session_lifecycle();
+    let mut notification_events = crate::event_bus::EVENT_BUS.subscribe_session_lifecycle();
     // This bridge owns Tokio channels and timers. Keep it on the Tokio runtime
     // instead of GPUI's foreground executor, whose wake-up model can strand a
     // pending Tokio channel operation under load.

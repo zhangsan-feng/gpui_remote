@@ -52,6 +52,27 @@ pub(in crate::gui::workspace) fn init(cx: &mut App) {
 }
 
 impl TerminalView {
+    fn start_subscribe(&self, cx: &mut Context<Self>) {
+        let mut refresh = crate::event_bus::EVENT_BUS
+            .refresh_gui
+            .subscribe(crate::event_bus::refresh_gui::GuiComponent::Terminal);
+        cx.spawn(async move |this, cx| {
+            while refresh.changed().await.is_ok() {
+                refresh.borrow_and_update();
+                if this
+                    .update(cx, |this, cx| {
+                        let snapshot = crate::data_context::DATA_CONTEXT.workspace_snapshot();
+                        this.apply_snapshot(&snapshot, cx);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
     pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
         let list_state = ListState::new(0, ListAlignment::Top, px(256.))
             .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
@@ -71,6 +92,7 @@ impl TerminalView {
             selecting_text: false,
             scroll_handle: TerminalScrollHandle::default(),
         };
+        this.start_subscribe(cx);
         this
     }
 }

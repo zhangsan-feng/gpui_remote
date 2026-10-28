@@ -1,3 +1,4 @@
+use crate::event_bus::{EVENT_BUS, refresh_gui::GuiComponent};
 use std::sync::Arc;
 
 use crate::domain::terminal::{TerminalData, TerminalStatus};
@@ -57,11 +58,15 @@ impl DataContext {
             .iter_mut()
             .find(|item| item.workspace_id == workspace_id)
             .unwrap();
+        let status_changed = workspace.status != status;
         workspace.status = status;
         workspace.terminal_revision = revision;
         drop(snapshot);
         drop(_commit);
-        let refresh_sequence = self.notice.notify_gui_refresh();
+        let refresh_sequence = EVENT_BUS.refresh_gui.notify(&[GuiComponent::Terminal]);
+        if status_changed {
+            EVENT_BUS.refresh_gui.notify(&[GuiComponent::Workspace]);
+        }
         let process_id = std::process::id();
         log::debug!(
             "SSH terminal state published: process_id={process_id}, workspace_id={workspace_id}, content_changed={content_changed}, revision={revision}, gui_snapshot_version={gui_snapshot_version}, mcp_snapshot_version={mcp_snapshot_version}, refresh_sequence={refresh_sequence}"
@@ -151,7 +156,9 @@ impl DataContext {
         workspace.terminal_revision = revision;
         drop(snapshot);
         drop(_commit);
-        self.notice.notify_gui_refresh();
+        EVENT_BUS
+            .refresh_gui
+            .notify(&[GuiComponent::Workspace, GuiComponent::Terminal]);
         true
     }
 }

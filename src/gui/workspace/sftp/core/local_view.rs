@@ -81,7 +81,6 @@ impl SftpView {
         self.local_list_state.reset_with_uniform_height(0, px(38.));
         cx.notify();
 
-        let application = crate::application::APPLICATION.clone();
         let path_text = path.display().to_string();
         cx.spawn(async move |this, cx| {
             if let Some(previous) = previous {
@@ -89,14 +88,14 @@ impl SftpView {
             }
             let task_workspace_id = workspace_id.clone();
             let result = crate::global_state::run_application(async move {
-                application
-                    .sftp
-                    .change_local_directory_checked(
-                        task_workspace_id,
-                        profile_ip,
-                        profile_title,
-                        path_text,
-                    )
+                crate::event_bus::EVENT_BUS
+                    .refresh_data_context(crate::event_bus::RefreshDataContext::SftpDirectory {
+                        workspace_id: task_workspace_id,
+                        ip: profile_ip,
+                        title: profile_title,
+                        path: path_text,
+                        local: true,
+                    })
                     .await
             })
             .await;

@@ -1,4 +1,7 @@
+#[cfg(windows)]
+mod clipboard;
 mod database;
+mod event_bus;
 mod http_proxy;
 mod lifecycle;
 pub(crate) mod mcp;
@@ -34,6 +37,7 @@ pub(crate) struct Application {
     pub(crate) port_test: port_test::PortTestApplication,
     pub(crate) theme: theme::ThemeApplication,
     pub(crate) mcp: mcp::McpApplication,
+    data_refresh_task: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     shutting_down: Arc<AtomicBool>,
     operations: Arc<tokio::sync::RwLock<()>>,
 }
@@ -54,6 +58,7 @@ impl Application {
             port_test: port_test::PortTestApplication::new(),
             theme: theme::ThemeApplication::new(),
             mcp: mcp::McpApplication::new(),
+            data_refresh_task: Arc::new(std::sync::Mutex::new(None)),
             shutting_down: Arc::new(AtomicBool::new(false)),
             operations: Arc::new(tokio::sync::RwLock::new(())),
         }

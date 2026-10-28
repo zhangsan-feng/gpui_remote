@@ -79,20 +79,22 @@ impl SshReverseTunnelController {
         .context("SSH 隧道握手或主机密钥校验失败")?;
 
         authenticate(&mut session, profile).await?;
+        // The shell uses this loopback endpoint for its proxy environment variables.
+        let remote_address = "127.0.0.1";
         session
-            .tcpip_forward(profile.host.clone(), u32::from(tunnel.remote_port))
+            .tcpip_forward(remote_address, u32::from(tunnel.remote_port))
             .await
             .with_context(|| {
                 format!(
                     "开启 SSH 反向隧道失败: remote={}:{}, target={}:{}",
-                    profile.host, tunnel.remote_port, tunnel.forward_address, tunnel.forward_port
+                    remote_address, tunnel.remote_port, tunnel.forward_address, tunnel.forward_port
                 )
             })?;
 
         log::info!(
             "SSH reverse tunnel started: profile_id={}, remote={}:{}, target={}:{}, authentication={}",
             profile.id,
-            profile.host,
+            remote_address,
             tunnel.remote_port,
             tunnel.forward_address,
             tunnel.forward_port,
@@ -106,7 +108,7 @@ impl SshReverseTunnelController {
             profile.id.clone(),
             TunnelRuntime {
                 session,
-                remote_address: profile.host.clone(),
+                remote_address: remote_address.to_owned(),
                 remote_port: tunnel.remote_port,
             },
         );

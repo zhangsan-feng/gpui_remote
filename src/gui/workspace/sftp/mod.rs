@@ -193,7 +193,28 @@ impl Render for DragPreviewRemoteToLocalItem {
 }
 
 impl SftpView {
-    pub(in crate::gui::workspace) fn new(_cx: &mut Context<Self>) -> Self {
+    fn start_subscribe(&self, cx: &mut Context<Self>) {
+        let mut refresh = crate::event_bus::EVENT_BUS
+            .refresh_gui
+            .subscribe(crate::event_bus::refresh_gui::GuiComponent::Sftp);
+        cx.spawn(async move |this, cx| {
+            while refresh.changed().await.is_ok() {
+                refresh.borrow_and_update();
+                if this
+                    .update(cx, |this, cx| {
+                        let snapshot = crate::data_context::DATA_CONTEXT.workspace_snapshot();
+                        this.apply_snapshot(&snapshot, cx);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    pub(in crate::gui::workspace) fn new(cx: &mut Context<Self>) -> Self {
         let local_list_state =
             ListState::new(0, ListAlignment::Top, px(256.)).with_uniform_item_height(px(38.));
         let remote_list_state =
@@ -219,6 +240,7 @@ impl SftpView {
             transfer_list_state,
             observed_sftp_revisions: HashMap::new(),
         };
+        this.start_subscribe(cx);
         this
     }
 }

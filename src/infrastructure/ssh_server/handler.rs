@@ -7,6 +7,7 @@ use russh::{
 };
 use tokio::sync::mpsc;
 
+use super::reverse_forward::ReverseForwards;
 use super::shell::{ShellCommand, spawn_shell, window_size};
 use crate::{
     application::sftp_server::SftpServerApplication, infrastructure::sftp_server::LocalSftpHandler,
@@ -47,6 +48,7 @@ pub(super) struct SshClientHandler {
     sftp_root: Arc<PathBuf>,
     sftp_application: Arc<SftpServerApplication>,
     channels: HashMap<ChannelId, ChannelState>,
+    reverse_forwards: ReverseForwards,
 }
 
 impl server::Server for SshServer {
@@ -59,6 +61,7 @@ impl server::Server for SshServer {
             sftp_root: self.sftp_root.clone(),
             sftp_application: self.sftp_application.clone(),
             channels: HashMap::new(),
+            reverse_forwards: ReverseForwards::default(),
         }
     }
 
@@ -69,6 +72,27 @@ impl server::Server for SshServer {
 
 impl server::Handler for SshClientHandler {
     type Error = russh::Error;
+
+    async fn tcpip_forward(
+        &mut self,
+        address: &str,
+        port: &mut u32,
+        session: &mut Session,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .reverse_forwards
+            .start(address, port, session.handle())
+            .await)
+    }
+
+    async fn cancel_tcpip_forward(
+        &mut self,
+        address: &str,
+        port: u32,
+        _session: &mut Session,
+    ) -> Result<bool, Self::Error> {
+        Ok(self.reverse_forwards.cancel(address, port).await)
+    }
 
     async fn auth_password(
         &mut self,

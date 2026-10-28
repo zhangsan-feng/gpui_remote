@@ -1,4 +1,5 @@
 use crate::domain::session::Protocol;
+use crate::event_bus::{EVENT_BUS, refresh_gui::GuiComponent};
 
 use super::super::DataContext;
 use super::super::state::SftpWorkspaceData;
@@ -37,6 +38,7 @@ impl DataContext {
         else {
             return None;
         };
+        let status_changed = snapshot.workspaces[index].status != status;
         snapshot.workspaces[index].status = status;
         if notify {
             snapshot.revision = snapshot.revision.wrapping_add(1);
@@ -44,7 +46,10 @@ impl DataContext {
             snapshot.workspaces[index].sftp_revision = revision;
             drop(snapshot);
             drop(_commit);
-            self.notice.notify_gui_refresh();
+            EVENT_BUS.refresh_gui.notify(&[GuiComponent::Sftp]);
+            if status_changed {
+                EVENT_BUS.refresh_gui.notify(&[GuiComponent::Workspace]);
+            }
         }
         Some(result)
     }

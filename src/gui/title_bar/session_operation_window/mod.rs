@@ -143,9 +143,9 @@ impl SessionOperationWindow {
         });
         cx.observe(&proxy_select, |_, _, cx| cx.notify()).detach();
         cx.observe(&tunnel_select, |_, _, cx| cx.notify()).detach();
-        let mut updates = crate::data_context::DATA_CONTEXT
-            .notice
-            .subscribe_gui_refresh();
+        let mut updates = crate::event_bus::EVENT_BUS
+            .refresh_gui
+            .subscribe(crate::event_bus::refresh_gui::GuiComponent::NetworkConfig);
         cx.spawn(async move |this, cx| {
             while updates.changed().await.is_ok() {
                 if this.update(cx, |_, cx| cx.notify()).is_err() {

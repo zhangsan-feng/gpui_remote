@@ -5,6 +5,7 @@ use crate::{
 };
 
 pub(super) async fn initialize() -> ApplicationResult<()> {
+    let _write = CONFIG_WRITE.lock().await;
     let mut configs = INFRASTRUCTURE.load_network_configs().await?;
     update_names(&mut configs);
     DATA_CONTEXT.set_network_configs(configs);

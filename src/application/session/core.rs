@@ -157,7 +157,7 @@ impl Application {
                 .ssh_reverse_tunnel
                 .as_ref()
                 .ok_or_else(|| "连接配置中没有 SSH 隧道参数".to_owned())?;
-            Some(tunnel_proxy_export_commands(tunnel.remote_port))
+            Some(tunnel.remote_port)
         } else {
             None
         };
@@ -216,8 +216,11 @@ impl Application {
             let _ = self.sessions.close(&workspace_id).await;
             return Err(error);
         }
-        if let Some(commands) = tunnel_proxy_exports
-            && let Err(error) = self.ssh.send_input(&workspace_id, commands).await
+        if let Some(remote_port) = tunnel_proxy_exports
+            && let Err(error) = self
+                .ssh
+                .set_tunnel_proxy_environment(&workspace_id, remote_port)
+                .await
         {
             let _ = self.ssh.close(&workspace_id).await;
             let _ = self.sessions.close(&workspace_id).await;
@@ -258,13 +261,4 @@ impl Application {
         }
         self.sessions.close(workspace_id).await
     }
-}
-
-fn tunnel_proxy_export_commands(remote_port: u16) -> Vec<u8> {
-    let proxy_url = shell_single_quote(&format!("http://127.0.0.1:{remote_port}"));
-    format!("export http_proxy={proxy_url}\nexport https_proxy={proxy_url}\n").into_bytes()
-}
-
-fn shell_single_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
 }

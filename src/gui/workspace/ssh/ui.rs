@@ -28,6 +28,7 @@ mod terminal_render {
             let colors = theme::CustomerUiTheme::colors(cx);
             let terminal_background = colors.workspace_background;
             let terminal_foreground = colors.workspace_text_color;
+            let gutter_border = colors.border_color;
             let terminal_cursor_color = theme::CustomerUiTheme::terminal_cursor_color(cx);
             let selection_background = theme::CustomerUiTheme::terminal_selection_background(cx);
             let selection_foreground = theme::CustomerUiTheme::terminal_selection_foreground(cx);
@@ -36,6 +37,7 @@ mod terminal_render {
             let resize_view = terminal_view.clone();
             let resize_workspace_id = workspace_id.clone();
             let menu_workspace_id = workspace_id.clone();
+            let right_click_workspace_id = workspace_id.clone();
             let terminal_list = list(self.list_state.clone(), move |index, _, _| {
                 let line = frame.lines.get(index).cloned().unwrap_or_default();
                 let timestamp = line.timestamp.clone().map(SharedString::from);
@@ -97,6 +99,7 @@ mod terminal_render {
                         line_number,
                         terminal_background,
                         terminal_foreground,
+                        gutter_border,
                     ))
                     .child(
                         h_flex()
@@ -141,17 +144,33 @@ mod terminal_render {
                 .overflow_hidden()
                 .child(terminal_list)
                 .child(self.render_scrollbar(cx))
+                .on_mouse_down(MouseButton::Right, move |event, _, _| {
+                    let _span = tracing::info_span!("terminal_context_menu_mouse_down",
+                        workspace_id = %right_click_workspace_id,
+                        position = ?event.position,
+                        can_copy,
+                    )
+                    .entered();
+                    tracing::info!("right mouse button pressed");
+                })
                 .on_prepaint(move |bounds, _, cx| {
                     let _ = resize_view.update(cx, |this, cx| {
                         this.sync_pty_size(&resize_workspace_id, bounds.size, cell_width, cx);
                     });
                 })
                 .context_menu(move |menu, _, _| {
-                    if can_copy {
+                    let _span = tracing::info_span!("terminal_context_menu_build",
+                        workspace_id = %menu_workspace_id, can_copy,
+                    )
+                    .entered();
+                    tracing::info!("terminal_context_menu_build_started");
+                    let menu = if can_copy {
                         menu.menu("复制", Box::new(CopyTerminal))
                     } else {
                         menu
-                    }
+                    };
+                    tracing::info!("terminal_context_menu_build_finished");
+                    menu
                 })
         }
     }
@@ -161,6 +180,7 @@ mod terminal_render {
         line_number: Option<SharedString>,
         terminal_background: Hsla,
         terminal_foreground: Hsla,
+        gutter_border: Hsla,
     ) -> Div {
         h_flex()
             .h_full()
@@ -170,7 +190,7 @@ mod terminal_render {
             .gap_1()
             .justify_between()
             .border_r_1()
-            .border_color(terminal_background)
+            .border_color(gutter_border)
             .bg(terminal_background)
             .text_size(px(11.))
             .child(

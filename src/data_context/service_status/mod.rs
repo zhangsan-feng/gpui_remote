@@ -1,3 +1,4 @@
+use crate::event_bus::{EVENT_BUS, refresh_gui::GuiComponent};
 use std::collections::HashMap;
 
 use crate::domain::{
@@ -45,7 +46,7 @@ impl DataContext {
             snapshot.revision = snapshot.revision.wrapping_add(1);
         }
         drop(_commit);
-        self.notice.notify_gui_refresh();
+        EVENT_BUS.refresh_gui.notify(&[GuiComponent::Services]);
     }
 
     pub(crate) fn set_port_forward_statuses(&self, statuses: HashMap<String, PortForwardStatus>) {
@@ -65,7 +66,7 @@ impl DataContext {
             snapshot.revision = snapshot.revision.wrapping_add(1);
         }
         drop(_commit);
-        self.notice.notify_gui_refresh();
+        EVENT_BUS.refresh_gui.notify(&[GuiComponent::Services]);
     }
 
     pub(crate) fn set_socks5_proxy_status(&self, status: Socks5ProxyStatus) {
@@ -85,7 +86,7 @@ impl DataContext {
             snapshot.revision = snapshot.revision.wrapping_add(1);
         }
         drop(_commit);
-        self.notice.notify_gui_refresh();
+        EVENT_BUS.refresh_gui.notify(&[GuiComponent::Services]);
     }
 
     pub(crate) fn set_ssh_server_status(&self, status: SshServerStatus) {
@@ -105,7 +106,7 @@ impl DataContext {
             snapshot.revision = snapshot.revision.wrapping_add(1);
         }
         drop(_commit);
-        self.notice.notify_gui_refresh();
+        EVENT_BUS.refresh_gui.notify(&[GuiComponent::Services]);
     }
 
     fn read_snapshot<R>(&self, read: impl FnOnce(&DataSnapshot) -> R) -> R {

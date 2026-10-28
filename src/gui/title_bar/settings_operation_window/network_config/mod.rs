@@ -20,9 +20,9 @@ pub(super) struct NetworkConfigEditor {
 
 impl NetworkConfigEditor {
     pub(super) fn new(proxy: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let mut updates = crate::data_context::DATA_CONTEXT
-            .notice
-            .subscribe_gui_refresh();
+        let mut updates = crate::event_bus::EVENT_BUS
+            .refresh_gui
+            .subscribe(crate::event_bus::refresh_gui::GuiComponent::NetworkConfig);
         cx.spawn(async move |this, cx| {
             while updates.changed().await.is_ok() {
                 if this.update(cx, |_, cx| cx.notify()).is_err() {

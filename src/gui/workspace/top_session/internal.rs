@@ -4,6 +4,37 @@ use gpui_kit::{Context, ElementId};
 use super::{WorkspaceSession, ui::workspace_tab};
 
 impl WorkspaceSession {
+    pub(super) fn refresh_tab(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self
+            .sessions
+            .iter()
+            .find(|session| session.id == workspace_id)
+            .cloned()
+        else {
+            return;
+        };
+        let status = session.profile.status.clone();
+        let selected = self.selected_id.as_deref() == Some(workspace_id);
+        let workspace = cx.entity();
+        let id = ElementId::from(workspace_id.to_owned());
+        self.tabs.update(cx, move |tabs, tabs_cx| {
+            tabs.update_child_with_context(
+                &id,
+                move |cx| {
+                    workspace_tab(
+                        session.id.clone(),
+                        session.profile.clone(),
+                        status.clone(),
+                        selected,
+                        workspace.clone(),
+                        cx,
+                    )
+                },
+                tabs_cx,
+            );
+        });
+    }
+
     pub(super) fn rebuild_tabs(&mut self, cx: &mut Context<Self>) {
         let sessions = self.sessions.clone();
         let statuses = self.statuses.clone();

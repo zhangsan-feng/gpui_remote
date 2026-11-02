@@ -164,6 +164,24 @@ impl DraggableList {
         self
     }
 
+    pub fn update_child_with_context<E, F>(
+        &mut self,
+        id: &ElementId,
+        render: F,
+        cx: &mut Context<Self>,
+    ) -> bool
+    where
+        E: IntoElement,
+        F: Fn(&App) -> E + 'static,
+    {
+        let Some(item) = self.items.iter_mut().find(|item| &item.id == id) else {
+            return false;
+        };
+        item.render = Rc::new(move |cx| render(cx).into_any_element());
+        cx.notify();
+        true
+    }
+
     pub fn clear(&mut self, cx: &mut Context<Self>) -> &mut Self {
         self.items.clear();
         self.rebuild_item_sizes();

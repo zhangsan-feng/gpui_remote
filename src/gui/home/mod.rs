@@ -8,7 +8,6 @@ use std::sync::{Arc, atomic::AtomicBool};
 use crate::{
     component::{resizable_panel::ResizablePanel, theme},
     domain::theme::ThemeSettings,
-    global_state::{GlobalState, GlobalStateHandle},
     gui::{sidebar_session::SessionComponent, title_bar::AppTitleBar, workspace::Workspace},
 };
 
@@ -30,8 +29,6 @@ pub(crate) fn open_main_window(
         theme::init(app, theme_settings, theme_updates, theme_changed);
         window.set_background_appearance(theme::CustomerUiTheme::window_background_appearance(app));
 
-        let global_state = app.new(|_| GlobalState {});
-        app.set_global(GlobalStateHandle(global_state));
         let main_window = app.new(|cx| HomeView::new(window, cx));
         app.new(|cx| Root::new(main_window, window, cx))
     })
@@ -62,8 +59,9 @@ pub struct HomeView {
 impl HomeView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         core::log_window_bounds(window);
-        let left_session = cx.new(|cx| SessionComponent::new(window, cx));
-        let workspace = cx.new(|cx| Workspace::new(window, cx));
+        let scope = cx.entity_id();
+        let left_session = cx.new(|cx| SessionComponent::new(scope, window, cx));
+        let workspace = cx.new(|cx| Workspace::new(scope, window, cx));
         let content = cx.new(|cx| {
             ResizablePanel::new(left_session, workspace, cx)
                 .with_axis(Axis::Horizontal)

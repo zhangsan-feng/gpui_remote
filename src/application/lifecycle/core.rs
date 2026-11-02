@@ -11,7 +11,8 @@ impl Application {
         INFRASTRUCTURE.initialize().await?;
         self.start_event_bus();
         crate::event_bus::EVENT_BUS
-            .refresh_data_context(crate::event_bus::RefreshDataContext::NetworkConfigs)
+            .refresh_data_context
+            .send(crate::event_bus::refresh_data_context::RefreshDataContext::NetworkConfigs)
             .await?;
         if let Err(error) = self.port_forward.initialize().await {
             log::error!("初始化端口转发失败: {error}");

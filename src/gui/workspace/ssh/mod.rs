@@ -58,11 +58,17 @@ impl TerminalView {
             .subscribe(crate::event_bus::refresh_gui::GuiComponent::Terminal);
         cx.spawn(async move |this, cx| {
             while refresh.changed().await.is_ok() {
-                refresh.borrow_and_update();
+                let scope = refresh.take_pending();
                 if this
                     .update(cx, |this, cx| {
-                        let snapshot = crate::data_context::DATA_CONTEXT.workspace_snapshot();
-                        this.apply_snapshot(&snapshot, cx);
+                        if scope.all {
+                            let snapshot = crate::data_context::DATA_CONTEXT.workspace_snapshot();
+                            this.apply_snapshot(&snapshot, cx);
+                        } else {
+                            for workspace_id in scope.workspace_ids {
+                                this.refresh_session_from_context(&workspace_id, cx);
+                            }
+                        }
                     })
                     .is_err()
                 {

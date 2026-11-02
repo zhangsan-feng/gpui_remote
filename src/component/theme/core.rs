@@ -5,7 +5,7 @@ use gpui_kit::{App, Hsla, Rgba, rgb};
 
 use crate::{
     component::color::rgb_to_u32,
-    global_state::{GlobalEvent, read_global_state},
+    event_bus::{EVENT_BUS, gui_event::GuiEvent},
 };
 
 use super::{
@@ -466,7 +466,7 @@ fn persist(cx: &mut App) {
         .settings_changed
         .store(true, std::sync::atomic::Ordering::Release);
     state.persist_settings.send_replace(settings);
-    read_global_state(cx).update(cx, |_, cx| cx.emit(GlobalEvent::ThemeColorChanged));
+    EVENT_BUS.gui_event.broadcast(GuiEvent::ThemeColorChanged);
 }
 
 fn parse_optional_color(value: Option<String>) -> Option<Hsla> {

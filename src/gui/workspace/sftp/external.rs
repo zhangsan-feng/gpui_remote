@@ -8,11 +8,23 @@ use crate::{
 use super::SftpView;
 
 impl SftpView {
-    pub(super) fn refresh_from_context(&mut self, _cx: &mut Context<Self>) {
-        let context = &*DATA_CONTEXT;
-        let workspace_ids = self.projections.keys().cloned().collect::<Vec<_>>();
-        for workspace_id in workspace_ids {
-            self.refresh_workspace_from_context(&context, &workspace_id);
+    pub(super) fn refresh_session_from_context(
+        &mut self,
+        workspace_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.projections.contains_key(workspace_id) {
+            return;
+        }
+        self.refresh_workspace_from_context(&DATA_CONTEXT, workspace_id);
+        if self.selected_workspace_id.as_deref() == Some(workspace_id) {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn refresh_from_context(&mut self, cx: &mut Context<Self>) {
+        if let Some(workspace_id) = self.selected_workspace_id.clone() {
+            self.refresh_session_from_context(&workspace_id, cx);
         }
     }
 

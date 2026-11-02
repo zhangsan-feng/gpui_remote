@@ -66,7 +66,7 @@ impl SftpView {
         let task_workspace_id = workspace_id.to_owned();
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move {
+            match crate::application::run_application(async move {
                 application
                     .sftp
                     .start_local_watch(
@@ -109,7 +109,7 @@ impl SftpView {
         let local_path = action.0.clone();
         let local_path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move {
+            match crate::application::run_application(async move {
                 application
                     .sftp
                     .stop_local_watch(workspace_id, profile_ip, profile_title, local_path_text)

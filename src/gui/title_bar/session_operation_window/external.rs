@@ -6,7 +6,7 @@ use crate::component::window::window_center_options;
 use crate::{
     application::Application,
     domain::session::{NewSession, SessionProfile},
-    global_state::GlobalEvent,
+    event_bus::gui_event::GuiEvent,
 };
 
 impl SessionOperationWindow {
@@ -14,12 +14,12 @@ impl SessionOperationWindow {
         mode: SessionFormMode,
         draft: NewSession,
         application: Application,
-    ) -> Result<GlobalEvent> {
+    ) -> Result<GuiEvent> {
         let event = match &mode {
-            SessionFormMode::Create => GlobalEvent::CreateSession,
-            SessionFormMode::Edit { .. } => GlobalEvent::UpdateSession,
+            SessionFormMode::Create => GuiEvent::CreateSession,
+            SessionFormMode::Edit { .. } => GuiEvent::UpdateSession,
         };
-        let result = crate::global_state::run_application(async move {
+        let result = crate::application::run_application(async move {
             match mode {
                 SessionFormMode::Create => application.sessions.create_profile(draft).await,
                 SessionFormMode::Edit { id } => {

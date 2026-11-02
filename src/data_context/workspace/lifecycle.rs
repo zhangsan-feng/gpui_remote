@@ -2,10 +2,11 @@ use crate::domain::{
     session::Protocol,
     terminal::{TerminalData, TerminalFrame, TerminalStatus},
 };
+use crate::event_bus::refresh_data_context::DataChange;
 use crate::event_bus::{EVENT_BUS, refresh_gui::GuiComponent};
 
 use super::super::state::{SftpWorkspaceData, TerminalWorkspaceData};
-use super::super::{DataChange, DataContext, TerminalReadSnapshot, WorkspaceSummary};
+use super::super::{DataContext, TerminalReadSnapshot, WorkspaceSummary};
 
 impl DataContext {
     pub(crate) fn open_workspace(&self, profile: WorkspaceSummary) -> Result<(), String> {
@@ -65,13 +66,17 @@ impl DataContext {
             GuiComponent::Terminal,
             GuiComponent::Sftp,
         ]);
-        EVENT_BUS.notify_session_lifecycle(DataChange::SessionOpened {
-            workspace_id: workspace_id.clone(),
-            profile,
-        });
-        EVENT_BUS.notify_session_lifecycle(DataChange::SessionSelected {
-            workspace_id: Some(workspace_id),
-        });
+        EVENT_BUS
+            .refresh_data_context
+            .notify_session_lifecycle(DataChange::SessionOpened {
+                workspace_id: workspace_id.clone(),
+                profile,
+            });
+        EVENT_BUS
+            .refresh_data_context
+            .notify_session_lifecycle(DataChange::SessionSelected {
+                workspace_id: Some(workspace_id),
+            });
         Ok(())
     }
 
@@ -117,13 +122,17 @@ impl DataContext {
             GuiComponent::Terminal,
             GuiComponent::Sftp,
         ]);
-        EVENT_BUS.notify_session_lifecycle(DataChange::SessionClosed {
-            workspace_id: workspace_id.to_owned(),
-        });
-        if let Some(selected) = selected_after_close {
-            EVENT_BUS.notify_session_lifecycle(DataChange::SessionSelected {
-                workspace_id: selected,
+        EVENT_BUS
+            .refresh_data_context
+            .notify_session_lifecycle(DataChange::SessionClosed {
+                workspace_id: workspace_id.to_owned(),
             });
+        if let Some(selected) = selected_after_close {
+            EVENT_BUS
+                .refresh_data_context
+                .notify_session_lifecycle(DataChange::SessionSelected {
+                    workspace_id: selected,
+                });
         }
         Ok(())
     }
@@ -159,7 +168,9 @@ impl DataContext {
             GuiComponent::Terminal,
             GuiComponent::Sftp,
         ]);
-        EVENT_BUS.notify_session_lifecycle(DataChange::SessionSelected { workspace_id });
+        EVENT_BUS
+            .refresh_data_context
+            .notify_session_lifecycle(DataChange::SessionSelected { workspace_id });
         Ok(())
     }
 
@@ -193,7 +204,9 @@ impl DataContext {
             workspace.database_revision = revision;
         }
         drop(_commit);
-        EVENT_BUS.refresh_gui.notify(&[GuiComponent::Workspace]);
+        EVENT_BUS
+            .refresh_gui
+            .notify_workspace(&[GuiComponent::Workspace], workspace_id);
         true
     }
 }

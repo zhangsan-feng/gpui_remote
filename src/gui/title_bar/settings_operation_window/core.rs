@@ -71,7 +71,7 @@ impl SettingsOperationWindow {
                 let Some(path) = paths.into_iter().next() else {
                     return Ok(());
                 };
-                let result = crate::global_state::run_application(async move {
+                let result = crate::application::run_application(async move {
                     application.theme.copy_wallpaper(path).await
                 })
                 .await;

@@ -1,6 +1,6 @@
 use crate::{
     application::{Application, ApplicationResult},
-    event_bus::{EVENT_BUS, RefreshDataContext},
+    event_bus::{EVENT_BUS, refresh_data_context::RefreshDataContext},
 };
 
 impl Application {
@@ -12,7 +12,7 @@ impl Application {
         if task.is_some() {
             return;
         }
-        let Some(mut requests) = EVENT_BUS.subscribe_refresh_data_context() else {
+        let Some(mut requests) = EVENT_BUS.refresh_data_context.subscribe() else {
             return;
         };
         let application = self.clone();

@@ -25,6 +25,7 @@ impl NetworkConfigEditor {
             .subscribe(crate::event_bus::refresh_gui::GuiComponent::NetworkConfig);
         cx.spawn(async move |this, cx| {
             while updates.changed().await.is_ok() {
+                updates.take_pending();
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
                     break;
                 }

@@ -29,7 +29,7 @@ impl SftpView {
 
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application
                     .sftp
                     .delete_local_paths_checked(workspace_id, paths)
@@ -85,7 +85,7 @@ impl SftpView {
                     is_directory: item.is_directory,
                 })
                 .collect();
-            if let Err(error) = crate::global_state::run_application(async move {
+            if let Err(error) = crate::application::run_application(async move {
                 application
                     .sftp
                     .delete_remote_paths_checked(task_workspace_id, items)

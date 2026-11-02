@@ -88,7 +88,7 @@ impl ServicesOperationWindow {
         let ssh_username_for_load = ssh_username.clone();
         let ssh_password_for_load = ssh_password.clone();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move {
+            match crate::application::run_application(async move {
                 ssh_application.ssh_server.current_settings().await
             })
             .await
@@ -140,7 +140,7 @@ impl ServicesOperationWindow {
         let socks5_username_for_load = socks5_username.clone();
         let socks5_password_for_load = socks5_password.clone();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move {
+            match crate::application::run_application(async move {
                 socks5_application.socks5_proxy.current_settings().await
             })
             .await
@@ -196,7 +196,7 @@ impl ServicesOperationWindow {
         let http_proxy_username_for_load = http_proxy_username.clone();
         let http_proxy_password_for_load = http_proxy_password.clone();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move {
+            match crate::application::run_application(async move {
                 http_proxy_application.http_proxy.current_settings().await
             })
             .await
@@ -238,7 +238,7 @@ impl ServicesOperationWindow {
         cx.spawn(async move |this, cx| {
             let _ = this.update(cx, |this, cx| this.refresh_port_forward_rules(cx));
             while gui_refresh.changed().await.is_ok() {
-                gui_refresh.borrow_and_update();
+                gui_refresh.take_pending();
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
                     break;
                 }

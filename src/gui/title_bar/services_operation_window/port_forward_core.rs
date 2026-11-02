@@ -14,7 +14,7 @@ impl ServicesOperationWindow {
         self.port_forward_busy = true;
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application.port_forward.list().await
             })
             .await;
@@ -59,7 +59,7 @@ impl ServicesOperationWindow {
         self.port_forward_delete_confirmation = None;
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let (result, rules) = crate::global_state::run_application(async move {
+            let (result, rules) = crate::application::run_application(async move {
                 let result = match action {
                     PortForwardAction::Enable(id, enabled) => {
                         application.port_forward.set_enabled(id, enabled).await

@@ -69,7 +69,7 @@ impl SessionComponent {
         let window_handle = window.window_handle();
         let session_list = cx.entity();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application.sessions.find_profile(session_id).await
             })
             .await;
@@ -98,7 +98,7 @@ impl SessionComponent {
         let application = crate::application::APPLICATION.clone();
         let session_id = action.0.clone();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application.sessions.delete_profile(session_id).await
             })
             .await;
@@ -138,7 +138,7 @@ impl SessionComponent {
         let application = crate::application::APPLICATION.clone();
         let session_id = session_id.to_owned();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 if open {
                     application.ssh.open_reverse_tunnel(session_id).await
                 } else {

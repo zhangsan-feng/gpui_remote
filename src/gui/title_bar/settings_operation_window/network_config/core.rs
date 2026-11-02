@@ -141,7 +141,7 @@ impl NetworkConfigEditor {
         cx.notify();
         cx.spawn(async move |this, cx| {
             let saved_id = id.clone();
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 crate::application::APPLICATION
                     .save_network_config(proxy, id, configs, delete)
                     .await

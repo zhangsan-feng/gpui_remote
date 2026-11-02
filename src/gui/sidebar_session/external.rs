@@ -1,30 +1,13 @@
 use crate::{
     application::session::model::SessionSummary,
     domain::session::Protocol,
-    global_state::{GlobalEvent, read_global_state},
+    event_bus::{EVENT_BUS, gui_event::GuiEvent},
 };
 use gpui_kit::Context;
 
 use super::SessionComponent;
 
 impl SessionComponent {
-    pub(super) fn start_subscribe(&self, cx: &mut Context<Self>) {
-        let global_events = read_global_state(cx);
-        cx.subscribe(&global_events, |this, _, event, cx| {
-            match event {
-                GlobalEvent::CreateSession | GlobalEvent::UpdateSession => {}
-                GlobalEvent::ThemeColorChanged => {
-                    this.refer_item(cx);
-                    cx.notify();
-                    return;
-                }
-                _ => return,
-            }
-            this.refresh_sessions(cx);
-        })
-        .detach();
-    }
-
     pub(super) fn open_workspace(
         &self,
         session: SessionSummary,
@@ -39,7 +22,7 @@ impl SessionComponent {
         session: SessionSummary,
         protocol: Protocol,
         send_tunnel_proxy_exports: bool,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
         log::debug!(
             "GUI 发送打开会话事件: profile_id={}, protocol={}, host={}, title={}",
@@ -48,14 +31,15 @@ impl SessionComponent {
             session.host,
             session.name
         );
-        read_global_state(cx).update(cx, |_, cx| {
-            cx.emit(GlobalEvent::OpenWorkspaceSession {
+        EVENT_BUS.gui_event.send(
+            self.gui_scope,
+            GuiEvent::OpenWorkspaceSession {
                 profile_id: session.id,
                 protocol,
                 ip: session.host,
                 title: session.name,
                 send_tunnel_proxy_exports,
-            });
-        });
+            },
+        );
     }
 }

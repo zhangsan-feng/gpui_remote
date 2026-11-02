@@ -32,9 +32,21 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) {
+        let workspace_ids = self.models.keys().cloned().collect::<Vec<_>>();
+        self.refresh_models(workspace_ids, cx);
+    }
+
+    pub(in crate::gui::workspace::ssh) fn refresh_session_from_context(
+        &mut self,
+        workspace_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.refresh_models(vec![workspace_id.to_owned()], cx);
+    }
+
+    fn refresh_models(&mut self, workspace_ids: Vec<String>, cx: &mut Context<Self>) {
         let started = Instant::now();
         let context = &*crate::data_context::DATA_CONTEXT;
-        let workspace_ids = self.models.keys().cloned().collect::<Vec<_>>();
         let workspace_count = workspace_ids.len();
         let mut refreshed_count = 0usize;
         for workspace_id in workspace_ids {

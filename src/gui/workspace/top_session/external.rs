@@ -4,12 +4,38 @@ use gpui_kit::Context;
 
 use crate::{
     data_context::DataSnapshot,
-    global_state::{GlobalEvent, read_global_state},
+    event_bus::{EVENT_BUS, gui_event::GuiEvent},
 };
 
 use super::{OpenedWorkspaceSession, WorkspaceSession};
 
 impl WorkspaceSession {
+    pub(in crate::gui::workspace) fn refresh_session_from_context(
+        &mut self,
+        workspace_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(profile) = crate::data_context::DATA_CONTEXT.workspace_summary(workspace_id)
+        else {
+            return;
+        };
+        let Some(session) = self
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == workspace_id)
+        else {
+            return;
+        };
+        if self.statuses.get(workspace_id) == Some(&profile.status) {
+            return;
+        }
+        self.statuses
+            .insert(workspace_id.to_owned(), profile.status.clone());
+        session.profile = profile;
+        self.refresh_tab(workspace_id, cx);
+        cx.notify();
+    }
+
     pub(in crate::gui::workspace) fn apply_snapshot(
         &mut self,
         snapshot: &DataSnapshot,
@@ -57,16 +83,18 @@ impl WorkspaceSession {
     pub(super) fn emit_selected_workspace(
         &self,
         selected_id: Option<String>,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
-        read_global_state(cx).update(cx, |_, cx| {
-            cx.emit(GlobalEvent::SelectWorkspaceSession(selected_id));
-        });
+        EVENT_BUS.gui_event.send(
+            self.gui_scope,
+            GuiEvent::SelectWorkspaceSession(selected_id),
+        );
     }
 
-    pub(super) fn emit_closed_workspace(&self, workspace_id: String, cx: &mut Context<Self>) {
-        read_global_state(cx).update(cx, |_, cx| {
-            cx.emit(GlobalEvent::CloseWorkspaceSession { workspace_id });
-        });
+    pub(super) fn emit_closed_workspace(&self, workspace_id: String, _cx: &mut Context<Self>) {
+        EVENT_BUS.gui_event.send(
+            self.gui_scope,
+            GuiEvent::CloseWorkspaceSession { workspace_id },
+        );
     }
 }

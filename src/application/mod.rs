@@ -16,6 +16,8 @@ mod ssh;
 mod ssh_server;
 mod theme;
 
+pub(crate) use lifecycle::run_application;
+
 pub(crate) type ApplicationResult<T> = Result<T, String>;
 
 use std::sync::{Arc, LazyLock, atomic::AtomicBool};

@@ -102,3 +102,62 @@
 ## Event bus：当前的计划
 
 - 待实际运行 GUI 验证：会话打开/切换/关闭、持续终端输出、SFTP 目录导航与传输进度、网络配置和服务状态更新，以及退出时任务清理。
+
+
+## 按会话 ID 刷新 GUI：当前完成的进度
+
+- 新增 `notify_workspace(components, workspace_id)`，终端内容、SFTP 状态/进度、连接状态和数据库状态通知携带工作区会话 ID。
+- 每个 GUI 订阅独立保存待刷新 ID 集合；同一会话去重、多个会话合并，全量通知覆盖定向通知，消费时在锁内同步确认唤醒并取出集合，避免多个窗口互相消费或连续更新丢 ID；订阅销毁后通过弱引用清理。
+- 终端和 SFTP 定向同步对应会话快照，后台会话仅更新投影；会话栏只读取对应 ID 的摘要并替换对应页签渲染器，保留拖拽顺序、选中与滚动状态。SFTP 操作后的同步不再遍历全部会话。
+- 打开、关闭、切换会话保留工作区级同步，以更新会话集合及选中关系。
+- `cargo check --locked --offline` 及修改文件 `rustfmt --check` 通过（20 项既有代码警告，另有增量缓存硬链接回退警告）；未新增测试用例。
+
+## 按会话 ID 刷新 GUI：当前的计划
+
+- 待运行 GUI 验证多会话并发输出/传输、后台会话更新、连续打开关闭及切换、多窗口订阅、页签拖动过程中的状态变化。
+
+
+## 三类事件总线重构：当前完成的进度
+
+- `EVENT_BUS` 仅保留 `refresh_data_context`、`refresh_gui`、`gui_event` 三个入口，各自管理类型、通道、发布及订阅。
+- `refresh_data_context.send/subscribe` 管理网络配置与 SFTP 目录请求；提交后的会话生命周期事件及其类型迁入该模块，MCP 发布订阅路径同步迁移。
+- `refresh_gui` 保留按 workspace_id 合并、去重与消费的通知机制，以及结构变化的全量通知。
+- 删除 GlobalEvent、GlobalState、GlobalStateHandle 和 read_global_state；GUI 操作全部改用 gui_event 邮箱，以 HomeView entity ID 隔离主窗口，目标组件为 Workspace 或 SidebarSession；共享配置和主题变更通知所有侧栏。
+- GUI 订阅任务由组件持有，组件销毁时取消任务并移除邮箱；工作区事件处理迁入 core.rs，订阅与初始化保留在 mod.rs。run_application 后台操作桥接已归入 Application 生命周期模块。
+- `cargo check --locked --offline` 通过（20 项既有代码警告，另有增量缓存硬链接回退警告）；修改文件 `rustfmt --check` 通过。未新增测试用例，未使用 computer use，未修改 README.md。
+
+## 三类事件总线重构：当前的计划
+
+- 待运行 GUI 验证创建/编辑配置后的侧栏更新、主题变化、会话打开/选择/关闭、SFTP 请求、多窗口操作隔离和窗口关闭后的订阅清理。
+
+
+## 移除 global_state.rs：当前完成的进度
+
+- 删除 `src/global_state.rs` 及 main.rs 模块声明，将后台操作桥接归入 `application/lifecycle/external.rs`，统一通过 `application::run_application` 使用。
+- 已迁移 31 个调用点，保留 Tokio 后台执行、退出等待屏障及错误回传；src 中已无 global_state 引用。
+- `cargo check --locked --offline` 和修改文件 `rustfmt --check` 通过（20 项既有代码警告，另有增量缓存硬链接回退警告），未新增测试用例。
+
+## 移除 global_state.rs：当前的计划
+
+- 本次代码迁移已完成；实际 GUI 操作仍需结合事件总线改造一起运行验证。
+## 终端选中后右键崩溃：当前完成的进度
+
+- 2026-10-30 16:40:21 的 panic.log 确认：右键复制菜单预绘制时重复登记无障碍焦点，触发 `set_focus called more than once in a single frame`。
+- 核对依赖源码：gpui-component 0.7.1 在预绘制中切换菜单焦点；0.7.3 已将焦点切换提前到菜单首帧之前。
+- 按用户要求升级 gpui-kit / gpui-component 至 0.7.3，GPUI 及匹配 HTTP 客户端至 0.3.9，更新 Cargo.lock；终端不保留局部焦点绕过代码。
+
+## 终端选中后右键崩溃：当前的计划
+
+- 升级后的 `cargo check --locked`、`cargo build --locked --offline` 与 `git diff --check` 已通过（19 项既有代码警告），Debug 可执行文件已更新；实际选中文本、右键显示菜单和复制仍需 GUI 复测。
+- 未新增测试用例，未使用 computer use，未修改 README.md。
+
+## GPUI 0.8.1 升级：当前完成的进度
+
+- 按用户要求将 gpui-kit、gpui-component 等组件升级至 0.8.1，匹配的 gpui-pre 与 HTTP 客户端升级至 0.3.10，更新 Cargo.lock。
+- 已执行 `cargo clean`，删除 29495 个构建文件（32.0 GiB）。
+
+## GPUI 0.8.1 升级：当前的计划
+
+- `cargo build --locked` 全量构建通过（4 分 31 秒）；21 项警告包括 19 项既有未使用代码警告与 2 项滚轮 API 弃用提示。
+- 已执行 `cargo run --locked --offline`，启动日志确认主窗口绘制及 MCP 监听正常；实际选中文本、右键显示菜单和复制仍需 GUI 复测。
+- 未新增测试用例，未使用 computer use，未修改 README.md。

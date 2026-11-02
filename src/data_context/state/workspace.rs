@@ -34,17 +34,3 @@ pub(crate) struct DataSnapshot {
     pub(crate) http_proxy: HttpProxyStatus,
     pub(crate) port_forward_statuses: HashMap<String, PortForwardStatus>,
 }
-
-#[derive(Clone, Debug)]
-pub(crate) enum DataChange {
-    SessionOpened {
-        workspace_id: String,
-        profile: WorkspaceSummary,
-    },
-    SessionClosed {
-        workspace_id: String,
-    },
-    SessionSelected {
-        workspace_id: Option<String>,
-    },
-}

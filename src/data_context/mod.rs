@@ -36,7 +36,7 @@ impl DataContext {
 
 pub(crate) use sftp::SftpModel;
 pub(crate) use state::{
-    DataChange, DataSnapshot, LocalSnapshot, SftpDirectorySummary, SftpEntrySummary, SftpSnapshot,
+    DataSnapshot, LocalSnapshot, SftpDirectorySummary, SftpEntrySummary, SftpSnapshot,
     SftpTransferInfo, SftpTransferSummary, SftpWatchSummary, SftpWorkspaceSnapshot,
     TerminalReadSnapshot, TransferRecord, TransferRequest, WorkspaceSummary,
     is_transfer_cancellable,

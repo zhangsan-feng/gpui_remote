@@ -144,7 +144,7 @@ impl ServicesOperationWindow {
         cx.notify();
 
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application.mcp.update_settings(settings).await
             })
             .await;

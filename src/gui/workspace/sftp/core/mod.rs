@@ -141,15 +141,18 @@ impl SftpView {
             if let Some(previous) = previous {
                 let _ = previous.await;
             }
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 crate::event_bus::EVENT_BUS
-                    .refresh_data_context(crate::event_bus::RefreshDataContext::SftpDirectory {
-                        workspace_id,
-                        ip: profile_ip,
-                        title: profile_title,
-                        path,
-                        local: false,
-                    })
+                    .refresh_data_context
+                    .send(
+                        crate::event_bus::refresh_data_context::RefreshDataContext::SftpDirectory {
+                            workspace_id,
+                            ip: profile_ip,
+                            title: profile_title,
+                            path,
+                            local: false,
+                        },
+                    )
                     .await
             })
             .await;
@@ -182,7 +185,7 @@ impl SftpView {
         let task_workspace_id = workspace_id.to_owned();
         let path_text = local_path.display().to_string();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move {
+            match crate::application::run_application(async move {
                 application
                     .sftp
                     .upload_checked(task_workspace_id, vec![path_text])
@@ -240,7 +243,7 @@ impl SftpView {
         let application = crate::application::APPLICATION.clone();
         let task_workspace_id = workspace_id.to_owned();
         cx.spawn(async move |this, cx| {
-            match crate::global_state::run_application(async move { application
+            match crate::application::run_application(async move { application
                 .sftp.download_checked(task_workspace_id, vec![remote_path])
                 .await }).await
             {
@@ -277,7 +280,7 @@ impl SftpView {
         let application = crate::application::APPLICATION.clone();
         let workspace_id = record.workspace_id.clone();
         cx.spawn(async move |this, cx| {
-            if let Err(error) = crate::global_state::run_application(async move {
+            if let Err(error) = crate::application::run_application(async move {
                 application
                     .sftp
                     .cancel_transfer_checked(workspace_id, record.id)
@@ -315,7 +318,7 @@ impl SftpView {
         let workspace_id = record.workspace_id.clone();
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            if let Err(error) = crate::global_state::run_application(async move {
+            if let Err(error) = crate::application::run_application(async move {
                 application
                     .sftp
                     .retry_transfer_checked(workspace_id, record.id)

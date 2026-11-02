@@ -63,9 +63,13 @@ impl DataContext {
         workspace.terminal_revision = revision;
         drop(snapshot);
         drop(_commit);
-        let refresh_sequence = EVENT_BUS.refresh_gui.notify(&[GuiComponent::Terminal]);
+        let refresh_sequence = EVENT_BUS
+            .refresh_gui
+            .notify_workspace(&[GuiComponent::Terminal], workspace_id);
         if status_changed {
-            EVENT_BUS.refresh_gui.notify(&[GuiComponent::Workspace]);
+            EVENT_BUS
+                .refresh_gui
+                .notify_workspace(&[GuiComponent::Workspace], workspace_id);
         }
         let process_id = std::process::id();
         log::debug!(
@@ -156,9 +160,10 @@ impl DataContext {
         workspace.terminal_revision = revision;
         drop(snapshot);
         drop(_commit);
-        EVENT_BUS
-            .refresh_gui
-            .notify(&[GuiComponent::Workspace, GuiComponent::Terminal]);
+        EVENT_BUS.refresh_gui.notify_workspace(
+            &[GuiComponent::Workspace, GuiComponent::Terminal],
+            workspace_id,
+        );
         true
     }
 }

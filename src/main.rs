@@ -9,7 +9,6 @@ mod component;
 mod data_context;
 mod domain;
 mod event_bus;
-mod global_state;
 mod gui;
 mod infrastructure;
 

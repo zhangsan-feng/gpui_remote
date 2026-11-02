@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gpui-kit = {version = "0.7.1", features = ["default"]}
-reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.1" }
+gpui-kit = {version = "0.8.1", features = ["default"]}
+reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.10" }
 alacritty_terminal = "0.26.0"
 
 

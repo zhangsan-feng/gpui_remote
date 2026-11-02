@@ -20,6 +20,7 @@ pub(super) struct OpenedWorkspaceSession {
 }
 
 pub(super) struct WorkspaceSession {
+    gui_scope: EntityId,
     sessions: Vec<OpenedWorkspaceSession>,
     tabs: Entity<DraggableList>,
     selected_id: Option<String>,
@@ -27,8 +28,9 @@ pub(super) struct WorkspaceSession {
 }
 
 impl WorkspaceSession {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(gui_scope: EntityId, cx: &mut Context<Self>) -> Self {
         Self {
+            gui_scope,
             sessions: Vec::new(),
             tabs: cx.new(|cx| ui::new_workspace_tabs(cx)),
             selected_id: None,

@@ -20,7 +20,7 @@ impl PortForwardRuleWindow {
         let application = crate::application::APPLICATION.clone();
         let handle = window.window_handle();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 match id {
                     Some(id) => application.port_forward.update(id, draft).await,
                     None => application.port_forward.create(draft).await,

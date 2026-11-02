@@ -1,6 +1,6 @@
 use crate::{
     application::{Application, ApplicationResult, session::model::ProfileSummary},
-    data_context::DataChange,
+    event_bus::refresh_data_context::DataChange,
 };
 
 use super::types::{

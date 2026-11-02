@@ -46,9 +46,13 @@ impl DataContext {
             snapshot.workspaces[index].sftp_revision = revision;
             drop(snapshot);
             drop(_commit);
-            EVENT_BUS.refresh_gui.notify(&[GuiComponent::Sftp]);
+            EVENT_BUS
+                .refresh_gui
+                .notify_workspace(&[GuiComponent::Sftp], workspace_id);
             if status_changed {
-                EVENT_BUS.refresh_gui.notify(&[GuiComponent::Workspace]);
+                EVENT_BUS
+                    .refresh_gui
+                    .notify_workspace(&[GuiComponent::Workspace], workspace_id);
             }
         }
         Some(result)

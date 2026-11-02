@@ -10,4 +10,4 @@ pub(crate) use sftp::{
 };
 pub(crate) use terminal::TerminalReadSnapshot;
 pub(super) use terminal::TerminalWorkspaceData;
-pub(crate) use workspace::{DataChange, DataSnapshot, WorkspaceSummary};
+pub(crate) use workspace::{DataSnapshot, WorkspaceSummary};

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::{application::Application, data_context::DataChange};
+use crate::{application::Application, event_bus::refresh_data_context::DataChange};
 
 use super::{
     dispatch,
@@ -22,8 +22,12 @@ pub(crate) fn start_mcp_bridge(
     let lifecycle_data_context = data_context;
     let notification_data_context = data_context;
     // Subscribe synchronously before serving commands so early events are observed.
-    let mut lifecycle_events = crate::event_bus::EVENT_BUS.subscribe_session_lifecycle();
-    let mut notification_events = crate::event_bus::EVENT_BUS.subscribe_session_lifecycle();
+    let mut lifecycle_events = crate::event_bus::EVENT_BUS
+        .refresh_data_context
+        .subscribe_session_lifecycle();
+    let mut notification_events = crate::event_bus::EVENT_BUS
+        .refresh_data_context
+        .subscribe_session_lifecycle();
     // This bridge owns Tokio channels and timers. Keep it on the Tokio runtime
     // instead of GPUI's foreground executor, whose wake-up model can strand a
     // pending Tokio channel operation under load.

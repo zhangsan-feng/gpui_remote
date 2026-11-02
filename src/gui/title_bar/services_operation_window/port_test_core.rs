@@ -17,7 +17,7 @@ impl ServicesOperationWindow {
 
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application.port_test.test_tcp_port(host, port).await
             })
             .await;

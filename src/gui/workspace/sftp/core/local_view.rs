@@ -87,15 +87,18 @@ impl SftpView {
                 let _ = previous.await;
             }
             let task_workspace_id = workspace_id.clone();
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 crate::event_bus::EVENT_BUS
-                    .refresh_data_context(crate::event_bus::RefreshDataContext::SftpDirectory {
-                        workspace_id: task_workspace_id,
-                        ip: profile_ip,
-                        title: profile_title,
-                        path: path_text,
-                        local: true,
-                    })
+                    .refresh_data_context
+                    .send(
+                        crate::event_bus::refresh_data_context::RefreshDataContext::SftpDirectory {
+                            workspace_id: task_workspace_id,
+                            ip: profile_ip,
+                            title: profile_title,
+                            path: path_text,
+                            local: true,
+                        },
+                    )
                     .await
             })
             .await;

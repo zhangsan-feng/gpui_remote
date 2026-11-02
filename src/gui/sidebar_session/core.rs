@@ -11,7 +11,7 @@ impl SessionComponent {
         let refresh_generation = self.refresh_generation;
         let application = crate::application::APPLICATION.clone();
         cx.spawn(async move |this, cx| {
-            let result = crate::global_state::run_application(async move {
+            let result = crate::application::run_application(async move {
                 application.sessions.list_session_summaries().await
             })
             .await;

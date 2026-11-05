@@ -7,7 +7,7 @@ mod ui;
 use gpui_kit::component::{
     IndexPath,
     input::InputState,
-    select::{SearchableVec, SelectEvent, SelectState},
+    select::{SearchableVec, SelectState},
 };
 use gpui_kit::*;
 
@@ -46,7 +46,6 @@ pub struct SessionOperationWindow {
     username: Entity<InputState>,
     password: Entity<InputState>,
     private_key_path: Option<String>,
-    protocol_select: Entity<SelectState<SearchableVec<ConnectionProtocol>>>,
     proxy_select: Entity<
         SelectState<
             SearchableVec<network_config::ConfigChoice<crate::domain::session::ProxyConfig>>,
@@ -102,24 +101,6 @@ impl SessionOperationWindow {
         let ssh_tunnel = profile
             .as_ref()
             .and_then(|profile| profile.ssh_reverse_tunnel.as_ref());
-        let protocol_select = cx.new(|cx| {
-            SelectState::new(
-                SearchableVec::new(ConnectionProtocol::ALL.to_vec()),
-                Some(IndexPath::new(protocol.index())),
-                window,
-                cx,
-            )
-        });
-        cx.subscribe(
-            &protocol_select,
-            |this, _, event: &SelectEvent<SearchableVec<ConnectionProtocol>>, cx| {
-                if let SelectEvent::Confirm(Some(protocol)) = event {
-                    this.select_protocol(*protocol, cx);
-                }
-            },
-        )
-        .detach();
-
         let configs = crate::data_context::DATA_CONTEXT.network_configs();
         let (proxy_choices, proxy_index) =
             network_config::choices(&configs.proxies, proxy.cloned(), "不使用代理");
@@ -202,7 +183,6 @@ impl SessionOperationWindow {
                     .masked(true)
             }),
             private_key_path: profile.as_ref().and_then(|p| p.private_key_path.clone()),
-            protocol_select,
             proxy_select,
             tunnel_select,
             proxy_choices,

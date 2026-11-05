@@ -26,7 +26,9 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_PORT: u16 = 37_666;
-const SETTINGS_PATH: &str = "data/mcp.json";
+fn settings_path() -> std::path::PathBuf {
+    crate::infrastructure::paths::get().data.join("mcp.json")
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]

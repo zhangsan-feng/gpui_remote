@@ -1,18 +1,18 @@
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs};
 
 use anyhow::{Context as _, Result};
 use russh::keys::ssh_key::{HashAlg, PublicKey};
-
-const KNOWN_HOSTS_PATH: &str = "data/known_hosts.json";
 
 pub struct HostPubKey {}
 
 impl HostPubKey {
     pub fn verify_or_update(&self, endpoint: &str, public_key: &PublicKey) -> Result<bool> {
-        let path = Path::new(KNOWN_HOSTS_PATH);
+        let path = crate::infrastructure::paths::get()
+            .data
+            .join("known_hosts.json");
         let mut known_hosts = if path.exists() {
             serde_json::from_slice::<BTreeMap<String, String>>(
-                &fs::read(path).context("读取 known_hosts 失败")?,
+                &fs::read(&path).context("读取 known_hosts 失败")?,
             )
             .context("解析 known_hosts 失败")?
         } else {
@@ -35,7 +35,7 @@ impl HostPubKey {
         }
         known_hosts.insert(endpoint.to_owned(), fingerprint);
         fs::write(
-            path,
+            &path,
             serde_json::to_vec_pretty(&known_hosts).context("序列化 known_hosts 失败")?,
         )
         .context("保存 known_hosts 失败")?;

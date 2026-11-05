@@ -10,14 +10,12 @@ pub(crate) use repository::session_repository::SessionStorageRepository;
 
 pub(crate) struct Storage {
     pub(crate) session: SessionStorageRepository,
-    pub(crate) host_pub_key: HostPubKey,
 }
 
 impl Storage {
     pub(crate) fn new() -> anyhow::Result<Self> {
         Ok(Self {
             session: SessionStorageRepository::new()?,
-            host_pub_key: HostPubKey {},
         })
     }
 }

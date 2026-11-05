@@ -382,7 +382,7 @@ impl TerminalView {
             })
             .on_mouse_up(MouseButton::Left, cx.listener(Self::finish_text_selection))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::finish_text_selection))
-            .on_scroll_wheel(move |event, _, cx| {
+            .on_scroll(move |event, _, cx| {
                 let pixels = event.delta.pixel_delta(px(TERMINAL_LINE_HEIGHT)).y;
                 let lines = (f32::from(pixels) / TERMINAL_LINE_HEIGHT).round() as i32;
                 if lines != 0 {

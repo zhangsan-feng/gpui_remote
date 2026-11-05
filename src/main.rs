@@ -1,7 +1,4 @@
-#![cfg_attr(
-    all(target_os = "windows", not(debug_assertions)),
-    windows_subsystem = "windows"
-)]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 pub(crate) mod application;
 mod build_info;
@@ -18,10 +15,21 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let _log_guards =
-        tokio::task::spawn_blocking(|| infrastructure::logging::initialize("./logs", "%Y-%m-%d"))
-            .await
-            .expect("initialize logging task failed");
+    let _log_guards = tokio::task::spawn_blocking(|| {
+        let paths =
+            infrastructure::paths::initialize().expect("initialize application paths failed");
+        let guards = infrastructure::logging::initialize(&paths.logs, "%Y-%m-%d");
+        info!(
+            "application_paths_initialized: root={}, data={}, logs={}, cwd={:?}",
+            paths.root.display(),
+            paths.data.display(),
+            paths.logs.display(),
+            std::env::current_dir()
+        );
+        guards
+    })
+    .await
+    .expect("initialize logging task failed");
     info!("build time: {}", build_info::BUILD_TIME);
 
     let application = application::APPLICATION.clone();

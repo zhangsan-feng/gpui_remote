@@ -10,17 +10,25 @@ use crate::domain::port_forward::{PortForwardRule, PortForwardStatus};
 
 use super::{PortForwardController, RunningForward, relay::serve};
 
-const RULES_PATH: &str = "data/port_forward.json";
+fn rules_path() -> std::path::PathBuf {
+    crate::infrastructure::paths::get()
+        .data
+        .join("port_forward.json")
+}
 const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
 impl PortForwardController {
     pub(super) async fn load(&self) -> Result<Vec<PortForwardRule>, String> {
         let _guard = self.persistence.lock().await;
-        match tokio::fs::read(RULES_PATH).await {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|error| format!("解析端口转发配置 {RULES_PATH} 失败: {error}")),
+        match tokio::fs::read(rules_path()).await {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
+                format!("解析端口转发配置 {} 失败: {error}", rules_path().display())
+            }),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(Vec::new()),
-            Err(error) => Err(format!("读取端口转发配置 {RULES_PATH} 失败: {error}")),
+            Err(error) => Err(format!(
+                "读取端口转发配置 {} 失败: {error}",
+                rules_path().display()
+            )),
         }
     }
 
@@ -28,15 +36,15 @@ impl PortForwardController {
         let _guard = self.persistence.lock().await;
         let bytes = serde_json::to_vec_pretty(&rules)
             .map_err(|error| format!("编码端口转发配置失败: {error}"))?;
-        tokio::fs::create_dir_all("data")
+        tokio::fs::create_dir_all(&crate::infrastructure::paths::get().data)
             .await
             .map_err(|error| format!("创建端口转发配置目录失败: {error}"))?;
-        let temporary = format!("{RULES_PATH}.{}.tmp", uuid::Uuid::new_v4());
+        let temporary = rules_path().with_extension(format!("json.{}.tmp", uuid::Uuid::new_v4()));
         let result = async {
             tokio::fs::write(&temporary, bytes)
                 .await
                 .map_err(|error| format!("写入端口转发配置失败: {error}"))?;
-            tokio::fs::rename(&temporary, RULES_PATH)
+            tokio::fs::rename(&temporary, rules_path())
                 .await
                 .map_err(|error| format!("替换端口转发配置失败: {error}"))
         }

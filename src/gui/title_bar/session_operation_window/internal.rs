@@ -1,6 +1,6 @@
 use gpui_kit::*;
 
-use super::{ConnectionProtocol, FormSection, SessionOperationWindow};
+use super::{FormSection, SessionOperationWindow};
 use crate::event_bus::EVENT_BUS;
 
 impl SessionOperationWindow {
@@ -37,15 +37,6 @@ impl SessionOperationWindow {
 
     pub(super) fn cancel(&mut self, _: &ClickEvent, window: &mut Window, _: &mut Context<Self>) {
         window.remove_window();
-    }
-
-    pub(super) fn select_protocol(&mut self, protocol: ConnectionProtocol, cx: &mut Context<Self>) {
-        self.protocol = protocol;
-        if protocol != ConnectionProtocol::SshAndSftp && self.section == FormSection::SshTunnel {
-            self.section = FormSection::Connection;
-        }
-        self.error = None;
-        cx.notify();
     }
 
     pub(super) fn select_section(&mut self, section: FormSection, cx: &mut Context<Self>) {

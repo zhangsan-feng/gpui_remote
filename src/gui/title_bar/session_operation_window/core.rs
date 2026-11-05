@@ -4,28 +4,6 @@ use crate::domain::session::{ConnectionProtocol as DomainConnectionProtocol, New
 
 use super::{ConnectionProtocol, SessionOperationWindow};
 
-impl ConnectionProtocol {
-    pub(super) const ALL: [Self; 4] = [Self::SshAndSftp, Self::Mysql, Self::Pgsql, Self::Redis];
-
-    pub(super) const fn index(self) -> usize {
-        match self {
-            Self::SshAndSftp => 0,
-            Self::Mysql => 1,
-            Self::Pgsql => 2,
-            Self::Redis => 3,
-        }
-    }
-
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::SshAndSftp => "SSH",
-            Self::Mysql => "mysql",
-            Self::Pgsql => "pgsql",
-            Self::Redis => "redis",
-        }
-    }
-}
-
 impl SessionOperationWindow {
     pub(super) fn draft(&self, cx: &App) -> Result<NewSession, String> {
         let proxy = self

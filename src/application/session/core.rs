@@ -40,6 +40,13 @@ impl SessionApplication {
             return Err(format!("会话已打开: {workspace_id}"));
         }
         profiles.insert(workspace_id.clone(), profile.clone());
+        log::info!(
+            "Workspace registered: workspace_id={}, profile_id={}, title={:?}, title_empty={}",
+            workspace_id,
+            profile.id,
+            profile.name,
+            profile.name.trim().is_empty()
+        );
         let summary = WorkspaceSummary {
             workspace_id: workspace_id.clone(),
             profile_id: profile.id,

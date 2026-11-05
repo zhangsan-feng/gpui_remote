@@ -31,9 +31,6 @@ pub(crate) enum ApplicationCommand {
     OpenSshTunnel {
         profile_id: String,
     },
-    CloseSession {
-        workspace_id: String,
-    },
     ChangeSftpLocalDirectory {
         workspace_id: String,
         ip: String,
@@ -85,7 +82,6 @@ impl ApplicationCommand {
             Self::ListProfiles => "list_profiles",
             Self::OpenSession { .. } => "open_session",
             Self::OpenSshTunnel { .. } => "open_ssh_tunnel",
-            Self::CloseSession { .. } => "close_session",
             Self::ChangeSftpLocalDirectory { .. } => "change_sftp_local_directory",
             Self::ChangeSftpRemoteDirectory { .. } => "change_sftp_remote_directory",
             Self::UploadSftp { .. } => "upload_sftp",
@@ -99,8 +95,7 @@ impl ApplicationCommand {
 
     pub(crate) fn workspace_id(&self) -> Option<&str> {
         match self {
-            Self::CloseSession { workspace_id }
-            | Self::ChangeSftpLocalDirectory { workspace_id, .. }
+            Self::ChangeSftpLocalDirectory { workspace_id, .. }
             | Self::ChangeSftpRemoteDirectory { workspace_id, .. }
             | Self::UploadSftp { workspace_id, .. }
             | Self::DownloadSftp { workspace_id, .. }
@@ -110,10 +105,6 @@ impl ApplicationCommand {
             | Self::SendKey { workspace_id, .. } => Some(workspace_id),
             Self::ListProfiles | Self::OpenSession { .. } | Self::OpenSshTunnel { .. } => None,
         }
-    }
-
-    pub(crate) fn is_close_session(&self) -> bool {
-        matches!(self, Self::CloseSession { .. })
     }
 
     pub(crate) fn route_key(&self) -> RouteKey {

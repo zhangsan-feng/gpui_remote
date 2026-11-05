@@ -7,7 +7,8 @@ UI 样式参考 [Tailwind CSS](https://tailwindcss.com/)
 使用 Product Design 规范来约束视觉层次和交互状态
 图标设计与语义参考 [Lucide](https://lucide.dev/)；优先复用项目已有的 Lucide 图标资源，避免引入重复图标依赖。
 
-不要编写测试用例这是gui 项目 单例测试不出整体问题
+明确的需求不要设计方案直接开始执行
+修改完成代码记得 cargo build
 
 gui 模块 个责任边界
 core.rs (核心功能 数据流向)

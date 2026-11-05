@@ -153,11 +153,6 @@ impl McpBridgeEndpoint {
             .collect())
     }
 
-    pub(crate) async fn close_session(&self, workspace_id: String) -> ApplicationResult<()> {
-        self.expect_empty(ApplicationCommand::CloseSession { workspace_id })
-            .await
-    }
-
     pub(crate) async fn read_sftp_local_directory(
         &self,
         workspace_id: String,

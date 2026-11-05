@@ -1,12 +1,16 @@
 mod core;
 
-use gpui_kit::component::{Root, v_flex};
+use gpui_kit::component::{
+    ResizableState, Root,
+    resizable::{h_resizable, resizable_panel},
+    v_flex,
+};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use std::sync::{Arc, atomic::AtomicBool};
 
 use crate::{
-    component::{resizable_panel::ResizablePanel, theme},
+    component::theme,
     domain::theme::ThemeSettings,
     gui::{sidebar_session::SessionComponent, title_bar::AppTitleBar, workspace::Workspace},
 };
@@ -51,7 +55,9 @@ fn main_window_options(cx: &mut App) -> WindowOptions {
 
 pub struct HomeView {
     title_bar: Entity<AppTitleBar>,
-    content: Entity<ResizablePanel>,
+    left_session: Entity<SessionComponent>,
+    workspace: Entity<Workspace>,
+    columns: Entity<ResizableState>,
     diagnostics: core::WindowDiagnostics,
     _bounds_subscription: Subscription,
 }
@@ -62,16 +68,11 @@ impl HomeView {
         let scope = cx.entity_id();
         let left_session = cx.new(|cx| SessionComponent::new(scope, window, cx));
         let workspace = cx.new(|cx| Workspace::new(scope, window, cx));
-        let content = cx.new(|cx| {
-            ResizablePanel::new(left_session, workspace, cx)
-                .with_axis(Axis::Horizontal)
-                .with_panel_size(252.)
-                .with_panel_size_range(190., 480.)
-                .set_id("home-top_session-resize-handle")
-        });
         Self {
             title_bar: cx.new(|cx| AppTitleBar::new(window, cx)),
-            content,
+            left_session,
+            workspace,
+            columns: cx.new(|_| ResizableState::default()),
             diagnostics: core::WindowDiagnostics::default(),
             _bounds_subscription: cx.observe_window_bounds(window, |_, window, _| {
                 core::log_window_bounds(window);
@@ -109,7 +110,25 @@ impl Render for HomeView {
                     .relative()
                     .size_full()
                     .child(self.title_bar.clone())
-                    .child(div().flex_1().overflow_hidden().child(self.content.clone())),
+                    .child(
+                        div().flex_1().min_w_0().min_h_0().overflow_hidden().child(
+                            h_resizable("home-columns")
+                                .with_state(&self.columns)
+                                .child(
+                                    resizable_panel()
+                                        .size(px(252.))
+                                        .size_range(px(190.)..px(480.))
+                                        .fixed()
+                                        .flex_none()
+                                        .child(self.left_session.clone()),
+                                )
+                                .child(
+                                    resizable_panel()
+                                        .size_range(px(360.)..Pixels::MAX)
+                                        .child(self.workspace.clone()),
+                                ),
+                        ),
+                    ),
             )
     }
 }

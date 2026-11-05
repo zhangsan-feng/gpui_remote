@@ -1,5 +1,4 @@
 use std::{
-    path::Path,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -24,8 +23,11 @@ use crate::infrastructure::sftp_server::default_root;
 
 use super::handler::SshServer;
 
-const SETTINGS_PATH: &str = "data/ssh_server.json";
-const HOST_KEY_PATH: &str = "data/ssh_server_host_key";
+fn settings_path() -> std::path::PathBuf {
+    crate::infrastructure::paths::get()
+        .data
+        .join("ssh_server.json")
+}
 
 struct RunningService {
     handle: RunningServerHandle,
@@ -58,7 +60,7 @@ impl SshServerController {
     }
 
     pub(crate) async fn load_settings(&self) -> Result<SshServerSettings, String> {
-        match tokio::fs::read(SETTINGS_PATH).await {
+        match tokio::fs::read(settings_path()).await {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|error| format!("读取 SSH 服务配置失败: {error}")),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -223,23 +225,25 @@ impl SshServerController {
 }
 
 async fn save_settings(settings: &SshServerSettings) -> Result<(), String> {
-    tokio::fs::create_dir_all("data")
+    tokio::fs::create_dir_all(&crate::infrastructure::paths::get().data)
         .await
         .map_err(|error| format!("创建 SSH 配置目录失败: {error}"))?;
     let bytes = serde_json::to_vec_pretty(settings)
         .map_err(|error| format!("序列化 SSH 服务配置失败: {error}"))?;
-    tokio::fs::write(SETTINGS_PATH, bytes)
+    tokio::fs::write(settings_path(), bytes)
         .await
         .map_err(|error| format!("保存 SSH 服务配置失败: {error}"))
 }
 
 fn load_or_create_host_key() -> Result<PrivateKey, String> {
-    let path = Path::new(HOST_KEY_PATH);
+    let path = crate::infrastructure::paths::get()
+        .data
+        .join("ssh_server_host_key");
     if path.exists() {
-        return russh::keys::load_secret_key(path, None)
+        return russh::keys::load_secret_key(&path, None)
             .map_err(|error| format!("读取 SSH 主机密钥失败: {error}"));
     }
-    std::fs::create_dir_all("data")
+    std::fs::create_dir_all(&crate::infrastructure::paths::get().data)
         .map_err(|error| format!("创建 SSH 主机密钥目录失败: {error}"))?;
     let key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519)
         .map_err(|error| format!("生成 SSH 主机密钥失败: {error}"))?;
@@ -253,7 +257,7 @@ fn load_or_create_host_key() -> Result<PrivateKey, String> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    match options.open(path) {
+    match options.open(&path) {
         Ok(mut file) => {
             use std::io::Write;
             file.write_all(encoded.as_bytes())
@@ -261,7 +265,7 @@ fn load_or_create_host_key() -> Result<PrivateKey, String> {
             Ok(key)
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            russh::keys::load_secret_key(path, None)
+            russh::keys::load_secret_key(&path, None)
                 .map_err(|error| format!("读取 SSH 主机密钥失败: {error}"))
         }
         Err(error) => Err(format!("创建 SSH 主机密钥失败: {error}")),

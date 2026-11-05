@@ -1,13 +1,12 @@
 use std::{
     fs,
-    path::Path,
     sync::{Arc, Mutex},
 };
 
 use tokio::sync::watch;
 use uuid::Uuid;
 
-use super::{McpSettings, SETTINGS_PATH, bridge::McpBridgeEndpoint, server};
+use super::{McpSettings, bridge::McpBridgeEndpoint, server, settings_path};
 
 const PORT_ENV: &str = "GPUI_REMOTE_MCP_PORT";
 
@@ -145,8 +144,8 @@ async fn run_server_manager(bridge: McpBridgeEndpoint, mut settings: watch::Rece
 }
 
 pub(super) fn load_settings() -> McpSettings {
-    let file_exists = Path::new(SETTINGS_PATH).exists();
-    let mut settings = fs::read(SETTINGS_PATH)
+    let file_exists = settings_path().exists();
+    let mut settings = fs::read(settings_path())
         .ok()
         .and_then(|bytes| serde_json::from_slice::<McpSettings>(&bytes).ok())
         .unwrap_or_default();
@@ -170,9 +169,9 @@ pub(super) fn load_settings() -> McpSettings {
 }
 
 fn save_settings(settings: &McpSettings) -> std::io::Result<()> {
-    if let Some(parent) = Path::new(SETTINGS_PATH).parent() {
+    if let Some(parent) = settings_path().parent() {
         fs::create_dir_all(parent)?;
     }
     let bytes = serde_json::to_vec_pretty(settings).map_err(std::io::Error::other)?;
-    fs::write(SETTINGS_PATH, bytes)
+    fs::write(settings_path(), bytes)
 }

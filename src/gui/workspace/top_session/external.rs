@@ -26,13 +26,12 @@ impl WorkspaceSession {
         else {
             return;
         };
-        if self.statuses.get(workspace_id) == Some(&profile.status) {
+        if session.profile == profile {
             return;
         }
         self.statuses
             .insert(workspace_id.to_owned(), profile.status.clone());
         session.profile = profile;
-        self.refresh_tab(workspace_id, cx);
         cx.notify();
     }
 
@@ -41,7 +40,7 @@ impl WorkspaceSession {
         snapshot: &DataSnapshot,
         cx: &mut Context<Self>,
     ) {
-        let sessions = snapshot
+        let mut sessions = snapshot
             .workspaces
             .iter()
             .map(|workspace| OpenedWorkspaceSession {
@@ -54,6 +53,13 @@ impl WorkspaceSession {
             .iter()
             .map(|workspace| (workspace.workspace_id.clone(), workspace.status.clone()))
             .collect::<HashMap<_, _>>();
+        // Preserve the user's tab order across snapshot refreshes.
+        sessions.sort_by_key(|session| {
+            self.sessions
+                .iter()
+                .position(|old| old.id == session.id)
+                .unwrap_or(usize::MAX)
+        });
         let same_sessions = self.sessions.len() == sessions.len()
             && self.sessions.iter().zip(&sessions).all(|(old, new)| {
                 old.id == new.id
@@ -69,10 +75,19 @@ impl WorkspaceSession {
         {
             return;
         }
+        let selected_changed = self.selected_id != snapshot.selected_workspace_id;
         self.sessions = sessions;
         self.selected_id = snapshot.selected_workspace_id.clone();
+        if selected_changed {
+            if let Some(index) = self
+                .sessions
+                .iter()
+                .position(|session| Some(&session.id) == self.selected_id.as_ref())
+            {
+                self.tabs_scroll.scroll_to_item(index);
+            }
+        }
         self.statuses = statuses;
-        self.rebuild_tabs(cx);
         cx.notify();
     }
 

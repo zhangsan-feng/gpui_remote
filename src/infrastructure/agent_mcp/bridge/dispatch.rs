@@ -31,10 +31,6 @@ pub(crate) async fn dispatch(
             .open_ssh_tunnel(profile_id)
             .await
             .map(ApplicationResponse::SshTunnelWorkspace),
-        ApplicationCommand::CloseSession { workspace_id } => application
-            .close_session(&workspace_id)
-            .await
-            .map(|_| ApplicationResponse::Empty),
         ApplicationCommand::ChangeSftpLocalDirectory {
             workspace_id,
             ip,

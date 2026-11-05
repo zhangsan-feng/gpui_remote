@@ -15,6 +15,7 @@ impl Workspace {
         let workspace_card = v_flex()
             .gap_2()
             .size_full()
+            .min_w_0()
             .bg(theme::CustomerUiTheme::workspace_background(cx))
             .border_1()
             .border_color(theme::CustomerUiTheme::border_color(cx))
@@ -24,6 +25,9 @@ impl Workspace {
                 div()
                     .w_full()
                     .h(px(45.))
+                    .min_w_0()
+                    .flex_shrink_0()
+                    .overflow_hidden()
                     .border_color(theme::CustomerUiTheme::border_color(cx))
                     .bg(super::top_session::workspace_tab_bar_background(cx))
                     .child(self.workspace.clone()),

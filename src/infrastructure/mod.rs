@@ -7,6 +7,7 @@ mod http_proxy;
 mod lifecycle;
 mod local_fs;
 pub(crate) mod logging;
+pub(crate) mod paths;
 mod port_forward;
 mod port_test;
 pub mod proxy;

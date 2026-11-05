@@ -17,7 +17,11 @@ use crate::domain::http_proxy::{HttpProxyConnection, HttpProxySettings, HttpProx
 
 use super::{ConnectionEvent, HttpProxyController, RunningService, relay::handle_client};
 
-const SETTINGS_PATH: &str = "data/http_proxy.json";
+fn settings_path() -> std::path::PathBuf {
+    crate::infrastructure::paths::get()
+        .data
+        .join("http_proxy.json")
+}
 const MAX_CONNECTIONS: usize = 128;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -27,7 +31,7 @@ impl HttpProxyController {
     }
 
     pub(crate) async fn load_settings(&self) -> Result<HttpProxySettings, String> {
-        match tokio::fs::read(SETTINGS_PATH).await {
+        match tokio::fs::read(settings_path()).await {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|error| format!("读取 HTTP 代理配置失败: {error}")),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -329,12 +333,12 @@ async fn stop_running(mut running: RunningService) {
 }
 
 async fn save_settings(settings: &HttpProxySettings) -> Result<(), String> {
-    tokio::fs::create_dir_all("data")
+    tokio::fs::create_dir_all(&crate::infrastructure::paths::get().data)
         .await
         .map_err(|error| format!("创建 HTTP 代理配置目录失败: {error}"))?;
     let bytes = serde_json::to_vec_pretty(settings)
         .map_err(|error| format!("序列化 HTTP 代理配置失败: {error}"))?;
-    tokio::fs::write(SETTINGS_PATH, bytes)
+    tokio::fs::write(settings_path(), bytes)
         .await
         .map_err(|error| format!("保存 HTTP 代理配置失败: {error}"))
 }

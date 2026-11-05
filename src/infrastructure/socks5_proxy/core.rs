@@ -18,7 +18,11 @@ use crate::domain::socks5_proxy::{Socks5ProxyConnection, Socks5ProxySettings, So
 
 use super::{protocol::reject_busy, relay::handle_client};
 
-const SETTINGS_PATH: &str = "data/socks5_proxy.json";
+fn settings_path() -> std::path::PathBuf {
+    crate::infrastructure::paths::get()
+        .data
+        .join("socks5_proxy.json")
+}
 const MAX_CONNECTIONS: usize = 128;
 const MAX_REJECTED_CONNECTIONS: usize = 128;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
@@ -56,7 +60,7 @@ impl Socks5ProxyController {
     }
 
     pub(crate) async fn load_settings(&self) -> Result<Socks5ProxySettings, String> {
-        match tokio::fs::read(SETTINGS_PATH).await {
+        match tokio::fs::read(settings_path()).await {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|error| format!("读取 SOCKS5 配置失败: {error}")),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -385,12 +389,12 @@ async fn stop_running(running: RunningService) {
 }
 
 async fn save_settings(settings: &Socks5ProxySettings) -> Result<(), String> {
-    tokio::fs::create_dir_all("data")
+    tokio::fs::create_dir_all(&crate::infrastructure::paths::get().data)
         .await
         .map_err(|error| format!("创建 SOCKS5 配置目录失败: {error}"))?;
     let bytes = serde_json::to_vec_pretty(settings)
         .map_err(|error| format!("序列化 SOCKS5 配置失败: {error}"))?;
-    tokio::fs::write(SETTINGS_PATH, bytes)
+    tokio::fs::write(settings_path(), bytes)
         .await
         .map_err(|error| format!("保存 SOCKS5 配置失败: {error}"))
 }

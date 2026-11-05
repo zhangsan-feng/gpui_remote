@@ -8,9 +8,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use serde::Deserialize;
 
-use crate::{
-    application::session::model::SessionSummary, component::draggable_list::DraggableList,
-};
+use crate::application::session::model::SessionSummary;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = left_session, no_json)]
@@ -39,7 +37,9 @@ struct DeleteSession(String);
 pub struct SessionComponent {
     gui_event_task: Option<Task<()>>,
     gui_scope: EntityId,
-    draggable_list: Entity<DraggableList>,
+    scroll: ScrollHandle,
+    selected_id: Option<String>,
+    drop_target: Option<(String, bool)>,
     sessions: Vec<SessionSummary>,
     core_err: Option<Error>,
     search_input: Entity<InputState>,
@@ -51,15 +51,16 @@ impl SessionComponent {
         let mut this = SessionComponent {
             gui_event_task: None,
             gui_scope,
-            draggable_list: cx.new(move |_| DraggableList::new()),
+            scroll: ScrollHandle::new(),
+            selected_id: None,
+            drop_target: None,
             sessions: Vec::new(),
             core_err: None,
             search_input: cx.new(|cx| InputState::new(window, cx).placeholder("搜索会话")),
             refresh_generation: 0,
         };
-        cx.subscribe(&this.search_input, |this, _, event: &InputEvent, cx| {
+        cx.subscribe(&this.search_input, |_this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
-                this.refer_item(cx);
                 cx.notify();
             }
         })
@@ -93,7 +94,6 @@ impl SessionComponent {
                             this.refresh_sessions(cx)
                         }
                         GuiEvent::ThemeColorChanged => {
-                            this.refer_item(cx);
                             cx.notify();
                         }
                         _ => {}
@@ -104,5 +104,19 @@ impl SessionComponent {
                 }
             }
         }));
+    }
+}
+
+#[derive(Clone)]
+struct DraggedSession {
+    owner: EntityId,
+    id: String,
+    name: String,
+    subtitle: String,
+}
+
+impl Render for DraggedSession {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_preview(cx)
     }
 }

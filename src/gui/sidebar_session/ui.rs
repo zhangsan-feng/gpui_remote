@@ -1,18 +1,20 @@
-use crate::component::{draggable_list::DraggableList, theme};
+use super::DraggedSession;
+use crate::component::theme;
 use crate::domain::session::ConnectionProtocol;
 use crate::gui::sidebar_session::{
     CloseSshTunnel, ConnectSession, ConnectSftpSession, DeleteSession, EditSession, OpenSshTunnel,
     SessionComponent,
 };
 use gpui_kit::component::input::Input;
-use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::menu::ContextMenuExt;
+use gpui_kit::component::scroll::Scrollbar;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 impl SessionComponent {
     pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let component_colors = cx.theme();
+        let component_colors = cx.theme().colors;
         let ui_colors = theme::CustomerUiTheme::colors(cx);
         let query = self.search_input.read(cx).value().trim().to_lowercase();
         let has_matches = self.sessions.iter().any(|session| {
@@ -69,9 +71,34 @@ impl SessionComponent {
                 .into_any_element()
         } else {
             div()
+                .relative()
                 .flex_1()
-                .overflow_hidden()
-                .child(self.draggable_list.clone())
+                .min_h_0()
+                .min_w_0()
+                .child(
+                    v_flex()
+                        .id("session-list")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&self.scroll)
+                        .children(
+                            self.sessions
+                                .iter()
+                                .filter(|session| {
+                                    format!(
+                                        "{} {} {} {}",
+                                        session.name,
+                                        session.host,
+                                        session.username,
+                                        session.connection_protocol.as_str()
+                                    )
+                                    .to_lowercase()
+                                    .contains(&query)
+                                })
+                                .map(|session| self.session_row(session, cx)),
+                        ),
+                )
+                .child(Scrollbar::vertical(&self.scroll).viewport_from_layout())
                 .into_any_element()
         };
         v_flex()
@@ -81,6 +108,21 @@ impl SessionComponent {
             .on_action(cx.listener(Self::close_ssh_tunnel))
             .on_action(cx.listener(Self::edit_session))
             .on_action(cx.listener(Self::delete_session))
+            .on_drag_move(
+                cx.listener(|this, event: &DragMoveEvent<DraggedSession>, _, cx| {
+                    if !event.bounds.contains(&event.event.position) {
+                        this.set_drop_target(None, cx);
+                    }
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.set_drop_target(None, cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.set_drop_target(None, cx)),
+            )
             .h_full()
             .w_full()
             .flex_shrink_0()
@@ -125,176 +167,228 @@ impl SessionComponent {
             .child(session_content)
     }
 
-    pub(super) fn render_item(&mut self, cx: &mut Context<Self>) {
-        let mut list = DraggableList::new();
-        let session = cx.weak_entity();
-        let session_protocols = self
-            .sessions
-            .iter()
-            .map(|profile| {
-                (
-                    profile.id.clone(),
-                    (
-                        profile.connection_protocol,
-                        profile.ssh_tunnel_configured,
-                        profile.ssh_tunnel_active,
-                    ),
-                )
+    fn session_row(
+        &self,
+        session: &crate::application::session::model::SessionSummary,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let colors = theme::CustomerUiTheme::colors(cx);
+        let display_name = if session.name.trim().is_empty() {
+            session.host.clone()
+        } else {
+            session.name.clone()
+        };
+        let session_id = session.id.clone();
+        let target_id = session.id.clone();
+        let hover_id = session.id.clone();
+        let drop_side = self
+            .drop_target
+            .as_ref()
+            .filter(|(id, _)| id == &session.id)
+            .map(|(_, after)| *after);
+        let accent = cx.theme().primary;
+        let menu_id = session.id.clone();
+        let protocol = session.connection_protocol;
+        let configured = session.ssh_tunnel_configured;
+        let active = session.ssh_tunnel_active;
+        let drag = DraggedSession {
+            owner: cx.entity_id(),
+            id: session.id.clone(),
+            name: display_name.clone(),
+            subtitle: format!("{}@{}:{}", session.username, session.host, session.port),
+        };
+        h_flex()
+            .id(format!("session-row-{}", session.id))
+            .relative()
+            .h(px(58.))
+            .w_full()
+            .min_w_0()
+            .flex_shrink_0()
+            .px_3()
+            .gap_3()
+            .cursor_grab()
+            .bg(if self.selected_id.as_ref() == Some(&session.id) {
+                colors.select_background
+            } else {
+                Hsla::transparent_black()
             })
-            .collect::<std::collections::HashMap<_, _>>();
-
-        list.set_item_height(px(58.))
-            .set_item_bg(Hsla::transparent_black().into())
-            .set_item_selected_bg_provider(|cx| {
-                theme::CustomerUiTheme::colors(cx).select_background.into()
-            })
-            .set_item_hover_bg_provider(|cx| {
-                theme::CustomerUiTheme::colors(cx).hover_background.into()
-            })
-            .set_context_menu(
-                move |id: ElementId, menu: PopupMenu, _: &mut Context<PopupMenu>| {
-                    let session_id = id.to_string();
-                    let menu = match session_protocols.get(&session_id).copied() {
-                        Some((ConnectionProtocol::SshAndSftp, configured, active)) => {
-                            let menu = menu
-                                .menu_with_icon(
-                                    "打开 SSH",
-                                    IconName::SquareTerminal,
-                                    Box::new(ConnectSession(session_id.clone())),
-                                )
-                                .menu_with_icon(
-                                    "打开 SFTP",
-                                    IconName::FolderOpen,
-                                    Box::new(ConnectSftpSession(session_id.clone())),
-                                );
-                            if configured && active {
-                                menu.menu_with_icon(
-                                    "关闭 SSH 隧道",
-                                    IconName::Settings2,
-                                    Box::new(CloseSshTunnel(session_id.clone())),
-                                )
-                            } else if configured {
-                                menu.menu_with_icon(
-                                    "打开 SSH 隧道",
-                                    IconName::Settings2,
-                                    Box::new(OpenSshTunnel(session_id.clone())),
-                                )
-                            } else {
-                                menu
-                            }
-                        }
-                        Some((
-                            ConnectionProtocol::Mysql
-                            | ConnectionProtocol::Pgsql
-                            | ConnectionProtocol::Redis,
-                            _,
-                            _,
-                        ))
-                        | None => menu,
-                    };
-                    menu.menu_with_icon(
-                        "编辑",
-                        IconName::Settings2,
-                        Box::new(EditSession(session_id.clone())),
-                    )
-                    .menu_with_icon(
-                        "删除",
-                        IconName::CircleX,
-                        Box::new(DeleteSession(session_id)),
-                    )
-                },
+            .hover(move |style| style.bg(colors.hover_background))
+            .child(
+                div()
+                    .size(px(30.))
+                    .flex_shrink_0()
+                    .rounded_lg()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(cx.theme().sidebar_accent)
+                    .text_color(cx.theme().sidebar_accent_foreground)
+                    .child(IconName::SquareTerminal),
             )
-            .on_mouse_down(move |id, event, cx| {
-                if event.click_count == 2 {
-                    let session_id = id.to_string();
-                    let _ = session.update(cx, |session, cx| {
-                        session.create_active_session_by_id(&session_id, cx);
-                    });
-                }
-            });
-        self.draggable_list = cx.new(|_| list)
-    }
-
-    pub(super) fn refer_item(&mut self, cx: &mut Context<Self>) {
-        let query = self.search_input.read(cx).value().trim().to_lowercase();
-        let sessions = self
-            .sessions
-            .iter()
-            .filter(|session| {
-                if query.is_empty() {
-                    return true;
-                }
-                format!(
-                    "{} {} {} {}",
-                    session.name,
-                    session.host,
-                    session.username,
-                    session.connection_protocol.as_str(),
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap_1()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors.text_color)
+                            .truncate()
+                            .child(display_name),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .truncate()
+                            .child(format!(
+                                "{}@{}:{}",
+                                session.username, session.host, session.port
+                            )),
+                    ),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    this.selected_id = Some(session_id.clone());
+                    if event.click_count == 2 {
+                        this.create_active_session_by_id(&session_id, cx);
+                    }
+                    cx.notify();
+                }),
+            )
+            .when_some(drop_side, |row, after| {
+                row.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .h(px(3.))
+                        .bg(accent)
+                        .when(after, |line| line.bottom_0())
+                        .when(!after, |line| line.top_0()),
                 )
-                .to_lowercase()
-                .contains(&query)
             })
-            .cloned()
-            .collect::<Vec<_>>();
-        let sidebar_accent = cx.theme().sidebar_accent;
-        let sidebar_accent_foreground = cx.theme().sidebar_accent_foreground;
-        let sidebar_foreground = theme::CustomerUiTheme::colors(cx).text_color;
-        let muted_foreground = cx.theme().muted_foreground;
+            .on_drag_move(
+                cx.listener(move |this, event: &DragMoveEvent<DraggedSession>, _, cx| {
+                    let drag = event.drag(cx);
+                    if drag.owner == cx.entity_id() && event.bounds.contains(&event.event.position)
+                    {
+                        let target = (drag.id != hover_id).then(|| {
+                            (
+                                hover_id.clone(),
+                                event.event.position.y > event.bounds.center().y,
+                            )
+                        });
+                        this.set_drop_target(target, cx);
+                    }
+                }),
+            )
+            .on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
+            .on_drop(cx.listener(move |this, drag: &DraggedSession, _, cx| {
+                if drag.owner == cx.entity_id() {
+                    cx.stop_propagation();
+                    this.move_session(&drag.id, &target_id, cx);
+                }
+            }))
+            .context_menu(move |menu, _, _| {
+                let session_id = menu_id.clone();
+                let menu = match Some((protocol, configured, active)) {
+                    Some((ConnectionProtocol::SshAndSftp, configured, active)) => {
+                        let menu = menu
+                            .menu_with_icon(
+                                "打开 SSH",
+                                IconName::SquareTerminal,
+                                Box::new(ConnectSession(session_id.clone())),
+                            )
+                            .menu_with_icon(
+                                "打开 SFTP",
+                                IconName::FolderOpen,
+                                Box::new(ConnectSftpSession(session_id.clone())),
+                            );
+                        if configured && active {
+                            menu.menu_with_icon(
+                                "关闭 SSH 隧道",
+                                IconName::Settings2,
+                                Box::new(CloseSshTunnel(session_id.clone())),
+                            )
+                        } else if configured {
+                            menu.menu_with_icon(
+                                "打开 SSH 隧道",
+                                IconName::Settings2,
+                                Box::new(OpenSshTunnel(session_id.clone())),
+                            )
+                        } else {
+                            menu
+                        }
+                    }
+                    Some((
+                        ConnectionProtocol::Mysql
+                        | ConnectionProtocol::Pgsql
+                        | ConnectionProtocol::Redis,
+                        _,
+                        _,
+                    ))
+                    | None => menu,
+                };
+                menu.menu_with_icon(
+                    "编辑",
+                    IconName::Settings2,
+                    Box::new(EditSession(session_id.clone())),
+                )
+                .menu_with_icon(
+                    "删除",
+                    IconName::CircleX,
+                    Box::new(DeleteSession(session_id)),
+                )
+            })
+            .into_any_element()
+    }
+}
 
-        self.draggable_list.update(cx, move |this, list_cx| {
-            this.clear(list_cx);
-            for session in sessions {
-                this.child(session.id.clone(), move || {
-                    let session_id = session.id.clone();
-                    let display_name = if session.name.trim().is_empty() {
-                        session.host.clone()
-                    } else {
-                        session.name.clone()
-                    };
-                    h_flex()
-                        .id(format!("top_session-row-{session_id}"))
-                        .h(px(58.))
-                        .w_full()
-                        .px_3()
-                        .gap_3()
-                        .cursor_grab()
-                        .child(
-                            div()
-                                .size(px(30.))
-                                .rounded_lg()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(sidebar_accent)
-                                .text_color(sidebar_accent_foreground)
-                                .child(IconName::SquareTerminal),
-                        )
-                        .child(
-                            v_flex()
-                                .flex_1()
-                                .gap_1()
-                                .overflow_hidden()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(sidebar_foreground)
-                                        .whitespace_nowrap()
-                                        .child(display_name),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(muted_foreground)
-                                        .whitespace_nowrap()
-                                        .child(format!(
-                                            "{}@{}:{}",
-                                            session.username, session.host, session.port
-                                        )),
-                                ),
-                        )
-                });
-            }
-        });
+impl DraggedSession {
+    pub(super) fn render_preview(&self, cx: &mut Context<Self>) -> AnyElement {
+        h_flex()
+            .h(px(58.))
+            .px_3()
+            .gap_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(theme::CustomerUiTheme::border_color(cx))
+            .bg(theme::CustomerUiTheme::sidebar_background(cx))
+            .shadow_lg()
+            .opacity(0.85)
+            .child(
+                div()
+                    .size(px(30.))
+                    .rounded_lg()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(cx.theme().sidebar_accent)
+                    .text_color(cx.theme().sidebar_accent_foreground)
+                    .child(IconName::SquareTerminal),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme::CustomerUiTheme::colors(cx).text_color)
+                            .child(self.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(self.subtitle.clone()),
+                    ),
+            )
+            .into_any_element()
     }
 }

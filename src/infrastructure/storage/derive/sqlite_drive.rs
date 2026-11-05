@@ -3,17 +3,21 @@ use std::fs;
 use anyhow::{Context as _, Result};
 use rusqlite::Connection;
 
-const DEFAULT_DATABASE_PATH: &str = "data/gpui_remote.db";
-
 pub struct SqliteDrive {
     pub(crate) connection: Connection,
 }
 
 impl SqliteDrive {
     pub fn new() -> Result<Self> {
-        fs::create_dir_all("data").context("create database directory")?;
+        fs::create_dir_all(&crate::infrastructure::paths::get().data)
+            .context("create database directory")?;
 
-        let connection = Connection::open(DEFAULT_DATABASE_PATH).context("open SQLite database")?;
+        let connection = Connection::open(
+            crate::infrastructure::paths::get()
+                .data
+                .join("gpui_remote.db"),
+        )
+        .context("open SQLite database")?;
         connection
             .execute_batch("PRAGMA foreign_keys = ON;")
             .context("configure SQLite connection")?;

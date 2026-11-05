@@ -23,7 +23,6 @@ pub(crate) struct McpCommandRouter {
 
 struct SessionLane {
     sender: mpsc::Sender<CommandEnvelope>,
-    closing: bool,
     last_activity: Instant,
 }
 
@@ -62,24 +61,7 @@ impl McpCommandRouter {
         match command.command.route_key() {
             RouteKey::Control => enqueue(&self.control_tx, command, "control").await,
             RouteKey::Workspace(workspace_id) => {
-                if self
-                    .session_lanes
-                    .get(&workspace_id)
-                    .is_some_and(|lane| lane.closing)
-                {
-                    let message = "MCP workspace 正在关闭".to_owned();
-                    reject(command, message.clone());
-                    return Err(message);
-                }
-
-                let is_close = command.command.is_close_session();
                 let sender = self.session_sender(&workspace_id);
-                if is_close {
-                    if let Some(lane) = self.session_lanes.get_mut(&workspace_id) {
-                        lane.closing = true;
-                    }
-                }
-
                 let result = enqueue(&sender, command, &workspace_id).await;
                 match result {
                     Ok(()) => {
@@ -88,11 +70,6 @@ impl McpCommandRouter {
                         }
                     }
                     Err(error) => {
-                        if is_close {
-                            if let Some(lane) = self.session_lanes.get_mut(&workspace_id) {
-                                lane.closing = false;
-                            }
-                        }
                         return Err(error);
                     }
                 }
@@ -125,9 +102,7 @@ impl McpCommandRouter {
         let idle_workspaces = self
             .session_lanes
             .iter()
-            .filter(|(_, lane)| {
-                !lane.closing && now.duration_since(lane.last_activity) >= SESSION_IDLE_TIMEOUT
-            })
+            .filter(|(_, lane)| now.duration_since(lane.last_activity) >= SESSION_IDLE_TIMEOUT)
             .map(|(workspace_id, _)| workspace_id.clone())
             .collect::<Vec<_>>();
         for workspace_id in idle_workspaces {
@@ -174,7 +149,6 @@ impl McpCommandRouter {
             workspace_id.to_owned(),
             SessionLane {
                 sender: sender.clone(),
-                closing: false,
                 last_activity: Instant::now(),
             },
         );
@@ -251,14 +225,9 @@ async fn run_lane(
             command.command.name(),
             command.command.workspace_id().unwrap_or("control")
         );
-        let should_stop = command.command.is_close_session();
         let runtime_failed = process_command(&lane_name, &application, command).await;
-        if should_stop || runtime_failed {
-            let reason = if should_stop {
-                "close_completed"
-            } else {
-                "workspace_runtime_unavailable"
-            };
+        if runtime_failed {
+            let reason = "workspace_runtime_unavailable";
             reject_pending(&mut receiver, "MCP workspace runtime 已关闭，命令未执行");
             log::info!("MCP bridge lane stopping: lane={lane_name}, reason={reason}");
             break;

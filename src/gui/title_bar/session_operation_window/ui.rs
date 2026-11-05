@@ -1,9 +1,8 @@
 use gpui_kit::component::{
-    ActiveTheme, Icon, IconName, Sizable, Size as ComponentSize, ThemeColor,
+    ActiveTheme, Icon, IconName, Sizable, ThemeColor,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputState},
-    searchable_list::SearchableListItem,
     select::Select,
     v_flex,
 };
@@ -13,89 +12,6 @@ use gpui_kit::*;
 use crate::component::theme;
 
 use super::{ConnectionProtocol, FormSection, SessionFormMode, SessionOperationWindow};
-
-impl ConnectionProtocol {
-    pub(super) fn icon(self) -> IconName {
-        match self {
-            Self::SshAndSftp => IconName::SquareTerminal,
-            Self::Mysql | Self::Pgsql => IconName::HardDrive,
-            Self::Redis => IconName::HardDrive,
-        }
-    }
-}
-
-impl SearchableListItem for ConnectionProtocol {
-    type Value = Self;
-
-    fn title(&self) -> SharedString {
-        self.label().into()
-    }
-
-    fn display_title(&self) -> Option<AnyElement> {
-        Some(
-            h_flex()
-                .gap_2()
-                .items_center()
-                .child(Icon::new(self.icon()).small())
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(self.label()),
-                )
-                .into_any_element(),
-        )
-    }
-
-    fn value(&self) -> &Self::Value {
-        self
-    }
-
-    fn disabled(&self) -> bool {
-        !matches!(self, Self::SshAndSftp)
-    }
-
-    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let colors = cx.theme().colors;
-        let disabled = self.disabled();
-        h_flex()
-            .w_full()
-            .gap_2()
-            .items_center()
-            .child(
-                div()
-                    .size(px(28.))
-                    .flex_shrink_0()
-                    .rounded_md()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(if disabled {
-                        colors.muted_foreground.opacity(0.1)
-                    } else {
-                        colors.accent.opacity(0.14)
-                    })
-                    .child(Icon::new(self.icon()).small().text_color(if disabled {
-                        colors.muted_foreground
-                    } else {
-                        colors.accent
-                    })),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(if disabled {
-                        colors.muted_foreground
-                    } else {
-                        colors.foreground
-                    })
-                    .child(self.label()),
-            )
-    }
-}
 
 impl FormSection {
     const ALL: [Self; 3] = [Self::Connection, Self::Proxy, Self::SshTunnel];
@@ -118,23 +34,6 @@ impl FormSection {
 }
 
 impl SessionOperationWindow {
-    fn protocol_selector(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = cx.theme();
-        let ui_colors = theme::CustomerUiTheme::colors(cx);
-        Select::new(&self.protocol_select)
-            .id("session-protocol-select")
-            .with_size(ComponentSize::Small)
-            .w(px(220.))
-            .h(px(38.))
-            .menu_width(px(220.))
-            .bg(ui_colors.background)
-            .border_color(theme::CustomerUiTheme::border_color(cx))
-            .text_color(colors.foreground)
-            .rounded_lg()
-            .placeholder("选择协议")
-            .accessibility_label("连接协议")
-    }
-
     fn field(label: &'static str, input: &Entity<InputState>, colors: ThemeColor) -> Div {
         h_flex()
             .w_full()

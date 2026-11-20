@@ -5,13 +5,13 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use chrono::Utc;
-use rusqlite::{OptionalExtension, Row, params, types::Type};
+use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params, types::Type};
 use uuid::Uuid;
 
 use crate::{
     domain::session::{
-        ConnectionProtocol, NewSession, Protocol, ProxyConfig, SessionProfile, SftpSessionState,
-        SshReverseTunnelConfig,
+        ConnectionProtocol, NewSession, Protocol, ProxyConfig, SessionGroup, SessionGroupTarget,
+        SessionProfile, SftpSessionState, SshReverseTunnelConfig,
     },
     infrastructure::storage::derive::sqlite_drive::SqliteDrive,
 };
@@ -36,18 +36,76 @@ impl SessionStorageRepository {
     }
 
     pub fn list_sessions(&self) -> Result<Vec<SessionProfile>> {
-        let drive = self.lock_drive();
-        let mut statement = drive.connection.prepare(
-            "SELECT id, protocol, name, host, port, username, password,
-                    private_key_path, proxy_host, proxy_port, proxy_username,
-                    proxy_password, created_at, ssh_tunnel_remote_port,
-                    ssh_tunnel_forward_address, ssh_tunnel_forward_port
-             FROM sessions ORDER BY created_at DESC",
-        )?;
-        let rows = statement.query_map([], map_session)?;
+        read_sessions(&self.lock_drive().connection)
+    }
 
-        rows.collect::<rusqlite::Result<Vec<_>>>()
-            .context("read sessions from SQLite")
+    pub(crate) fn session_sidebar(&self) -> Result<(Vec<SessionProfile>, Vec<SessionGroup>)> {
+        let mut drive = self.lock_drive();
+        let transaction = drive.connection.transaction()?;
+        let sessions = read_sessions(&transaction)?;
+        let groups = {
+            let mut statement = transaction.prepare(
+                "SELECT id, name, parent_id FROM session_groups ORDER BY name COLLATE NOCASE, id",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok(SessionGroup {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        parent_id: row.get(2)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        transaction.commit()?;
+        Ok((sessions, groups))
+    }
+
+    pub(crate) fn move_session_to_group(
+        &self,
+        session_id: &str,
+        target: SessionGroupTarget,
+    ) -> Result<Option<String>> {
+        let mut drive = self.lock_drive();
+        let transaction = drive
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let parent_or_target = match &target {
+            SessionGroupTarget::Existing(id) => id,
+            SessionGroupTarget::New { parent_id, .. } => parent_id,
+        };
+        if let Some(id) = parent_or_target {
+            let exists: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM session_groups WHERE id = ?1)",
+                [id],
+                |row| row.get(0),
+            )?;
+            anyhow::ensure!(exists, "目标分组已不存在");
+        }
+        let group_id = match target {
+            SessionGroupTarget::Existing(id) => id,
+            SessionGroupTarget::New { parent_id, name } => {
+                let duplicated: bool = transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM session_groups WHERE parent_id IS ?1 AND name = ?2 COLLATE NOCASE)",
+                    params![parent_id, name],
+                    |row| row.get(0),
+                )?;
+                anyhow::ensure!(!duplicated, "该层级已有同名分组");
+                let id = Uuid::new_v4().to_string();
+                transaction.execute(
+                    "INSERT INTO session_groups (id, name, parent_id) VALUES (?1, ?2, ?3)",
+                    params![id, name, parent_id],
+                )?;
+                Some(id)
+            }
+        };
+        let affected = transaction.execute(
+            "UPDATE sessions SET group_id = ?2 WHERE id = ?1",
+            params![session_id, group_id],
+        )?;
+        anyhow::ensure!(affected != 0, "连接配置已不存在");
+        transaction.commit()?;
+        Ok(group_id)
     }
 
     pub fn find_session(&self, id: &str) -> Result<Option<SessionProfile>> {
@@ -58,7 +116,7 @@ impl SessionStorageRepository {
                 "SELECT id, protocol, name, host, port, username, password,
                         private_key_path, proxy_host, proxy_port, proxy_username,
                         proxy_password, created_at, ssh_tunnel_remote_port,
-                        ssh_tunnel_forward_address, ssh_tunnel_forward_port
+                        ssh_tunnel_forward_address, ssh_tunnel_forward_port, group_id
                  FROM sessions WHERE id = ?1",
                 [id],
                 map_session,
@@ -70,6 +128,7 @@ impl SessionStorageRepository {
     pub fn insert_session(&self, draft: NewSession) -> Result<SessionProfile> {
         let profile = SessionProfile {
             id: Uuid::new_v4().to_string(),
+            group_id: None,
             connection_protocol: draft.connection_protocol,
             protocol: Protocol::Ssh,
             name: draft.name.trim().to_owned(),
@@ -116,16 +175,17 @@ impl SessionStorageRepository {
 
     pub fn update_session(&self, id: &str, draft: NewSession) -> Result<SessionProfile> {
         let drive = self.lock_drive();
-        let created_at: String = drive
+        let (created_at, group_id) = drive
             .connection
             .query_row(
-                "SELECT created_at FROM sessions WHERE id = ?1",
+                "SELECT created_at, group_id FROM sessions WHERE id = ?1",
                 [id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .context("find top_session to update")?;
         let profile = SessionProfile {
             id: id.to_owned(),
+            group_id,
             connection_protocol: draft.connection_protocol,
             protocol: Protocol::Ssh,
             name: draft.name.trim().to_owned(),
@@ -231,6 +291,19 @@ impl SessionStorageRepository {
     }
 }
 
+fn read_sessions(connection: &Connection) -> Result<Vec<SessionProfile>> {
+    let mut statement = connection.prepare(
+        "SELECT id, protocol, name, host, port, username, password,
+                private_key_path, proxy_host, proxy_port, proxy_username,
+                proxy_password, created_at, ssh_tunnel_remote_port,
+                ssh_tunnel_forward_address, ssh_tunnel_forward_port, group_id
+         FROM sessions ORDER BY created_at DESC",
+    )?;
+    let rows = statement.query_map([], map_session)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("read sessions from SQLite")
+}
+
 fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
     let connection_protocol = row
         .get::<_, String>(1)?
@@ -270,6 +343,7 @@ fn map_session(row: &Row<'_>) -> rusqlite::Result<SessionProfile> {
     };
     Ok(SessionProfile {
         id: row.get(0)?,
+        group_id: row.get(16)?,
         connection_protocol,
         protocol: Protocol::Ssh,
         name: row.get(2)?,

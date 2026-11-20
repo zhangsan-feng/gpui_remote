@@ -2,7 +2,6 @@
 
 pub(crate) mod application;
 mod build_info;
-mod component;
 mod data_context;
 mod domain;
 mod event_bus;
@@ -50,11 +49,11 @@ async fn main() {
         let platform = gpui_kit::platform::current_platform(false);
         gpui_kit::Application::with_platform(platform.clone())
             .with_http_client(Arc::new(http_client))
-            .with_assets(component::assets::MergedAssets::new())
+            .with_assets(gui::component::assets::MergedAssets::new())
             .run(move |cx| {
                 #[cfg(not(windows))]
-                component::clipboard::init(platform.clone(), cx);
-                gui::home::open_main_window(
+                gui::component::clipboard::init(platform.clone(), cx);
+                gui::main_window::open_main_window(
                     cx,
                     theme_settings.clone(),
                     theme_updates.clone(),

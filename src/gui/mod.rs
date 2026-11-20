@@ -1,4 +1,6 @@
-pub mod home;
-pub mod sidebar_session;
-pub mod title_bar;
-pub mod workspace;
+pub(crate) mod component;
+mod group_window;
+pub(crate) mod main_window;
+mod service_window;
+mod session_window;
+mod settings_window;

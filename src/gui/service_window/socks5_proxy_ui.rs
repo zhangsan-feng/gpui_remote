@@ -1,0 +1,189 @@
+use gpui_kit::component::{
+    ActiveTheme, Disableable,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{Input, InputContentType},
+    v_flex,
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
+
+use super::{ServicesOperationWindow, active_connections::active_connection_log};
+
+impl ServicesOperationWindow {
+    pub(super) fn socks5_proxy_section(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        let status = crate::data_context::DATA_CONTEXT.socks5_proxy();
+        let status_label = if self.socks5_busy {
+            "重启中…".to_owned()
+        } else if status.running {
+            format!(
+                "运行中 · {} · {} 个连接",
+                status.address.as_deref().unwrap_or_default(),
+                status.active_connections
+            )
+        } else {
+            "未运行".to_owned()
+        };
+        v_flex()
+            .gap_5()
+            .child(self.section_heading(
+                "SOCKS5 代理",
+                "提供 SOCKS5 CONNECT 代理供局域网客户端使用；无认证模式下，局域网设备可直接连接。",
+                cx,
+            ))
+            .child(
+                v_flex()
+                    .p_4()
+                    .gap_3()
+                    .rounded_xl()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().group_box)
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child("服务状态"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors.muted_foreground)
+                                            .child(status_label),
+                                    ),
+                            )
+                            .child(
+                                Button::new("toggle-socks5-proxy")
+                                    .when(self.socks5_enabled, |button| button.primary())
+                                    .when(!self.socks5_enabled, |button| button.outline())
+                                    .label(if self.socks5_loading {
+                                        "读取中…"
+                                    } else if self.socks5_busy {
+                                        "重启中…"
+                                    } else if self.socks5_enabled {
+                                        "已启用"
+                                    } else {
+                                        "已关闭"
+                                    })
+                                    .disabled(self.socks5_loading || self.socks5_busy)
+                                    .on_click(cx.listener(Self::toggle_socks5_proxy)),
+                            ),
+                    )
+                    .child(Self::fixed_listener_field("监听范围", colors))
+                    .child(Self::mcp_field("端口", &self.socks5_port, colors))
+                    .child(Self::mcp_field("用户名", &self.socks5_username, colors))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .h(px(38.))
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                div()
+                                    .w(px(80.))
+                                    .flex_shrink_0()
+                                    .text_xs()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(colors.muted_foreground)
+                                    .child("密码"),
+                            )
+                            .child(
+                                div().flex_1().min_w_0().child(
+                                    Input::new(&self.socks5_password)
+                                        .content_type(InputContentType::Password),
+                                ),
+                            )
+                            .child(
+                                Button::new("generate-socks5-password")
+                                    .outline()
+                                    .label("随机生成")
+                                    .disabled(self.socks5_loading || self.socks5_busy)
+                                    .on_click(cx.listener(Self::generate_socks5_password)),
+                            )
+                            .child(
+                                Button::new("copy-socks5-password")
+                                    .outline()
+                                    .label("复制")
+                                    .disabled(self.socks5_loading || self.socks5_busy)
+                                    .on_click(cx.listener(Self::copy_socks5_password)),
+                            ),
+                    )
+                    .child(
+                        h_flex().justify_end().pt_2().child(
+                            Button::new("apply-socks5-proxy")
+                                .primary()
+                                .label(if self.socks5_busy {
+                                    "重启中…"
+                                } else {
+                                    "保存并重启"
+                                })
+                                .disabled(self.socks5_loading || self.socks5_busy)
+                                .on_click(cx.listener(Self::apply_socks5_proxy)),
+                        ),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child("活跃连接"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(colors.muted_foreground)
+                                            .child(format!("{} 条", status.connections.len())),
+                                    ),
+                            )
+                            .child(active_connection_log(
+                                status
+                                    .connections
+                                    .iter()
+                                    .rev()
+                                    .map(|connection| {
+                                        format!(
+                                            "客户端 {} → 我的代理 {} → 目的 {}",
+                                            connection.client,
+                                            connection.proxy,
+                                            connection.destination
+                                        )
+                                    })
+                                    .collect(),
+                                "当前没有活跃连接",
+                                cx,
+                            )),
+                    )
+                    .when_some(status.error, |this, error| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(colors.danger_foreground)
+                                .child(error),
+                        )
+                    })
+                    .when_some(self.socks5_error.clone(), |this, error| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(colors.danger_foreground)
+                                .child(error),
+                        )
+                    }),
+            )
+    }
+}

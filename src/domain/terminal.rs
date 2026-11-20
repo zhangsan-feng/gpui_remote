@@ -7,13 +7,22 @@ pub struct TerminalRgb {
     pub blue: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerminalColor {
+    DefaultForeground,
+    DimForeground,
+    DefaultBackground,
+    Rgb(TerminalRgb),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TerminalStyle {
-    pub foreground: TerminalRgb,
-    pub background: TerminalRgb,
+    pub foreground: TerminalColor,
+    pub background: TerminalColor,
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
+    pub hidden: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -26,7 +26,8 @@ pub(crate) fn initialize(log_dir: impl AsRef<Path>, date_format: &str) -> [Worke
     let log_dir = log_dir.as_ref();
     std::fs::create_dir_all(log_dir).expect("create log directory failed");
 
-    let application_level = application_log_level();
+    // Change this to Debug to enable application diagnostics in both loggers.
+    let application_level = log::LevelFilter::Info;
 
     let log_file = log_dir.join(format!("{}.log", chrono::Local::now().format(date_format)));
     let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
@@ -117,23 +118,4 @@ fn initialize_panic_reporting(log_dir: &Path) {
         "panic_reporting_initialized file={}",
         log_dir.join("panic.log").display()
     );
-}
-
-fn application_log_level() -> log::LevelFilter {
-    let Ok(level) = std::env::var("GPUI_REMOTE_LOG") else {
-        return log::LevelFilter::Info;
-    };
-
-    match level.trim().to_ascii_lowercase().as_str() {
-        "trace" => log::LevelFilter::Trace,
-        "debug" => log::LevelFilter::Debug,
-        "info" => log::LevelFilter::Info,
-        "warn" => log::LevelFilter::Warn,
-        "error" => log::LevelFilter::Error,
-        "off" => log::LevelFilter::Off,
-        _ => {
-            eprintln!("Invalid GPUI_REMOTE_LOG={level:?}; using info");
-            log::LevelFilter::Info
-        }
-    }
 }

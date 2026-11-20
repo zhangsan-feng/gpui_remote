@@ -1,12 +1,31 @@
 use crate::{
     application::ports::SessionRepositoryFuture,
-    domain::session::{NewSession, SessionProfile, SftpSessionState},
+    domain::session::{
+        NewSession, SessionGroup, SessionGroupTarget, SessionProfile, SftpSessionState,
+    },
     infrastructure::InfrastructureContext,
 };
 
 use super::Storage;
 
 impl InfrastructureContext {
+    pub(crate) async fn session_sidebar(
+        &self,
+    ) -> anyhow::Result<(Vec<SessionProfile>, Vec<SessionGroup>)> {
+        let repository = self.storage()?.session.clone();
+        tokio::task::spawn_blocking(move || repository.session_sidebar()).await?
+    }
+
+    pub(crate) async fn move_session_to_group(
+        &self,
+        session_id: String,
+        target: SessionGroupTarget,
+    ) -> anyhow::Result<Option<String>> {
+        let repository = self.storage()?.session.clone();
+        tokio::task::spawn_blocking(move || repository.move_session_to_group(&session_id, target))
+            .await?
+    }
+
     pub(super) fn storage(&self) -> anyhow::Result<&Storage> {
         self.inner
             .storage

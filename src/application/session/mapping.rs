@@ -17,6 +17,7 @@ pub(crate) fn map_session_summary(
 ) -> SessionSummary {
     SessionSummary {
         id: profile.id,
+        group_id: profile.group_id,
         name: profile.name,
         host: profile.host,
         port: profile.port,

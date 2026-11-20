@@ -122,6 +122,7 @@ impl FromStr for ConnectionProtocol {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionProfile {
     pub id: String,
+    pub group_id: Option<String>,
     pub connection_protocol: ConnectionProtocol,
     /// The protocol of the currently opened workspace view.
     pub protocol: Protocol,
@@ -134,6 +135,21 @@ pub struct SessionProfile {
     pub proxy: Option<ProxyConfig>,
     pub ssh_reverse_tunnel: Option<SshReverseTunnelConfig>,
     pub created_at: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SessionGroup {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) parent_id: Option<String>,
+}
+
+pub(crate) enum SessionGroupTarget {
+    Existing(Option<String>),
+    New {
+        parent_id: Option<String>,
+        name: String,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

@@ -3,6 +3,7 @@
 禁止编写superpowers 的计划 禁止使用computer use 除非用户本次会话指定使用
 禁止修改README.md
 明确的需求不要设计方案直接开始执行
+禁止保留或新增测试用例目录和测试用例
 UI 样式参考 [Tailwind CSS](https://tailwindcss.com/)
 使用 Product Design 规范来约束视觉层次和交互状态
 图标设计与语义参考 [Lucide](https://lucide.dev/)；优先复用项目已有的 Lucide 图标资源，避免引入重复图标依赖。
@@ -30,7 +31,7 @@ mod.rs(类型定义、子模块声明、初始化)
 
 
 
-## 定位问题 定位问题优先看日志 没有日志添加日志排查
+## 定位问题 定位问题优先看日志 没有日志添加日志排查 src\infrastructure\logging.rs 使用 level_for 开启模块debug日志
 ## 编写计划文档 plan.md
 当前完成的进度
 当前的计划

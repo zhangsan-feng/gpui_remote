@@ -1,6 +1,6 @@
 use crate::{
     application::{Application, ApplicationResult},
-    domain::session::{NewSession, Protocol, SessionProfile},
+    domain::session::{NewSession, Protocol, SessionGroupTarget, SessionProfile},
     infrastructure::INFRASTRUCTURE,
 };
 
@@ -68,19 +68,39 @@ impl SessionApplication {
         })
     }
 
-    pub(crate) async fn list_session_summaries(
-        &self,
-    ) -> ApplicationResult<Vec<super::model::SessionSummary>> {
+    pub(crate) async fn session_sidebar(&self) -> ApplicationResult<super::model::SessionSidebar> {
         let active_tunnels = INFRASTRUCTURE.active_ssh_reverse_tunnel_ids().await;
-        self.list_profiles().await.map(|profiles| {
-            profiles
+        let (profiles, groups) = INFRASTRUCTURE
+            .session_sidebar()
+            .await
+            .map_err(|error| format!("读取会话与分组失败: {error:#}"))?;
+        Ok(super::model::SessionSidebar {
+            sessions: profiles
                 .into_iter()
                 .map(|profile| {
                     let tunnel_active = active_tunnels.contains(&profile.id);
                     mapping::map_session_summary(profile, tunnel_active)
                 })
-                .collect()
+                .collect(),
+            groups,
         })
+    }
+
+    pub(crate) async fn move_session_to_group(
+        &self,
+        session_id: String,
+        mut target: SessionGroupTarget,
+    ) -> ApplicationResult<Option<String>> {
+        if let SessionGroupTarget::New { name, .. } = &mut target {
+            *name = name.trim().to_owned();
+            if name.is_empty() {
+                return Err("请输入分组名称".to_owned());
+            }
+        }
+        INFRASTRUCTURE
+            .move_session_to_group(session_id, target)
+            .await
+            .map_err(|error| format!("移动会话失败: {error:#}"))
     }
 }
 

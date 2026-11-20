@@ -21,12 +21,12 @@ pub(super) fn write_text(text: String) -> Result<(), String> {
     }
     let _writing = WriteGuard;
     let started = Instant::now();
-    log::info!(
+    log::debug!(
         "clipboard_write_started bytes={} thread=blocking backend=arboard",
         text.len()
     );
     let result = write_native(&text);
-    log::info!(
+    log::debug!(
         "clipboard_write_finished success={} elapsed_ms={}",
         result.is_ok(),
         started.elapsed().as_millis()

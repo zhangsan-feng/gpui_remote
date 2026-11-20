@@ -4,14 +4,14 @@ mod color {
         vte::ansi::{Color, NamedColor, Rgb},
     };
 
-    use crate::domain::terminal::TerminalRgb;
+    use crate::domain::terminal::{TerminalColor, TerminalRgb};
 
     pub(crate) fn resolve_color(
         color: Color,
         overrides: &Colors,
         foreground: bool,
         flags: Flags,
-    ) -> TerminalRgb {
+    ) -> TerminalColor {
         let color = match color {
             Color::Named(named) if foreground && flags.contains(Flags::BOLD) => {
                 Color::Named(named.to_bright())
@@ -22,18 +22,16 @@ mod color {
             color => color,
         };
         match color {
-            Color::Spec(rgb) => rgb_to_terminal_rgb(rgb),
-            Color::Indexed(index) => overrides[index as usize]
-                .map(rgb_to_terminal_rgb)
-                .unwrap_or_else(|| indexed_color(index)),
+            Color::Spec(rgb) => TerminalColor::Rgb(rgb_to_terminal_rgb(rgb)),
+            Color::Indexed(index) => TerminalColor::Rgb(
+                overrides[index as usize]
+                    .map(rgb_to_terminal_rgb)
+                    .unwrap_or_else(|| indexed_color(index)),
+            ),
             Color::Named(named) => overrides[named]
-                .map(rgb_to_terminal_rgb)
+                .map(|rgb| TerminalColor::Rgb(rgb_to_terminal_rgb(rgb)))
                 .unwrap_or_else(|| named_color(named)),
         }
-    }
-
-    pub(crate) fn is_default_background(color: Color) -> bool {
-        matches!(color, Color::Named(NamedColor::Background))
     }
 
     fn rgb_to_terminal_rgb(value: Rgb) -> TerminalRgb {
@@ -44,28 +42,13 @@ mod color {
         }
     }
 
-    pub(crate) fn default_foreground() -> TerminalRgb {
-        TerminalRgb {
-            red: 226,
-            green: 232,
-            blue: 240,
-        }
-    }
-
-    pub(crate) fn default_background() -> TerminalRgb {
-        TerminalRgb {
-            red: 20,
-            green: 18,
-            blue: 24,
-        }
-    }
-
-    fn named_color(color: NamedColor) -> TerminalRgb {
-        match color {
-            NamedColor::Foreground | NamedColor::BrightForeground => default_foreground(),
-            NamedColor::Background => default_background(),
-            NamedColor::Cursor => default_foreground(),
-            NamedColor::DimForeground => dim(default_foreground()),
+    fn named_color(color: NamedColor) -> TerminalColor {
+        let rgb = match color {
+            NamedColor::Foreground | NamedColor::BrightForeground | NamedColor::Cursor => {
+                return TerminalColor::DefaultForeground;
+            }
+            NamedColor::Background => return TerminalColor::DefaultBackground,
+            NamedColor::DimForeground => return TerminalColor::DimForeground,
             NamedColor::Black => indexed_color(0),
             NamedColor::Red => indexed_color(1),
             NamedColor::Green => indexed_color(2),
@@ -90,7 +73,8 @@ mod color {
             NamedColor::DimMagenta => dim(indexed_color(5)),
             NamedColor::DimCyan => dim(indexed_color(6)),
             NamedColor::DimWhite => dim(indexed_color(7)),
-        }
+        };
+        TerminalColor::Rgb(rgb)
     }
 
     fn indexed_color(index: u8) -> TerminalRgb {
@@ -136,10 +120,11 @@ mod color {
     }
 
     fn dim(color: TerminalRgb) -> TerminalRgb {
+        let dim_channel = |channel: u8| (u16::from(channel) * 2 / 3) as u8;
         TerminalRgb {
-            red: color.red.saturating_mul(2) / 3,
-            green: color.green.saturating_mul(2) / 3,
-            blue: color.blue.saturating_mul(2) / 3,
+            red: dim_channel(color.red),
+            green: dim_channel(color.green),
+            blue: dim_channel(color.blue),
         }
     }
 }
@@ -155,14 +140,13 @@ mod core {
     };
 
     use crate::domain::terminal::{
-        McpTerminalHistoryPage, TerminalCursor, TerminalCursorShape, TerminalFrame, TerminalLine,
-        TerminalSpan, TerminalStyle,
+        McpTerminalHistoryPage, TerminalColor, TerminalCursor, TerminalCursorShape, TerminalFrame,
+        TerminalLine, TerminalSpan, TerminalStyle,
     };
 
     use super::{
         DEFAULT_COLUMNS, DEFAULT_ROWS, MAX_SCROLLBACK_LINES, MAX_TRACKED_LINE_METADATA, Mutex,
-        TerminalBuffer, TerminalPtyProxy, TerminalSize, VecDeque,
-        color::{default_background, is_default_background, resolve_color},
+        TerminalBuffer, TerminalPtyProxy, TerminalSize, VecDeque, color::resolve_color,
     };
 
     impl TerminalBuffer {
@@ -398,16 +382,9 @@ mod core {
                     continue;
                 }
                 let mut foreground = resolve_color(cell.fg, &colors, true, cell.flags);
-                let mut background = if is_default_background(cell.bg) {
-                    default_background()
-                } else {
-                    resolve_color(cell.bg, &colors, false, cell.flags)
-                };
+                let mut background = resolve_color(cell.bg, &colors, false, cell.flags);
                 if cell.flags.contains(Flags::INVERSE) {
                     std::mem::swap(&mut foreground, &mut background);
-                }
-                if cell.flags.contains(Flags::HIDDEN) {
-                    foreground = background;
                 }
                 let style = TerminalStyle {
                     foreground,
@@ -415,6 +392,7 @@ mod core {
                     bold: cell.flags.contains(Flags::BOLD),
                     italic: cell.flags.contains(Flags::ITALIC),
                     underline: cell.flags.intersects(Flags::ALL_UNDERLINES),
+                    hidden: cell.flags.contains(Flags::HIDDEN),
                 };
                 if let Some(span) = spans.last_mut().filter(|span| span.style == style) {
                     span.text.push(cell.c);
@@ -474,9 +452,8 @@ mod core {
     }
 
     fn trim_default_trailing_spaces(spans: &mut Vec<TerminalSpan>) {
-        let default_background = default_background();
         while let Some(last) = spans.last_mut() {
-            if last.style.background != default_background {
+            if last.style.background != TerminalColor::DefaultBackground {
                 break;
             }
             let trimmed_length = last.text.trim_end_matches(' ').len();

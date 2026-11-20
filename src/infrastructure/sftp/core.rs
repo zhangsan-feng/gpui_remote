@@ -72,14 +72,11 @@ pub(super) fn connect<'a>(
         }
         log::debug!("SFTP SSH authentication succeeded: workspace_id={workspace_id}");
 
-        let channel = session
+        let mut channel = session
             .channel_open_session()
             .await
             .context("创建 SFTP 会话通道失败")?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .context("启动远程 SFTP 子系统失败")?;
+        conn::request_sftp_subsystem(&mut channel, workspace_id).await?;
         let sftp = Arc::new(
             SftpSession::new(channel.into_stream())
                 .await

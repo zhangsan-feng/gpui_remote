@@ -1,11 +1,11 @@
 [package]
 name = "gpui_remote"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-gpui-kit = {version = "0.8.1", features = ["default"]}
-reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.10" }
+gpui-kit = "=0.10.0"
+reqwest_client = { package = "gpui-pre-reqwest-client", version = "=0.3.12" }
 alacritty_terminal = "0.26.0"
 
 

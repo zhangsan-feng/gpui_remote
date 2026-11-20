@@ -1,0 +1,50 @@
+name: Release Windows executable
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $version = ($metadata.packages | Where-Object name -eq 'gpui_remote').version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match Cargo version $version"
+          }
+
+      - name: Build Windows x64 executable
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $artifact = "gpui_remote-$tag-windows-x64.exe"
+          Copy-Item -LiteralPath 'target/x86_64-pc-windows-msvc/release/gpui_remote.exe' -Destination $artifact
+          gh release create $tag $artifact --verify-tag --title $tag --generate-notes

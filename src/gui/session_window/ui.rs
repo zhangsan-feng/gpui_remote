@@ -1,0 +1,381 @@
+use gpui_kit::component::{
+    ActiveTheme, Icon, IconName, Sizable, ThemeColor,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    input::{Input, InputState},
+    select::Select,
+    v_flex,
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
+
+use crate::gui::settings_window::open_network_settings_window;
+
+use super::{ConnectionProtocol, FormSection, SessionFormMode, SessionOperationWindow};
+
+impl FormSection {
+    const ALL: [Self; 3] = [Self::Connection, Self::Proxy, Self::SshTunnel];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Connection => "连接",
+            Self::Proxy => "代理",
+            Self::SshTunnel => "SSH 隧道",
+        }
+    }
+
+    fn icon(self) -> IconName {
+        match self {
+            Self::Connection => IconName::SquareTerminal,
+            Self::Proxy => IconName::Globe,
+            Self::SshTunnel => IconName::ArrowRight,
+        }
+    }
+}
+
+impl SessionOperationWindow {
+    fn field(label: &'static str, input: &Entity<InputState>, colors: ThemeColor) -> Div {
+        h_flex()
+            .w_full()
+            .h(px(38.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(64.))
+                    .flex_shrink_0()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child(label),
+            )
+            .child(div().flex_1().child(Input::new(input)))
+    }
+
+    fn connection_panel(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        v_flex()
+            .flex_1()
+            .h_full()
+            .p_4()
+            .gap_3()
+            .rounded_xl()
+            .bg(cx.theme().group_box)
+            .child(Self::panel_heading(
+                IconName::SquareTerminal,
+                "连接信息",
+                "配置远程主机与登录凭据",
+                colors,
+            ))
+            .child(Self::field("标题", &self.name, colors))
+            .child(Self::field("主机", &self.host, colors))
+            .child(Self::field("端口", &self.port, colors))
+            .child(Self::field("用户名", &self.username, colors))
+            .child(Self::field("密码", &self.password, colors))
+            .child(self.private_key_field(cx))
+    }
+
+    fn private_key_field(&self, cx: &Context<Self>) -> Div {
+        let colors = cx.theme().colors;
+        let path = self
+            .private_key_path
+            .as_deref()
+            .unwrap_or("未选择私钥，使用密码认证")
+            .to_owned();
+        h_flex()
+            .w_full()
+            .h(px(38.))
+            .gap_2()
+            .items_center()
+            .child(
+                div()
+                    .w(px(64.))
+                    .flex_shrink_0()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(colors.muted_foreground)
+                    .child("私钥"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_sm()
+                    .text_color(if self.private_key_path.is_some() {
+                        colors.foreground
+                    } else {
+                        colors.muted_foreground
+                    })
+                    .truncate()
+                    .child(path),
+            )
+            .child(
+                Button::new("choose-private-key")
+                    .outline()
+                    .small()
+                    .label("选择文件")
+                    .on_click(cx.listener(Self::choose_private_key)),
+            )
+            .when(self.private_key_path.is_some(), |this| {
+                this.child(
+                    Button::new("clear-private-key")
+                        .ghost()
+                        .small()
+                        .label("清除")
+                        .on_click(cx.listener(Self::clear_private_key)),
+                )
+            })
+    }
+
+    fn proxy_panel(&self, cx: &Context<Self>) -> Div {
+        self.network_config_panel(
+            Select::new(&self.proxy_select)
+                .w_full()
+                .h(px(36.))
+                .rounded_lg()
+                .placeholder("选择代理配置")
+                .accessibility_label("代理配置")
+                .into_any_element(),
+            true,
+            cx,
+        )
+    }
+
+    fn ssh_tunnel_panel(&self, cx: &Context<Self>) -> Div {
+        self.network_config_panel(
+            Select::new(&self.tunnel_select)
+                .w_full()
+                .h(px(36.))
+                .rounded_lg()
+                .placeholder("选择 SSH 隧道配置")
+                .accessibility_label("SSH 隧道配置")
+                .into_any_element(),
+            false,
+            cx,
+        )
+    }
+
+    fn network_config_panel(&self, selector: AnyElement, proxy: bool, cx: &Context<Self>) -> Div {
+        let border = cx.theme().border;
+        v_flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .rounded_xl()
+            .border_1()
+            .border_color(border.opacity(0.6))
+            .overflow_hidden()
+            .bg(cx.theme().background)
+            .child(
+                v_flex()
+                    .w_full()
+                    .flex_shrink_0()
+                    .p_4()
+                    .gap_2()
+                    .border_b_1()
+                    .border_color(border.opacity(0.6))
+                    .bg(cx.theme().group_box.opacity(0.35))
+                    // Select renders a full-height root, so constrain its wrapper.
+                    .child(div().w_full().h(px(36.)).flex_shrink_0().child(selector))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .h(px(28.))
+                            .flex_shrink_0()
+                            .justify_end()
+                            .child(
+                                Button::new(if proxy {
+                                    "manage-proxy-config"
+                                } else {
+                                    "manage-tunnel-config"
+                                })
+                                .link()
+                                .small()
+                                .h(px(28.))
+                                .px_1()
+                                .icon(IconName::Settings)
+                                .label("管理配置")
+                                .text_color(cx.theme().primary)
+                                .on_click(move |_, window, cx| {
+                                    open_network_settings_window(proxy, window, cx);
+                                }),
+                            ),
+                    ),
+            )
+    }
+
+    fn panel_heading(
+        icon: IconName,
+        title: &'static str,
+        description: &'static str,
+        colors: ThemeColor,
+    ) -> Div {
+        h_flex()
+            .gap_2()
+            .items_center()
+            .pb_1()
+            .child(
+                div()
+                    .size(px(30.))
+                    .rounded_md()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(colors.primary.opacity(0.12))
+                    .child(Icon::new(icon).small().text_color(colors.primary)),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.foreground)
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(colors.muted_foreground)
+                            .child(description),
+                    ),
+            )
+    }
+
+    fn section_option(&self, section: FormSection, cx: &Context<Self>) -> AnyElement {
+        let colors = cx.theme();
+        let ui_colors = cx.theme().colors;
+        let selected = self.section == section;
+        let label = section.label();
+
+        div()
+            .id(format!("top_session-section-{label}"))
+            .w_full()
+            .px_3()
+            .py_2()
+            .rounded_lg()
+            .cursor_pointer()
+            .bg(if selected {
+                ui_colors.list_active
+            } else {
+                Hsla::transparent_black()
+            })
+            .hover(|style| style.bg(ui_colors.list_hover))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(Icon::new(section.icon()).small().text_color(if selected {
+                        colors.primary
+                    } else {
+                        colors.muted_foreground
+                    }))
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(if selected {
+                                FontWeight::SEMIBOLD
+                            } else {
+                                FontWeight::MEDIUM
+                            })
+                            .text_color(colors.foreground)
+                            .child(label),
+                    ),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.select_section(section, cx);
+            }))
+            .into_any_element()
+    }
+
+    pub(super) fn render_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = cx.theme();
+        let ui_colors = cx.theme().colors;
+        v_flex()
+            .size_full()
+            .p_3()
+            .gap_3()
+            .bg(ui_colors.background)
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .gap_3()
+                    .items_stretch()
+                    .child(
+                        v_flex()
+                            .w(px(132.))
+                            .flex_shrink_0()
+                            .p_2()
+                            .gap_1()
+                            .rounded_lg()
+                            .bg(cx.theme().sidebar)
+                            .child(
+                                div()
+                                    .px_3()
+                                    .py_2()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(colors.muted_foreground)
+                                    .child("配置"),
+                            )
+                            .children(
+                                FormSection::ALL
+                                    .into_iter()
+                                    .filter(|section| {
+                                        *section != FormSection::SshTunnel
+                                            || self.protocol == ConnectionProtocol::SshAndSftp
+                                    })
+                                    .map(|section| self.section_option(section, cx)),
+                            ),
+                    )
+                    .child(match self.section {
+                        FormSection::Connection => self.connection_panel(cx),
+                        FormSection::Proxy => self.proxy_panel(cx),
+                        FormSection::SshTunnel => self.ssh_tunnel_panel(cx),
+                    }),
+            )
+            .when_some(self.error.clone(), |this, error| {
+                this.child(
+                    h_flex()
+                        .p_2()
+                        .gap_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(colors.danger)
+                        .bg(colors.danger.opacity(0.12))
+                        .text_color(colors.danger)
+                        .text_xs()
+                        .child(IconName::TriangleAlert)
+                        .child(error),
+                )
+            })
+            .child(
+                h_flex()
+                    .flex_shrink_0()
+                    .gap_2()
+                    .p_2()
+                    .items_center()
+                    .justify_end()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().group_box)
+                    .child(
+                        Button::new("cancel-top_session-operation")
+                            .outline()
+                            .label("取消")
+                            .on_click(cx.listener(Self::cancel)),
+                    )
+                    .child(
+                        Button::new("save-top_session-operation")
+                            .primary()
+                            .label(match &self.mode {
+                                SessionFormMode::Create => "保存会话",
+                                SessionFormMode::Edit { .. } => "保存修改",
+                            })
+                            .on_click(cx.listener(Self::submit)),
+                    ),
+            )
+    }
+}

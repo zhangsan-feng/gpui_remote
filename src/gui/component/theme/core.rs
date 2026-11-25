@@ -3,10 +3,14 @@ use std::path::PathBuf;
 use gpui_kit::component::{Colorize, Theme, ThemeColor, ThemeMode};
 use gpui_kit::{App, Hsla, rgb};
 
-use crate::event_bus::{EVENT_BUS, gui_event::GuiEvent};
+use crate::{
+    domain::terminal::{MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE},
+    event_bus::{EVENT_BUS, gui_event::GuiEvent},
+};
 
 use super::{
-    AppTheme, ColorOverrides, CustomerUiThemeState, StoredColors, ThemeSettings, VisualSettings,
+    AppTheme, ColorOverrides, CustomerUiThemeState, StoredColors, TerminalAppearance,
+    ThemeSettings, VisualSettings,
 };
 
 pub(super) fn initialize(
@@ -28,6 +32,11 @@ pub(super) fn initialize(
         wallpaper_opacity: settings.wallpaper_opacity.clamp(0., 1.),
     };
 
+    cx.set_global(TerminalAppearance {
+        font_size: settings
+            .terminal_font_size
+            .clamp(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE),
+    });
     cx.set_global(CustomerUiThemeState {
         theme: settings.theme,
         colors,
@@ -198,9 +207,10 @@ pub(super) fn refresh(cx: &mut App, reapply_theme: bool) {
         cx.refresh_windows();
     }
     persist(cx);
+    EVENT_BUS.gui_event.broadcast(GuiEvent::ThemeColorChanged);
 }
 
-fn persist(cx: &mut App) {
+pub(super) fn persist(cx: &App) {
     let settings = {
         let state = cx.global::<CustomerUiThemeState>();
         ThemeSettings {
@@ -218,6 +228,7 @@ fn persist(cx: &mut App) {
                 .as_ref()
                 .map(|path| path.to_string_lossy().into_owned()),
             wallpaper_opacity: state.visual.wallpaper_opacity,
+            terminal_font_size: TerminalAppearance::font_size(cx),
         }
     };
 
@@ -226,7 +237,6 @@ fn persist(cx: &mut App) {
         .settings_changed
         .store(true, std::sync::atomic::Ordering::Release);
     state.persist_settings.send_replace(settings);
-    EVENT_BUS.gui_event.broadcast(GuiEvent::ThemeColorChanged);
 }
 
 fn parse_optional_color(value: Option<String>) -> Option<Hsla> {

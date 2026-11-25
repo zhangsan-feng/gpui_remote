@@ -2,16 +2,21 @@ use std::{future::Future, pin::Pin};
 
 use anyhow::Result;
 
+use crate::domain::host_info::RemoteHostInfo;
+
 pub(crate) type SshOpenFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Box<dyn SshShell>>> + Send + 'a>>;
 pub(crate) type SshWaitFuture<'a> =
     Pin<Box<dyn Future<Output = Option<SshChannelEvent>> + Send + 'a>>;
 pub(crate) type SshResultFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+pub(crate) type SshHostInfoFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<RemoteHostInfo>> + Send + 'a>>;
 
 pub(crate) trait SshShell: Send + Sync {
     fn wait_event(&self) -> SshWaitFuture<'_>;
     fn send_data(&self, data: Vec<u8>) -> SshResultFuture<'_>;
     fn resize(&self, columns: u32, rows: u32) -> SshResultFuture<'_>;
+    fn host_info(&self) -> SshHostInfoFuture<'_>;
     fn close_channel(&self) -> SshResultFuture<'_>;
     fn disconnect(&self) -> SshResultFuture<'_>;
 }

@@ -19,7 +19,9 @@ pub(crate) use sftp::{
     SftpFuture, SftpProgressCallback, SftpTransferFuture, SftpTransferOutcome,
 };
 pub(crate) use socks5_proxy::Socks5ProxyFuture;
-pub(crate) use ssh::{SshChannelEvent, SshOpenFuture, SshResultFuture, SshShell, SshWaitFuture};
+pub(crate) use ssh::{
+    SshChannelEvent, SshHostInfoFuture, SshOpenFuture, SshResultFuture, SshShell, SshWaitFuture,
+};
 pub(crate) use ssh_server::SshServerFuture;
 pub(crate) use theme_settings::ThemeSettingsFuture;
 

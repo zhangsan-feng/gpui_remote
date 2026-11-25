@@ -8,7 +8,7 @@ use gpui_kit::*;
 
 use crate::gui::component::theme;
 
-use super::{MainWindow, bottom_sidebar, right_sidebar};
+use super::{MainWindow, right_sidebar};
 
 const SHOW_RIGHT_SIDEBAR: bool = false;
 
@@ -71,7 +71,7 @@ impl MainWindow {
                                 body.child(right_sidebar::render(&colors))
                             }),
                     )
-                    .child(bottom_sidebar::render(&colors)),
+                    .child(self.bottom_sidebar.clone()),
             )
     }
 }

@@ -58,11 +58,10 @@ impl SftpView {
         };
         v_flex()
             .id("sftp-local-panel")
-            .flex_1()
+            .size_full()
             .min_w_0()
             .min_h_0()
-            .border_r_1()
-            .border_color(colors.border)
+            .overflow_hidden()
             .child(
                 h_flex()
                     .h(px(44.))
@@ -110,7 +109,8 @@ impl SftpView {
             .child(self.file_header(cx))
             .child(
                 h_flex()
-                    .size_full()
+                    .flex_1()
+                    .min_h_0()
                     .child(
                         div()
                             .flex_1()

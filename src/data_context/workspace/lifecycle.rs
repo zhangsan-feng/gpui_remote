@@ -48,6 +48,7 @@ impl DataContext {
                                 gui_snapshot_version: 0,
                             },
                             buffer: None,
+                            host_info: Default::default(),
                         },
                     );
             }
@@ -65,6 +66,7 @@ impl DataContext {
             GuiComponent::Workspace,
             GuiComponent::Terminal,
             GuiComponent::Sftp,
+            GuiComponent::HostInfo,
         ]);
         EVENT_BUS
             .refresh_data_context
@@ -121,6 +123,7 @@ impl DataContext {
             GuiComponent::Workspace,
             GuiComponent::Terminal,
             GuiComponent::Sftp,
+            GuiComponent::HostInfo,
         ]);
         EVENT_BUS
             .refresh_data_context
@@ -167,6 +170,7 @@ impl DataContext {
             GuiComponent::Workspace,
             GuiComponent::Terminal,
             GuiComponent::Sftp,
+            GuiComponent::HostInfo,
         ]);
         EVENT_BUS
             .refresh_data_context

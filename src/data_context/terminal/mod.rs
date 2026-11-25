@@ -1,4 +1,5 @@
 mod buffer;
+mod host_info;
 mod snapshot;
 mod update;
 

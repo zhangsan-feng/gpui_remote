@@ -9,6 +9,7 @@ use tokio::sync::watch;
 pub(crate) enum GuiComponent {
     Workspace,
     Terminal,
+    HostInfo,
     Sftp,
     Services,
     NetworkConfig,

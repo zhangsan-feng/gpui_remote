@@ -23,11 +23,15 @@ mod color {
         };
         match color {
             Color::Spec(rgb) => TerminalColor::Rgb(rgb_to_terminal_rgb(rgb)),
-            Color::Indexed(index) => TerminalColor::Rgb(
-                overrides[index as usize]
-                    .map(rgb_to_terminal_rgb)
-                    .unwrap_or_else(|| indexed_color(index)),
-            ),
+            Color::Indexed(index) => overrides[index as usize]
+                .map(|rgb| TerminalColor::Rgb(rgb_to_terminal_rgb(rgb)))
+                .unwrap_or_else(|| {
+                    if index < 16 {
+                        ansi_color(index, false)
+                    } else {
+                        TerminalColor::Rgb(indexed_color(index))
+                    }
+                }),
             Color::Named(named) => overrides[named]
                 .map(|rgb| TerminalColor::Rgb(rgb_to_terminal_rgb(rgb)))
                 .unwrap_or_else(|| named_color(named)),
@@ -43,63 +47,46 @@ mod color {
     }
 
     fn named_color(color: NamedColor) -> TerminalColor {
-        let rgb = match color {
+        match color {
             NamedColor::Foreground | NamedColor::BrightForeground | NamedColor::Cursor => {
-                return TerminalColor::DefaultForeground;
+                TerminalColor::DefaultForeground
             }
-            NamedColor::Background => return TerminalColor::DefaultBackground,
-            NamedColor::DimForeground => return TerminalColor::DimForeground,
-            NamedColor::Black => indexed_color(0),
-            NamedColor::Red => indexed_color(1),
-            NamedColor::Green => indexed_color(2),
-            NamedColor::Yellow => indexed_color(3),
-            NamedColor::Blue => indexed_color(4),
-            NamedColor::Magenta => indexed_color(5),
-            NamedColor::Cyan => indexed_color(6),
-            NamedColor::White => indexed_color(7),
-            NamedColor::BrightBlack => indexed_color(8),
-            NamedColor::BrightRed => indexed_color(9),
-            NamedColor::BrightGreen => indexed_color(10),
-            NamedColor::BrightYellow => indexed_color(11),
-            NamedColor::BrightBlue => indexed_color(12),
-            NamedColor::BrightMagenta => indexed_color(13),
-            NamedColor::BrightCyan => indexed_color(14),
-            NamedColor::BrightWhite => indexed_color(15),
-            NamedColor::DimBlack => dim(indexed_color(0)),
-            NamedColor::DimRed => dim(indexed_color(1)),
-            NamedColor::DimGreen => dim(indexed_color(2)),
-            NamedColor::DimYellow => dim(indexed_color(3)),
-            NamedColor::DimBlue => dim(indexed_color(4)),
-            NamedColor::DimMagenta => dim(indexed_color(5)),
-            NamedColor::DimCyan => dim(indexed_color(6)),
-            NamedColor::DimWhite => dim(indexed_color(7)),
-        };
-        TerminalColor::Rgb(rgb)
+            NamedColor::Background => TerminalColor::DefaultBackground,
+            NamedColor::DimForeground => TerminalColor::DimForeground,
+            NamedColor::Black
+            | NamedColor::Red
+            | NamedColor::Green
+            | NamedColor::Yellow
+            | NamedColor::Blue
+            | NamedColor::Magenta
+            | NamedColor::Cyan
+            | NamedColor::White
+            | NamedColor::BrightBlack
+            | NamedColor::BrightRed
+            | NamedColor::BrightGreen
+            | NamedColor::BrightYellow
+            | NamedColor::BrightBlue
+            | NamedColor::BrightMagenta
+            | NamedColor::BrightCyan
+            | NamedColor::BrightWhite => ansi_color(color as u8, false),
+            NamedColor::DimBlack
+            | NamedColor::DimRed
+            | NamedColor::DimGreen
+            | NamedColor::DimYellow
+            | NamedColor::DimBlue
+            | NamedColor::DimMagenta
+            | NamedColor::DimCyan
+            | NamedColor::DimWhite => {
+                ansi_color((color as usize - NamedColor::DimBlack as usize) as u8, true)
+            }
+        }
+    }
+
+    fn ansi_color(index: u8, dimmed: bool) -> TerminalColor {
+        TerminalColor::Ansi { index, dimmed }
     }
 
     fn indexed_color(index: u8) -> TerminalRgb {
-        const ANSI: [[u8; 3]; 16] = [
-            [30, 30, 30],
-            [205, 49, 49],
-            [13, 188, 121],
-            [229, 229, 16],
-            [36, 114, 200],
-            [188, 63, 188],
-            [17, 168, 205],
-            [229, 229, 229],
-            [102, 102, 102],
-            [241, 76, 76],
-            [35, 209, 139],
-            [245, 245, 67],
-            [59, 142, 234],
-            [214, 112, 214],
-            [41, 184, 219],
-            [255, 255, 255],
-        ];
-        if index < 16 {
-            let [red, green, blue] = ANSI[index as usize];
-            return TerminalRgb { red, green, blue };
-        }
         if index < 232 {
             let value = index - 16;
             let component = |part: u8| {
@@ -116,15 +103,6 @@ mod color {
             red: gray,
             green: gray,
             blue: gray,
-        }
-    }
-
-    fn dim(color: TerminalRgb) -> TerminalRgb {
-        let dim_channel = |channel: u8| (u16::from(channel) * 2 / 3) as u8;
-        TerminalRgb {
-            red: dim_channel(color.red),
-            green: dim_channel(color.green),
-            blue: dim_channel(color.blue),
         }
     }
 }
@@ -296,6 +274,7 @@ mod core {
 
             TerminalFrame {
                 lines: Arc::new(lines),
+                alternate_screen: self.terminal.mode().contains(TermMode::ALT_SCREEN),
                 application_cursor: self.terminal.mode().contains(TermMode::APP_CURSOR),
                 cursor: terminal_cursor(
                     renderable_cursor.0,

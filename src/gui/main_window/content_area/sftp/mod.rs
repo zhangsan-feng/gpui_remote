@@ -10,7 +10,7 @@ use std::{
     path::PathBuf,
 };
 
-use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme, Icon, IconName, ResizableState, Sizable, h_flex, v_flex};
 use gpui_kit::*;
 use serde::Deserialize;
 
@@ -38,6 +38,8 @@ pub(in crate::gui::main_window::content_area) struct SftpView {
     remote_selection: MultiSelection<String>,
     transfers: Vec<SftpTransferInfo>,
     transfer_context_id: Option<u64>,
+    directory_panels: Entity<ResizableState>,
+    workspace_panels: Entity<ResizableState>,
     local_list_state: ListState,
     remote_list_state: ListState,
     transfer_list_state: ListState,
@@ -238,6 +240,8 @@ impl SftpView {
             remote_selection: MultiSelection::default(),
             transfers: Vec::new(),
             transfer_context_id: None,
+            directory_panels: cx.new(|_| ResizableState::default()),
+            workspace_panels: cx.new(|_| ResizableState::default()),
             local_list_state,
             remote_list_state,
             transfer_list_state,

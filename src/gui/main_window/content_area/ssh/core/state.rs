@@ -5,6 +5,36 @@ use gpui_kit::*;
 use super::super::*;
 
 impl TerminalView {
+    pub(in crate::gui::main_window::content_area::ssh) fn line_height(&self) -> f32 {
+        f32::from(self.font_size) + TERMINAL_LINE_PADDING
+    }
+
+    pub(in crate::gui::main_window::content_area::ssh) fn zoom(
+        &mut self,
+        increase: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let font_size = if increase {
+            self.font_size.saturating_add(1)
+        } else {
+            self.font_size.saturating_sub(1)
+        };
+        self.set_font_size(font_size, cx);
+    }
+
+    pub(in crate::gui::main_window::content_area::ssh) fn set_font_size(
+        &mut self,
+        font_size: u8,
+        cx: &mut Context<Self>,
+    ) {
+        let font_size = font_size.clamp(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE);
+        if self.font_size != font_size {
+            self.font_size = font_size;
+            self.list_state.remeasure();
+            cx.notify();
+        }
+    }
+
     pub(in crate::gui::main_window::content_area::ssh) fn set_selected_workspace(
         &mut self,
         workspace_id: Option<String>,

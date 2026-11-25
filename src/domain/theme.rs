@@ -29,13 +29,26 @@ pub enum AppTheme {
     Custom,
 }
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct ThemeSettings {
     pub(crate) theme: AppTheme,
     pub(crate) colors: StoredColors,
     pub(crate) wallpaper: Option<String>,
     pub(crate) wallpaper_opacity: f32,
+    pub(crate) terminal_font_size: u8,
+}
+
+impl Default for ThemeSettings {
+    fn default() -> Self {
+        Self {
+            theme: AppTheme::default(),
+            colors: StoredColors::default(),
+            wallpaper: None,
+            wallpaper_opacity: 0.,
+            terminal_font_size: super::terminal::DEFAULT_TERMINAL_FONT_SIZE,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -1,8 +1,11 @@
-use crate::gui::component::theme::{self, AppTheme};
+use crate::{
+    domain::terminal::{MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE},
+    gui::component::theme::{self, AppTheme, TerminalAppearance},
+};
 use gpui_kit::component::color_picker::{ColorPicker, ColorPickerState};
 use gpui_kit::component::slider::Slider;
 use gpui_kit::component::{
-    ActiveTheme, Icon, IconName, Sizable,
+    ActiveTheme, Disableable, Icon, IconName, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     scroll::ScrollableElement,
@@ -25,6 +28,7 @@ impl SettingsOperationWindow {
             SettingsSection::SshTunnel => self.tunnel_editor.clone().into_any_element(),
             SettingsSection::Theme => self.theme_section(cx).into_any_element(),
             SettingsSection::Wallpaper => self.wallpaper_section(cx).into_any_element(),
+            SettingsSection::Terminal => self.terminal_section(cx).into_any_element(),
         };
 
         let content_area = if matches!(
@@ -91,6 +95,12 @@ impl SettingsOperationWindow {
             ))
             .child(self.sidebar_item(SettingsSection::Theme, IconName::Palette, "主题", cx))
             .child(self.sidebar_item(SettingsSection::Wallpaper, IconName::File, "背景图片", cx))
+            .child(self.sidebar_item(
+                SettingsSection::Terminal,
+                IconName::SquareTerminal,
+                "SSH 终端",
+                cx,
+            ))
     }
 
     fn sidebar_item(
@@ -108,6 +118,7 @@ impl SettingsOperationWindow {
                 SettingsSection::SshTunnel => "settings-section-tunnel",
                 SettingsSection::Theme => "settings-section-theme",
                 SettingsSection::Wallpaper => "settings-section-wallpaper",
+                SettingsSection::Terminal => "settings-section-terminal",
             })
             .h(px(38.))
             .px_3()
@@ -162,6 +173,66 @@ impl SettingsOperationWindow {
             .gap_5()
             .child(self.section_heading("背景图片", "设置应用背景图片和透明度。", cx))
             .child(self.wallpaper_panel(cx))
+    }
+
+    fn terminal_section(&self, cx: &Context<Self>) -> impl IntoElement {
+        let size = TerminalAppearance::font_size(cx);
+        v_flex()
+            .gap_5()
+            .child(self.section_heading("SSH 终端", "设置终端的默认字号。", cx))
+            .child(
+                h_flex()
+                    .justify_between()
+                    .gap_4()
+                    .p_4()
+                    .rounded_xl()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().group_box)
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("字号"),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Button::new("terminal-font-decrease")
+                                    .outline()
+                                    .small()
+                                    .label("缩小")
+                                    .disabled(size == MIN_TERMINAL_FONT_SIZE)
+                                    .on_click(|_, _, cx| {
+                                        TerminalAppearance::set_font_size(
+                                            TerminalAppearance::font_size(cx).saturating_sub(1),
+                                            cx,
+                                        );
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .w(px(52.))
+                                    .text_sm()
+                                    .text_center()
+                                    .child(format!("{size} px")),
+                            )
+                            .child(
+                                Button::new("terminal-font-increase")
+                                    .outline()
+                                    .small()
+                                    .label("放大")
+                                    .disabled(size == MAX_TERMINAL_FONT_SIZE)
+                                    .on_click(|_, _, cx| {
+                                        TerminalAppearance::set_font_size(
+                                            TerminalAppearance::font_size(cx).saturating_add(1),
+                                            cx,
+                                        );
+                                    }),
+                            ),
+                    ),
+            )
     }
 
     pub(super) fn section_heading(

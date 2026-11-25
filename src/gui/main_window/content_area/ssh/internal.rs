@@ -21,7 +21,8 @@ mod keyboard {
                 .as_ref()
                 .is_some_and(|model| model.read().frame.application_cursor);
             if let Some(bytes) = encode_keystroke(&event.keystroke, application_cursor) {
-                self.send_input_with_context(&workspace_id, bytes, cx);
+                let scroll_to_bottom = event.keystroke.key == "enter";
+                self.send_input_with_context(&workspace_id, bytes, scroll_to_bottom, cx);
                 cx.stop_propagation();
             }
         }
@@ -52,18 +53,24 @@ mod keyboard {
             let Some(workspace_id) = self.selected_workspace_id.as_deref() else {
                 return;
             };
-            self.send_input_with_context(workspace_id, bytes.to_vec(), cx);
+            self.send_input_with_context(workspace_id, bytes.to_vec(), false, cx);
         }
 
         fn send_input_with_context(
             &self,
             workspace_id: &str,
             input: Vec<u8>,
+            scroll_to_bottom: bool,
             cx: &mut Context<Self>,
         ) {
             let application = crate::application::APPLICATION.clone();
             let workspace_id = workspace_id.to_owned();
             cx.spawn(async move |_this, _cx| {
+                if scroll_to_bottom
+                    && let Err(error) = application.ssh.scroll_to(&workspace_id, 0).await
+                {
+                    log::debug!("回车时滚动 SSH 终端到底部失败: {error}");
+                }
                 if let Err(error) = application.ssh.send_input(&workspace_id, input).await {
                     log::debug!("发送 SSH 输入失败: {error}");
                 }

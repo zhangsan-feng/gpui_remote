@@ -5,12 +5,14 @@ use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect, client};
 
 use crate::{
     application::ports::{
-        SshChannelEvent, SshOpenFuture, SshResultFuture, SshShell, SshWaitFuture,
+        SshChannelEvent, SshHostInfoFuture, SshOpenFuture, SshResultFuture, SshShell, SshWaitFuture,
     },
     domain::session::SessionProfile,
 };
 
 use crate::infrastructure::connection::ConnectionPort;
+
+use super::host_info::read_host_info;
 
 const DEFAULT_COLUMNS: u32 = 120;
 const DEFAULT_ROWS: u32 = 36;
@@ -201,6 +203,10 @@ impl SshShell for RusshShell {
                 .await
                 .context("调整 PTY 大小失败")
         })
+    }
+
+    fn host_info(&self) -> SshHostInfoFuture<'_> {
+        Box::pin(read_host_info(&self.session))
     }
 
     fn close_channel(&self) -> SshResultFuture<'_> {

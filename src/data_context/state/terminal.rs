@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::domain::terminal::TerminalData;
+use crate::domain::{host_info::HostInfoState, terminal::TerminalData};
 
 use super::super::terminal::TerminalBuffer;
 
@@ -14,4 +14,5 @@ pub(crate) struct TerminalReadSnapshot {
 pub(in crate::data_context) struct TerminalWorkspaceData {
     pub(in crate::data_context) snapshot: TerminalReadSnapshot,
     pub(in crate::data_context) buffer: Option<TerminalBuffer>,
+    pub(in crate::data_context) host_info: HostInfoState,
 }

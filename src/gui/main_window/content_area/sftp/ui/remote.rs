@@ -57,9 +57,10 @@ impl SftpView {
         };
         v_flex()
             .id("sftp-remote-panel")
-            .flex_1()
+            .size_full()
             .min_w_0()
             .min_h_0()
+            .overflow_hidden()
             .child(
                 h_flex()
                     .h(px(44.))
@@ -116,7 +117,8 @@ impl SftpView {
             .when(connected, |this| {
                 this.child(self.file_header(cx)).child(
                     h_flex()
-                        .size_full()
+                        .flex_1()
+                        .min_h_0()
                         .child(
                             div()
                                 .flex_1()

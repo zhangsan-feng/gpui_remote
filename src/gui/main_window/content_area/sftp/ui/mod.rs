@@ -11,6 +11,7 @@ use super::{CancelTransfer, RetryTransfer, SftpView};
 use gpui_kit::component::{
     ActiveTheme, Icon, IconName, Sizable, h_flex,
     menu::ContextMenuExt,
+    resizable::{h_resizable, resizable_panel, v_resizable},
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarMode},
     v_flex,
 };
@@ -19,13 +20,13 @@ use gpui_kit::*;
 
 use crate::data_context::{SftpTransferInfo, SftpWorkspaceSnapshot, is_transfer_cancellable};
 
-const TRANSFER_PANEL_RATIO: f32 = 1. / 3.;
-
 impl SftpView {
     pub(super) fn render_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let Some(snapshot) = self.selected_snapshot() else {
             return div()
-                .size_full()
+                .w_full()
+                .flex_1()
+                .min_h_0()
                 .bg(crate::gui::main_window::content_area::ui::workspace_background(cx))
                 .into_any_element();
         };
@@ -43,6 +44,20 @@ impl SftpView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let colors = cx.theme().colors;
+        let directories = h_resizable("sftp-directory-panels")
+            .with_state(&self.directory_panels)
+            .child(
+                resizable_panel()
+                    .flex_1()
+                    .size_range(px(320.)..Pixels::MAX)
+                    .child(self.local_panel(self.local.clone(), cx)),
+            )
+            .child(
+                resizable_panel()
+                    .flex_1()
+                    .size_range(px(320.)..Pixels::MAX)
+                    .child(self.remote_panel(snapshot, cx)),
+            );
         v_flex()
             .on_action(cx.listener(Self::delete_local_entry))
             .on_action(cx.listener(Self::delete_remote_entry))
@@ -52,7 +67,8 @@ impl SftpView {
             .on_action(cx.listener(Self::retry_transfer))
             .on_action(cx.listener(Self::watch_local_path))
             .on_action(cx.listener(Self::stop_watching_local_path))
-            .size_full()
+            .w_full()
+            .flex_1()
             .min_h_0()
             .overflow_hidden()
             .rounded_lg()
@@ -61,14 +77,22 @@ impl SftpView {
             .bg(crate::gui::main_window::content_area::ui::workspace_background(cx))
             .text_color(colors.foreground)
             .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .items_stretch()
-                    .child(self.local_panel(self.local.clone(), cx))
-                    .child(self.remote_panel(snapshot, cx)),
+                v_resizable("sftp-workspace-panels")
+                    .with_state(&self.workspace_panels)
+                    .child(
+                        resizable_panel()
+                            .flex_1()
+                            .flex_grow(2.)
+                            .size_range(px(160.)..Pixels::MAX)
+                            .child(directories),
+                    )
+                    .child(
+                        resizable_panel()
+                            .flex_1()
+                            .size_range(px(112.)..Pixels::MAX)
+                            .child(self.transfer_panel(transfers, cx)),
+                    ),
             )
-            .child(self.transfer_panel(transfers, cx))
     }
 
     fn path_bar(&self, path: String, target: PathTarget, cx: &Context<Self>) -> impl IntoElement {
@@ -169,10 +193,9 @@ impl SftpView {
         };
         v_flex()
             .id("sftp-transfer-panel")
-            .h(relative(TRANSFER_PANEL_RATIO))
-            .flex_shrink_0()
-            .border_t_1()
-            .border_color(colors.border)
+            .size_full()
+            .min_h_0()
+            .overflow_hidden()
             .child(
                 h_flex()
                     .h(px(38.))
@@ -214,7 +237,8 @@ impl SftpView {
             )
             .child(
                 h_flex()
-                    .size_full()
+                    .flex_1()
+                    .min_h_0()
                     .child(
                         div()
                             .flex_1()

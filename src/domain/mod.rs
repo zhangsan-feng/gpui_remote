@@ -7,4 +7,5 @@ pub mod ssh_server;
 pub mod terminal;
 pub mod theme;
 
+pub(crate) mod host_info;
 pub(crate) mod network_config;

@@ -1,3 +1,4 @@
+mod host_info;
 mod key;
 mod pty;
 mod service;

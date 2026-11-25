@@ -8,13 +8,16 @@ use std::{collections::HashMap, sync::Arc};
 use gpui_kit::*;
 use serde::Deserialize;
 
+use crate::{
+    domain::terminal::{MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE},
+    gui::component::theme::TerminalAppearance,
+};
 use core::TerminalModel;
 use internal::{TerminalPoint, TerminalScrollHandle, TerminalSelection};
 
 const TERMINAL_KEY_CONTEXT: &str = "Terminal";
 const TERMINAL_FONT_FAMILY: &str = "Consolas";
-const TERMINAL_FONT_SIZE: f32 = 13.0;
-const TERMINAL_LINE_HEIGHT: f32 = 19.0;
+const TERMINAL_LINE_PADDING: f32 = 6.0;
 const TERMINAL_TEXT_HORIZONTAL_PADDING: f32 = 20.0;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -34,6 +37,7 @@ pub(super) struct TerminalView {
     selected_workspace_id: Option<String>,
     focus: FocusHandle,
     focus_pending: bool,
+    font_size: u8,
     list_state: ListState,
     listed_workspace_id: Option<String>,
     last_pty_size: Option<(String, u32, u32)>,
@@ -80,15 +84,20 @@ impl TerminalView {
     }
 
     pub(in crate::gui::main_window::content_area) fn new(cx: &mut Context<Self>) -> Self {
-        let list_state = ListState::new(0, ListAlignment::Top, px(256.))
-            .with_uniform_item_height(px(TERMINAL_LINE_HEIGHT));
+        let font_size = TerminalAppearance::font_size(cx);
+        let list_state = ListState::new(0, ListAlignment::Top, px(256.));
         list_state.set_follow_mode(FollowMode::Tail);
+        cx.observe_global::<TerminalAppearance>(|this, cx| {
+            this.set_font_size(TerminalAppearance::font_size(cx), cx);
+        })
+        .detach();
 
         let this = Self {
             models: HashMap::new(),
             selected_workspace_id: None,
             focus: cx.focus_handle(),
             focus_pending: false,
+            font_size,
             list_state,
             listed_workspace_id: None,
             last_pty_size: None,

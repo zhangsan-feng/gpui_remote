@@ -3,7 +3,23 @@ use std::path::PathBuf;
 use gpui_kit::component::ThemeColor;
 use gpui_kit::{App, Hsla};
 
-use super::{AppTheme, CustomerUiThemeState, core};
+use crate::domain::terminal::{MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE};
+
+use super::{AppTheme, CustomerUiThemeState, TerminalAppearance, core};
+
+impl TerminalAppearance {
+    pub(crate) fn font_size(cx: &App) -> u8 {
+        cx.global::<Self>().font_size
+    }
+
+    pub(crate) fn set_font_size(size: u8, cx: &mut App) {
+        let size = size.clamp(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE);
+        if Self::font_size(cx) != size {
+            cx.global_mut::<Self>().font_size = size;
+            core::persist(cx);
+        }
+    }
+}
 
 pub struct CustomerTheme;
 

@@ -1,4 +1,7 @@
 use gpui_kit::component::ActiveTheme;
+
+mod highlight;
+
 mod terminal_render {
     use std::{cell::Cell, rc::Rc, sync::Arc};
 
@@ -12,16 +15,28 @@ mod terminal_render {
     };
 
     use super::super::{
-        CopyTerminal, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TerminalView,
+        CopyTerminal, TERMINAL_FONT_FAMILY, TerminalView,
         internal::{TerminalPoint, buffer_row, nearest_character_column, selected_fragments},
     };
+    use super::highlight::{Highlight, frame_highlights};
 
     pub(super) const GUTTER_WIDTH: f32 = 116.0;
+
+    // ANSI order: black, red, green, yellow, blue, magenta, cyan, white, then bright variants.
+    const ANSI_LIGHT: [u32; 16] = [
+        0x18181b, 0xb91c1c, 0x15803d, 0x854d0e, 0x1d4ed8, 0xa21caf, 0x0e7490, 0xd4d4d8, 0x52525b,
+        0xdc2626, 0x047857, 0xa16207, 0x2563eb, 0xc026d3, 0x0f766e, 0xffffff,
+    ];
+    const ANSI_DARK: [u32; 16] = [
+        0x18181b, 0xf87171, 0x4ade80, 0xfacc15, 0x60a5fa, 0xe879f9, 0x22d3ee, 0xe4e4e7, 0xa1a1aa,
+        0xfca5a5, 0x86efac, 0xfde047, 0x93c5fd, 0xf0abfc, 0x67e8f9, 0xffffff,
+    ];
 
     struct TerminalTextPalette {
         foreground: Hsla,
         background: Hsla,
         canvas: Hsla,
+        ansi: &'static [u32; 16],
         selection_foreground: Hsla,
         selection_background: Hsla,
         selection_canvas: Hsla,
@@ -33,6 +48,10 @@ mod terminal_render {
                 TerminalColor::DefaultForeground => self.foreground,
                 TerminalColor::DimForeground => self.foreground.opacity(0.67),
                 TerminalColor::DefaultBackground => default_background,
+                TerminalColor::Ansi { index, dimmed } => {
+                    let color: Hsla = rgb(self.ansi[usize::from(index)]).into();
+                    if dimmed { color.opacity(0.67) } else { color }
+                }
                 TerminalColor::Rgb(rgb) => rgb_to_u32(rgb.red, rgb.green, rgb.blue).into(),
             }
         }
@@ -54,6 +73,11 @@ mod terminal_render {
                 foreground: colors.foreground,
                 background: crate::gui::main_window::content_area::ui::workspace_background(cx),
                 canvas: colors.background,
+                ansi: if colors.background.l < 0.5 {
+                    &ANSI_DARK
+                } else {
+                    &ANSI_LIGHT
+                },
                 selection_background: colors.selection,
                 selection_canvas,
                 selection_foreground: if selection_canvas.l < 0.5 {
@@ -68,6 +92,9 @@ mod terminal_render {
             let resize_workspace_id = workspace_id.clone();
             let menu_workspace_id = workspace_id.clone();
             let right_click_workspace_id = workspace_id.clone();
+            let highlights = frame_highlights(&frame);
+            let font_size = px(f32::from(self.font_size));
+            let line_height = px(self.line_height());
             let terminal_list = list(self.list_state.clone(), move |index, _, _| {
                 let line = frame.lines.get(index).cloned().unwrap_or_default();
                 let timestamp = line.timestamp.clone().map(SharedString::from);
@@ -79,6 +106,7 @@ mod terminal_render {
                     .filter(|selection| selection.workspace_id == workspace_id);
                 let fragments =
                     selected_fragments(&line, buffer_row(&frame, index), active_selection);
+                let highlights = highlights.get(index).map_or(&[][..], Vec::as_slice);
                 let cursor = frame.cursor.filter(|cursor| cursor.row == index);
                 let text_bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
                 let text_bounds_writer = text_bounds.clone();
@@ -92,11 +120,11 @@ mod terminal_render {
                 let extend_workspace_id = workspace_id.clone();
 
                 let element = h_flex()
-                    .h(px(19.))
+                    .h(line_height)
                     .w_full()
                     .font_family(TERMINAL_FONT_FAMILY)
-                    .text_size(px(TERMINAL_FONT_SIZE))
-                    .line_height(px(19.))
+                    .text_size(font_size)
+                    .line_height(line_height)
                     .whitespace_nowrap()
                     .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                         let point = terminal_point(
@@ -142,7 +170,7 @@ mod terminal_render {
                             .cursor_text()
                             .overflow_hidden()
                             .on_prepaint(move |bounds, _, _| text_bounds_writer.set(bounds))
-                            .child(render_terminal_text(fragments, &text_palette))
+                            .child(render_terminal_text(fragments, highlights, &text_palette))
                             .when_some(cursor, |this, cursor| {
                                 this.child(render_terminal_cursor(
                                     cursor,
@@ -168,6 +196,7 @@ mod terminal_render {
                 .overflow_hidden()
                 .child(terminal_list)
                 .child(self.render_scrollbar(cx))
+                .child(capture_terminal_zoom(cx))
                 .on_mouse_down(MouseButton::Right, move |event, _, _| {
                     let _span = tracing::debug_span!("terminal_context_menu_mouse_down",
                         workspace_id = %right_click_workspace_id,
@@ -197,6 +226,32 @@ mod terminal_render {
                     menu
                 })
         }
+    }
+
+    fn capture_terminal_zoom(cx: &Context<TerminalView>) -> impl IntoElement {
+        let terminal = cx.weak_entity();
+        canvas(
+            |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            move |_, hitbox, window, _| {
+                // Capture Ctrl+wheel before the list changes its scroll position.
+                window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Capture
+                        && event.modifiers.control
+                        && hitbox.should_handle_scroll(window)
+                    {
+                        let delta = event.delta.pixel_delta(px(1.)).y;
+                        if delta != Pixels::ZERO {
+                            let _ =
+                                terminal.update(cx, |this, cx| this.zoom(delta > Pixels::ZERO, cx));
+                            cx.stop_propagation();
+                        }
+                    }
+                });
+            },
+        )
+        .absolute()
+        .inset_0()
+        .size_full()
     }
 
     fn render_gutter(
@@ -266,6 +321,7 @@ mod terminal_render {
 
     fn render_terminal_text(
         fragments: Vec<super::super::internal::SelectedFragment>,
+        highlights: &[Highlight],
         palette: &TerminalTextPalette,
     ) -> StyledText {
         let mut text = String::new();
@@ -279,43 +335,71 @@ mod terminal_render {
             } else {
                 palette.resolve(fragment.style.background, palette.background)
             };
-            let foreground = palette.resolve(fragment.style.foreground, palette.canvas);
-            let foreground = if fragment.style.hidden {
-                Hsla::transparent_black()
-            } else if fragment.selected
-                && !has_selection_contrast(foreground, palette.selection_canvas)
-            {
-                palette.selection_foreground
-            } else {
-                foreground
-            };
-            let len = fragment.text.len();
+            let start = text.len();
             text.push_str(&fragment.text);
-            runs.push(TextRun {
-                len,
-                font: Font {
-                    family: TERMINAL_FONT_FAMILY.into(),
-                    weight: if fragment.style.bold {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    },
-                    style: if fragment.style.italic {
-                        FontStyle::Italic
-                    } else {
-                        FontStyle::Normal
-                    },
-                    ..Default::default()
+            let end = text.len();
+            let foreground = palette.resolve(fragment.style.foreground, palette.canvas);
+            let font = Font {
+                family: TERMINAL_FONT_FAMILY.into(),
+                weight: if fragment.style.bold {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::NORMAL
                 },
-                color: foreground,
-                background_color: Some(background),
-                underline: fragment.style.underline.then_some(UnderlineStyle {
-                    thickness: px(1.),
-                    color: Some(foreground),
-                    wavy: false,
-                }),
-                strikethrough: None,
-            });
+                style: if fragment.style.italic {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
+                ..Default::default()
+            };
+            let mut push_run = |len, color| {
+                if len == 0 {
+                    return;
+                }
+                let foreground = if fragment.style.hidden {
+                    Hsla::transparent_black()
+                } else if fragment.selected
+                    && !has_selection_contrast(color, palette.selection_canvas)
+                {
+                    palette.selection_foreground
+                } else {
+                    color
+                };
+                runs.push(TextRun {
+                    len,
+                    font: font.clone(),
+                    color: foreground,
+                    background_color: Some(background),
+                    underline: fragment.style.underline.then_some(UnderlineStyle {
+                        thickness: px(1.),
+                        color: Some(foreground),
+                        wavy: false,
+                    }),
+                    strikethrough: None,
+                });
+            };
+            let mut position = start;
+            if !fragment.style.hidden
+                && fragment.style.foreground == TerminalColor::DefaultForeground
+                && fragment.style.background == TerminalColor::DefaultBackground
+            {
+                let first = highlights.partition_point(|highlight| highlight.end <= start);
+                for highlight in &highlights[first..] {
+                    if highlight.start >= end {
+                        break;
+                    }
+                    let highlight_start = position.max(highlight.start);
+                    let highlight_end = end.min(highlight.end);
+                    push_run(highlight_start - position, foreground);
+                    push_run(
+                        highlight_end - highlight_start,
+                        rgb(palette.ansi[highlight.color as usize]).into(),
+                    );
+                    position = highlight_end;
+                }
+            }
+            push_run(end - position, foreground);
         }
         StyledText::new(text).with_runs(runs)
     }
@@ -328,7 +412,7 @@ use crate::domain::terminal::TerminalStatus;
 
 use super::{super::ui::render_empty_workspace, *};
 
-fn terminal_cell_width(window: &Window) -> Pixels {
+fn terminal_cell_width(window: &Window, font_size: f32) -> Pixels {
     let run = TextRun {
         len: 1,
         font: Font {
@@ -339,9 +423,13 @@ fn terminal_cell_width(window: &Window) -> Pixels {
     };
     let width = window
         .text_system()
-        .layout_line("0", px(TERMINAL_FONT_SIZE), &[run], None)
+        .layout_line("0", px(font_size), &[run], None)
         .width;
-    if width > Pixels::ZERO { width } else { px(8.) }
+    if width > Pixels::ZERO {
+        width
+    } else {
+        px(font_size * 0.6)
+    }
 }
 
 impl TerminalView {
@@ -375,7 +463,8 @@ impl TerminalView {
         }
         self.scroll_handle.sync(&frame);
         self.sync_list(&workspace_id, frame.lines.len().max(1));
-        let cell_width = terminal_cell_width(window);
+        let cell_width = terminal_cell_width(window, f32::from(self.font_size));
+        let line_height = self.line_height();
 
         let focus = self.focus.clone();
         let scroll_workspace_id = workspace_id.clone();
@@ -403,8 +492,8 @@ impl TerminalView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::finish_text_selection))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::finish_text_selection))
             .on_scroll(move |event, _, cx| {
-                let pixels = event.delta.pixel_delta(px(TERMINAL_LINE_HEIGHT)).y;
-                let lines = (f32::from(pixels) / TERMINAL_LINE_HEIGHT).round() as i32;
+                let pixels = event.delta.pixel_delta(px(line_height)).y;
+                let lines = (f32::from(pixels) / line_height).round() as i32;
                 if lines != 0 {
                     let application = scroll_application.clone();
                     let workspace_id = scroll_workspace_id.clone();
@@ -424,9 +513,10 @@ impl TerminalView {
     }
 
     fn sync_list(&mut self, workspace_id: &str, line_count: usize) {
+        let line_height = px(self.line_height());
         if self.listed_workspace_id.as_deref() != Some(workspace_id) {
             self.list_state
-                .reset_with_uniform_height(line_count, px(TERMINAL_LINE_HEIGHT));
+                .reset_with_uniform_height(line_count, line_height);
             self.list_state.set_follow_mode(FollowMode::Tail);
             self.listed_workspace_id = Some(workspace_id.to_owned());
             return;
@@ -438,7 +528,7 @@ impl TerminalView {
                 .splice(previous_count..previous_count, line_count - previous_count);
         } else if line_count < previous_count {
             self.list_state
-                .reset_with_uniform_height(line_count, px(TERMINAL_LINE_HEIGHT));
+                .reset_with_uniform_height(line_count, line_height);
         }
     }
 
@@ -454,7 +544,7 @@ impl TerminalView {
             - internal::SCROLLBAR_WIDTH
             - TERMINAL_TEXT_HORIZONTAL_PADDING;
         let columns = (text_width / f32::from(cell_width)).floor().max(20.0) as u32;
-        let rows = (f32::from(viewport.height) / TERMINAL_LINE_HEIGHT)
+        let rows = (f32::from(viewport.height) / self.line_height())
             .floor()
             .max(6.0) as u32;
         let pty_size = (workspace_id.to_owned(), columns, rows);

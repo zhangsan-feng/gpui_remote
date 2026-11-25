@@ -18,6 +18,7 @@ pub(crate) use external::{open_network_settings_window, open_settings_window};
 enum SettingsSection {
     Theme,
     Wallpaper,
+    Terminal,
     Proxy,
     SshTunnel,
 }
@@ -37,6 +38,9 @@ pub struct SettingsOperationWindow {
 
 impl SettingsOperationWindow {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        cx.observe_global::<theme::TerminalAppearance>(|_, cx| cx.notify())
+            .detach();
+
         let color_picker = cx.new(|cx| {
             ColorPickerState::new(window, cx)
                 .default_value(crate::gui::component::theme::CustomerUiColor::custom_accent(cx))

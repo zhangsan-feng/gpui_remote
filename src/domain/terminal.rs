@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+pub(crate) const DEFAULT_TERMINAL_FONT_SIZE: u8 = 12;
+pub(crate) const MIN_TERMINAL_FONT_SIZE: u8 = 9;
+pub(crate) const MAX_TERMINAL_FONT_SIZE: u8 = 26;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TerminalRgb {
     pub red: u8,
@@ -12,6 +16,7 @@ pub enum TerminalColor {
     DefaultForeground,
     DimForeground,
     DefaultBackground,
+    Ansi { index: u8, dimmed: bool },
     Rgb(TerminalRgb),
 }
 
@@ -42,6 +47,7 @@ pub struct TerminalLine {
 #[derive(Clone, Debug, Default)]
 pub struct TerminalFrame {
     pub lines: Arc<Vec<Arc<TerminalLine>>>,
+    pub alternate_screen: bool,
     pub application_cursor: bool,
     pub cursor: Option<TerminalCursor>,
     pub history_size: usize,

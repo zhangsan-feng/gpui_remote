@@ -13,7 +13,7 @@ mod core {
     };
 
     use super::{
-        super::pty::TerminalModel,
+        super::{host_info::monitor_host_info, pty::TerminalModel},
         runtime::{run_closed_terminal_session, run_connected_terminal_session},
     };
 
@@ -58,9 +58,12 @@ mod core {
         );
         model.set_status(TerminalStatus::Connected, None);
 
-        let terminal_exit =
-            run_connected_terminal_session(workspace_id, shell.as_ref(), commands, model.clone())
-                .await?;
+        let terminal_exit = tokio::select! {
+            result = run_connected_terminal_session(
+                workspace_id, shell.as_ref(), commands, model.clone()
+            ) => result?,
+            never = monitor_host_info(workspace_id, shell.as_ref()) => match never {},
+        };
 
         log::debug!(
             "SSH session cleanup starting: workspace_id={workspace_id}, reason={}",
@@ -568,6 +571,7 @@ mod runtime {
 
     fn same_frame(left: &TerminalFrame, right: &TerminalFrame) -> bool {
         left.application_cursor == right.application_cursor
+            && left.alternate_screen == right.alternate_screen
             && left.cursor == right.cursor
             && left.history_size == right.history_size
             && left.display_offset == right.display_offset

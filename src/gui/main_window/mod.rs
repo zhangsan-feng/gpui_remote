@@ -18,6 +18,7 @@ struct MainWindow {
     title_bar: Entity<AppTitleBar>,
     left_session: Entity<SessionComponent>,
     workspace: Entity<Workspace>,
+    bottom_sidebar: Entity<bottom_sidebar::BottomSidebar>,
     columns: Entity<ResizableState>,
     diagnostics: core::WindowDiagnostics,
     _bounds_subscription: Subscription,
@@ -33,6 +34,7 @@ impl MainWindow {
             title_bar: cx.new(|cx| AppTitleBar::new(window, cx)),
             left_session,
             workspace,
+            bottom_sidebar: cx.new(bottom_sidebar::BottomSidebar::new),
             columns: cx.new(|_| ResizableState::default()),
             diagnostics: core::WindowDiagnostics::default(),
             _bounds_subscription: cx.observe_window_bounds(window, |_, window, _| {

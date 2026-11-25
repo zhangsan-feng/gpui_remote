@@ -68,6 +68,12 @@ struct CustomerUiThemeState {
 
 impl Global for CustomerUiThemeState {}
 
+pub(crate) struct TerminalAppearance {
+    font_size: u8,
+}
+
+impl Global for TerminalAppearance {}
+
 pub(crate) fn init(
     cx: &mut App,
     settings: ThemeSettings,
